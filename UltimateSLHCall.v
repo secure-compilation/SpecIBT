@@ -4,7 +4,7 @@
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
 From SECF Require Import Maps.
-From SECF Require Import SpecCT.
+From SECF Require Import ImpArrCall.
 From Coq Require Import Bool.Bool.
 From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.

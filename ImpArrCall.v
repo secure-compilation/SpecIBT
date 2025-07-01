@@ -312,6 +312,8 @@ Inductive observation : Type :=
 
 Definition obs := list observation.
 
+(* DON'T NEED THIS
+
 (** We define an instrumented big-step operational semantics based on these
    observations. *)
 
@@ -766,6 +768,8 @@ Proof.
 Qed.
 (* /FOLD *)
 
+*)
+
 (** * Speculative constant-time *)
 
 (** This part is based on the "Spectre Declassified" paper from IEEE SP 2023,
@@ -785,6 +789,8 @@ Inductive direction :=
 | DStore (a : string) (i : nat).
 
 Definition dirs := list direction.
+
+(* DON'T NEED THIS
 
 Reserved Notation
          "'<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
@@ -1283,6 +1289,8 @@ Qed.
 
 (** Let's now prove that the idealized semantics does enforce speculative constant-time *)
 
+*)
+
 Definition prefix {X:Type} (xs ys : list X) : Prop :=
   exists zs, xs ++ zs = ys.
 
@@ -1364,6 +1372,7 @@ Qed.
 
 Ltac split4 := split; [|split; [| split] ].
 
+(* DON'T NEED THIS
 Lemma pub_equiv_update_public : forall P {A:Type}
     (t1 t2 : total_map A) (X :string) (a1 a2 :A),
   pub_equiv P t1 t2 ->
@@ -1576,6 +1585,7 @@ Qed.
 
 (** We now prove that the idealized semantics is equivalent to [sel_slh]
     transformation (Lemma 6 and the more precise Lemma 7). *)
+*)
 
 (** All results about [sel_slh] below assume that the original [c] doesn't
     already use the variable ["b"] needed by the [sel_slh] translation. *)
@@ -1614,6 +1624,8 @@ Fixpoint unused (x:string) (c:com) : Prop :=
   end.
 
 Open Scope string_scope.
+
+(* DON'T NEED THIS
 
 (* HIDE *)
 
@@ -1689,6 +1701,8 @@ Proof.
 Abort.
 (* /HIDE *)
 
+*)
+
 (** As a warm-up we prove that [sel_slh] properly updates the variable "b". *)
 
 (** Proving this by induction on [com] or [spec_eval] leads to induction
@@ -1757,6 +1771,8 @@ Ltac prog_size_auto :=
         [| repeat rewrite app_length]; lia);
   try ( apply prog_size_monotonic; left; split; simpl;
         [auto | repeat rewrite app_length; lia] ).
+
+(* DON'T NEED THIS
 
 (** To properly apply [prog_size_ind], we need to state [sel_slh_flag]
     as a proposition of type [com -> dirs -> Prop]. Therefore we define the
@@ -1879,6 +1895,7 @@ Proof.
   - (* While *) apply IHHeval. simpl. tauto.
 Qed.
 (* /HIDE *)
+*)
 
 Lemma aeval_beval_unused_update : forall X st n,
   (forall ae, a_unused X ae ->
@@ -1906,6 +1923,8 @@ Lemma beval_unused_update : forall X st be n,
   b_unused X be ->
   beval (X !-> n; st) be = beval st be.
 Proof. intros X st be n. apply aeval_beval_unused_update. Qed.
+
+(* DON'T NEED THIS
 
 Lemma ideal_unused_overwrite: forall P st ast b ds c st' ast' b' os X n,
   unused X c ->
@@ -2967,3 +2986,4 @@ Proof.
 Qed.
 
 End SpecCTInterpreter.
+*)
