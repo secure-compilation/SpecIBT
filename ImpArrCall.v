@@ -187,7 +187,9 @@ Inductive com : Type :=
   | If (be : bexp) (c1 c2 : com)
   | While (be : bexp) (c : com)
   | ARead (x : string) (a : string) (i : aexp) (* <--- NEW *)
-  | AWrite (a : string) (i : aexp) (e : aexp)  (* <--- NEW *).
+  | AWrite (a : string) (i : aexp) (e : aexp)  (* <--- NEW *)
+  | Call (p:aexp) (* <--- NEW *)
+  | Stop. (* <--- NEW *)
 
 (* HIDE: CH: Originally wanted to take a:aexp and compute the accessed array,
    but our maps only have string keys, so had to settle with a:string for
@@ -242,6 +244,11 @@ Notation "'if' x 'then' y 'else' z 'end'" :=
 Notation "'while' x 'do' y 'end'" :=
   (While x y)
     (in custom com at level 89, x custom com at level 99, y at level 99) : com_scope.
+Notation "'call' e" :=
+  (Call e)
+    (in custom com at level 89, e custom com at level 99) : com_scope.
+Notation "'stop'"  :=
+  Stop (in custom com at level 0) : com_scope.
 
 (* HIDE *)
 Check <{{ skip }}>.
@@ -258,6 +265,8 @@ Check <{ true && ~(false && true) }>.
 Check <{{ if true then skip else skip end }}>.
 Check <{{ if true && true then skip; skip else skip; X:=X+1 end }}>.
 Check <{{ while Z <> 0 do Y := Y * Z; Z := Z - 1 end }}>.
+Check <{{ call 0 }}>.
+Check <{{ stop }}>.
 (* /HIDE *)
 
 Notation "x '<-' a '[[' i ']]'"  :=
@@ -303,12 +312,16 @@ Fixpoint upd (i:nat) (ns:list nat) (n:nat) : list nat :=
   end.
 (* TERSE: /HIDEFROMHTML *)
 
+(* NEW *)
+Definition prog := list com.
+
 (** ** Observations *)
 
 Inductive observation : Type :=
   | OBranch (b : bool)
   | OARead (a : string) (i : nat)
-  | OAWrite (a : string) (i : nat).
+  | OAWrite (a : string) (i : nat)
+  | OCall (i : nat).
 
 Definition obs := list observation.
 
@@ -786,7 +799,8 @@ Inductive direction :=
 | DStep
 | DForce
 | DLoad (a : string) (i : nat)
-| DStore (a : string) (i : nat).
+| DStore (a : string) (i : nat)
+| DForceCall (j : nat).
 
 Definition dirs := list direction.
 
@@ -1621,6 +1635,8 @@ Fixpoint unused (x:string) (c:com) : Prop :=
   | <{{while be do c end}}> => b_unused x be /\ unused x c
   | <{{y <- a[[i]]}}> => y <> x /\ a_unused x i
   | <{{a[i] <- e}}> => a_unused x i /\ a_unused x e
+  | <{{call e}}> => a_unused x e
+  | <{{stop}}> => True
   end.
 
 Open Scope string_scope.

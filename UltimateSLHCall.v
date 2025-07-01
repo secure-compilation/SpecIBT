@@ -38,68 +38,72 @@ Set Default Goal Selector "!".
 Ltac invert H := inversion H; subst; clear H.
 
 Reserved Notation
-  "'<((' c , st , ast '))>' '-->^' os '<((' ct , stt , astt '))>'"
+  "p '|-' '<((' c , st , ast '))>' '-->^' os '<((' ct , stt , astt '))>'"
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive seq_eval_small_step :
+Inductive seq_eval_small_step (p:prog) :
     com -> state -> astate ->
     com -> state -> astate -> obs -> Prop :=
   | SSM_Asgn  : forall st ast e n x,
       aeval st e = n ->
-      <((x := e, st, ast))> -->^[] <((skip, x !-> n; st, ast))>
+      p |- <((x := e, st, ast))> -->^[] <((skip, x !-> n; st, ast))>
   | SSM_Seq : forall c1 st ast os c1t stt astt c2,
-      <((c1, st, ast))>  -->^os <((c1t, stt, astt))>  ->
-      <(((c1;c2), st, ast))>  -->^os <(((c1t;c2), stt, astt))>
+      p |- <((c1, st, ast))>  -->^os <((c1t, stt, astt))>  ->
+      p |- <(((c1;c2), st, ast))>  -->^os <(((c1t;c2), stt, astt))>
   | SSM_Seq_Skip : forall st ast c2,
-      <(((skip;c2), st, ast))>  -->^[] <((c2, st, ast))>
+      p |- <(((skip;c2), st, ast))>  -->^[] <((c2, st, ast))>
   | SSM_If : forall be ct cf st ast,
-      <((if be then ct else cf end, st, ast))> -->^[OBranch (beval st be)]
-      <((match beval st be with
-        | true => ct
-        | false => cf end, st, ast))>
+      p |- <((if be then ct else cf end, st, ast))> -->^[OBranch (beval st be)]
+           <((match beval st be with
+             | true => ct
+             | false => cf end, st, ast))>
   | SSM_While : forall be c st ast,
-      <((while be do c end, st, ast))> -->^[]
-      <((if be then c; while be do c end else skip end, st, ast))>
+      p |- <((while be do c end, st, ast))> -->^[]
+           <((if be then c; while be do c end else skip end, st, ast))>
   | SSM_ARead : forall x a ie st ast i,
       aeval st ie = i ->
       i < length (ast a) ->
-      <((x <- a[[ie]], st, ast))> -->^[OARead a i]
-      <((skip, x !-> nth i (ast a) 0; st, ast))>
+      p |- <((x <- a[[ie]], st, ast))> -->^[OARead a i]
+           <((skip, x !-> nth i (ast a) 0; st, ast))>
   | SSM_Write : forall a ie e st ast i n,
       aeval st e = n ->
       aeval st ie = i ->
       i < length (ast a) ->
-      <((a[ie] <- e, st, ast))> -->^[OAWrite a i]
-      <((skip, st, a !-> upd i (ast a) n; ast))>
+      p |- <((a[ie] <- e, st, ast))> -->^[OAWrite a i]
+           <((skip, st, a !-> upd i (ast a) n; ast))>
+  | SSM_Call : forall e i c st ast,
+      aeval st e = i ->
+      nth_error p i = Some c ->
+      p |- <((call e, st, ast))> -->^[OCall i] <((c, st, ast))>
 
-  where "<(( c , st , ast ))> -->^ os  <(( ct ,  stt , astt ))>" :=
-    (seq_eval_small_step c st ast ct stt astt os).
+  where "p |- <(( c , st , ast ))> -->^ os  <(( ct ,  stt , astt ))>" :=
+    (seq_eval_small_step p c st ast ct stt astt os).
 
 Reserved Notation
-   "'<((' c , st , ast '))>' '-->*^' os '<((' ct , stt , astt '))>'"
+   "p '|-' '<((' c , st , ast '))>' '-->*^' os '<((' ct , stt , astt '))>'"
    (at level 40, c custom com at level 99, ct custom com at level 99,
     st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive multi_seq (c:com) (st:state) (ast:astate) :
+Inductive multi_seq (p:prog) (c:com) (st:state) (ast:astate) :
     com -> state -> astate -> obs -> Prop :=
-  | multi_seq_refl : <((c, st, ast))> -->*^[] <((c, st, ast))>
+  | multi_seq_refl : p |- <((c, st, ast))> -->*^[] <((c, st, ast))>
   | multi_seq_trans (c':com) (st':state) (ast':astate)
                 (c'':com) (st'':state) (ast'':astate)
                 (os1 os2 : obs) :
-      <((c, st, ast))> -->^os1 <((c', st', ast'))> ->
-      <((c', st', ast'))> -->*^os2 <((c'', st'', ast''))> ->
-      <((c, st, ast))> -->*^(os1++os2) <((c'', st'', ast''))>
+      p |- <((c, st, ast))> -->^os1 <((c', st', ast'))> ->
+      p |- <((c', st', ast'))> -->*^os2 <((c'', st'', ast''))> ->
+      p |- <((c, st, ast))> -->*^(os1++os2) <((c'', st'', ast''))>
 
-  where "<(( c , st , ast ))> -->*^ os <(( ct ,  stt , astt ))>" :=
-    (multi_seq c st ast ct stt astt os).
+  where "p |- <(( c , st , ast ))> -->*^ os <(( ct ,  stt , astt ))>" :=
+    (multi_seq p c st ast ct stt astt os).
 
-Lemma multi_seq_combined_executions : forall c st ast cm stm astm osm ct stt astt ost,
-  <((c, st, ast))> -->*^osm <((cm, stm, astm))> ->
-  <((cm, stm, astm))> -->*^ost <((ct, stt, astt))> ->
-  <((c, st, ast))> -->*^(osm++ost) <((ct, stt, astt))>.
+Lemma multi_seq_combined_executions : forall p c st ast cm stm astm osm ct stt astt ost,
+  p |- <((c, st, ast))> -->*^osm <((cm, stm, astm))> ->
+  p |- <((cm, stm, astm))> -->*^ost <((ct, stt, astt))> ->
+  p |- <((c, st, ast))> -->*^(osm++ost) <((ct, stt, astt))>.
 Proof.
-  intros c st ast cm stm astm osm ct stt astt ost Hev1 Hev2.
+  intros p c st ast cm stm astm osm ct stt astt ost Hev1 Hev2.
   induction Hev1.
   - rewrite app_nil_l. apply Hev2.
   - rewrite <- app_assoc. eapply multi_seq_trans.
@@ -107,90 +111,101 @@ Proof.
     + apply IHHev1. apply Hev2.
 Qed.
 
-Lemma seq_small_step_obs_type : forall c st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2,
-  <((c, st1, ast1))> -->^os1 <((ct1, stt1, astt1))> ->
-  <((c, st2, ast2))> -->^os2 <((ct2, stt2, astt2))> ->
+Lemma seq_small_step_obs_type : forall p c st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2,
+  p |- <((c, st1, ast1))> -->^os1 <((ct1, stt1, astt1))> ->
+  p |- <((c, st2, ast2))> -->^os2 <((ct2, stt2, astt2))> ->
   match os2 with
   | [] => os1 = []
   | OBranch _ :: os => exists b, os1 = OBranch b :: os
   | OARead _ _ :: os => exists a i, os1 = OARead a i :: os
   | OAWrite _ _ :: os => exists a i, os1 = OAWrite a i :: os
+  | OCall _ :: os => exists i, os1 = OCall i :: os
   end.
 Proof.
-  induction c; intros st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2 H1 H2;
+  intros p; induction c; intros st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2 H1 H2;
   inversion H1; inversion H2; subst; try eauto.
   + eapply IHc1; eauto.
   + inversion H9.
   + inversion H17.
 Qed.
 
-Corollary seq_small_step_obs_length : forall c st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2,
-  <((c, st1, ast1))> -->^os1 <((ct1, stt1, astt1))> ->
-  <((c, st2, ast2))> -->^os2 <((ct2, stt2, astt2))> ->
+Corollary seq_small_step_obs_length : forall p c st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2,
+  p |- <((c, st1, ast1))> -->^os1 <((ct1, stt1, astt1))> ->
+  p |- <((c, st2, ast2))> -->^os2 <((ct2, stt2, astt2))> ->
   length os1 = length os2.
 Proof.
   intros. eapply seq_small_step_obs_type in H; [|now apply H0].
   destruct os1; subst; [now auto|].
   destruct o.
   2, 3 : now (do 2 destruct H); subst.
-  now destruct H; subst.
+  all : now destruct H; subst.
 Qed.
 
 (** Small-step speculative semantics *)
 
 Reserved Notation
-  "'<((' c , st , ast , b '))>' '-->_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  "p '|-' '<((' c , st , ast , b '))>' '-->_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive spec_eval_small_step :
+Inductive spec_eval_small_step (p:prog) :
     com -> state -> astate -> bool ->
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
   | SpecSM_Asgn  : forall st ast b e n x,
       aeval st e = n ->
-      <((x := e, st, ast, b))> -->_[]^^[] <((skip, x !-> n; st, ast, b))>
+      p |- <((x := e, st, ast, b))> -->_[]^^[] <((skip, x !-> n; st, ast, b))>
   | SpecSM_Seq : forall c1 st ast b ds os c1t stt astt bt c2,
-      <((c1, st, ast, b))>  -->_ds^^os <((c1t, stt, astt, bt))>  ->
-      <(((c1;c2), st, ast, b))>  -->_ds^^os <(((c1t;c2), stt, astt, bt))>
+      p |- <((c1, st, ast, b))>  -->_ds^^os <((c1t, stt, astt, bt))>  ->
+      p |- <(((c1;c2), st, ast, b))>  -->_ds^^os <(((c1t;c2), stt, astt, bt))>
   | SpecSM_Seq_Skip : forall st ast b c2,
-      <(((skip;c2), st, ast, b))>  -->_[]^^[] <((c2, st, ast, b))>
+      p |- <(((skip;c2), st, ast, b))>  -->_[]^^[] <((c2, st, ast, b))>
   | SpecSM_If : forall be ct cf st ast b c' b',
       b' = beval st be ->
       c' = (if b' then ct else cf) ->
-      <((if be then ct else cf end, st, ast, b))> -->_[DStep]^^[OBranch b'] <((c', st, ast, b))>
+      p |- <((if be then ct else cf end, st, ast, b))> -->_[DStep]^^[OBranch b'] <((c', st, ast, b))>
   | SpecSM_If_F : forall be ct cf st ast b c' b',
       b' = beval st be ->
       c' = (if b' then cf else ct) ->
-      <((if be then ct else cf end, st, ast, b))> -->_[DForce]^^[OBranch b'] <((c', st, ast, true))>
+      p |- <((if be then ct else cf end, st, ast, b))> -->_[DForce]^^[OBranch b'] <((c', st, ast, true))>
   | SpecSM_While : forall be c st ast b,
-      <((while be do c end, st, ast, b))> -->_[]^^[]
-      <((if be then c; while be do c end else skip end, st, ast, b))>
+      p |- <((while be do c end, st, ast, b))> -->_[]^^[]
+           <((if be then c; while be do c end else skip end, st, ast, b))>
   | SpecSM_ARead : forall x a ie st ast b i,
       aeval st ie = i ->
       i < length (ast a) ->
-      <((x <- a[[ie]], st, ast, b))> -->_[DStep]^^[OARead a i]
-      <((skip, x !-> nth i (ast a) 0; st, ast, b))>
+      p |- <((x <- a[[ie]], st, ast, b))> -->_[DStep]^^[OARead a i]
+           <((skip, x !-> nth i (ast a) 0; st, ast, b))>
   | SpecSM_ARead_U : forall x a ie st ast i a' i',
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      <((x <- a[[ie]], st, ast, true))> -->_[DLoad a' i']^^[OARead a i]
-      <((skip, x !-> nth i' (ast a') 0; st, ast, true))>
+      p |- <((x <- a[[ie]], st, ast, true))> -->_[DLoad a' i']^^[OARead a i]
+           <((skip, x !-> nth i' (ast a') 0; st, ast, true))>
   | SpecSM_Write : forall a ie e st ast b i n,
       aeval st e = n ->
       aeval st ie = i ->
       i < length (ast a) ->
-      <((a[ie] <- e, st, ast, b))> -->_[DStep]^^[OAWrite a i]
-      <((skip, st, a !-> upd i (ast a) n; ast, b))>
+      p |- <((a[ie] <- e, st, ast, b))> -->_[DStep]^^[OAWrite a i]
+           <((skip, st, a !-> upd i (ast a) n; ast, b))>
   | SpecSM_Write_U : forall a ie e st ast i n a' i',
       aeval st e = n ->
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      <((a[ie] <- e, st, ast, true))> -->_[DStore a' i']^^[OAWrite a i]
-      <((skip, st, a' !-> upd i' (ast a') n; ast, true))>
-  where "<(( c , st , ast , b ))> -->_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
-    (spec_eval_small_step c st ast b ct stt astt bt ds os).
+      p |- <((a[ie] <- e, st, ast, true))> -->_[DStore a' i']^^[OAWrite a i]
+           <((skip, st, a' !-> upd i' (ast a') n; ast, true))>
+  | SpecSM_Call : forall e i c st ast b,
+      aeval st e = i ->
+      nth_error p i = Some c ->
+      p |- <((call e, st, ast, b))> -->_[DStep]^^[OCall i] <((c, st, ast, b))>
+  | SpecSM_Call_F : forall e i j c st ast b,
+      aeval st e = i ->
+      i <> j ->
+      nth_error p j = Some c ->
+      p |- <((call e, st, ast, b))> -->_[DForceCall j]^^[OCall i] <((c, st, ast, true))>
+
+  where "p |- <(( c , st , ast , b ))> -->_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
+    (spec_eval_small_step p c st ast b ct stt astt bt ds os).
 
 Reserved Notation
   "'<((' c , st , ast , b '))>' '-->*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
