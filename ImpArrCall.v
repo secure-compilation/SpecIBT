@@ -188,8 +188,8 @@ Inductive com : Type :=
   | While (be : bexp) (c : com)
   | ARead (x : string) (a : string) (i : aexp) (* <--- NEW *)
   | AWrite (a : string) (i : aexp) (e : aexp)  (* <--- NEW *)
-  | Call (p:aexp) (* <--- NEW *)
-  | Stop. (* <--- NEW *)
+  | Call (p:aexp). (* <--- NEW *)
+    (* | Stop. (* <--- NEW *) no longer needed, since we are now checking for OOB indexing into prog in the Call step *)
 
 (* HIDE: CH: Originally wanted to take a:aexp and compute the accessed array,
    but our maps only have string keys, so had to settle with a:string for
@@ -247,8 +247,8 @@ Notation "'while' x 'do' y 'end'" :=
 Notation "'call' e" :=
   (Call e)
     (in custom com at level 89, e custom com at level 99) : com_scope.
-Notation "'stop'"  :=
-  Stop (in custom com at level 0) : com_scope.
+(* Notation "'stop'"  :=
+   Stop (in custom com at level 0) : com_scope. *)
 
 (* HIDE *)
 Check <{{ skip }}>.
@@ -266,7 +266,7 @@ Check <{{ if true then skip else skip end }}>.
 Check <{{ if true && true then skip; skip else skip; X:=X+1 end }}>.
 Check <{{ while Z <> 0 do Y := Y * Z; Z := Z - 1 end }}>.
 Check <{{ call 0 }}>.
-Check <{{ stop }}>.
+(* Check <{{ stop }}>. *)
 (* /HIDE *)
 
 Notation "x '<-' a '[[' i ']]'"  :=
@@ -1636,7 +1636,7 @@ Fixpoint unused (x:string) (c:com) : Prop :=
   | <{{y <- a[[i]]}}> => y <> x /\ a_unused x i
   | <{{a[i] <- e}}> => a_unused x i /\ a_unused x e
   | <{{call e}}> => a_unused x e
-  | <{{stop}}> => True
+  (* | <{{stop}}> => True *)
   end.
 
 Open Scope string_scope.
