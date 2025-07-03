@@ -467,8 +467,10 @@ Inductive ideal_eval_small_step (p:prog):
       p |- <((a[ie] <- e, st, ast, true))> -->i_[DStore a' i']^^[OAWrite a i]
            <((skip, st, a' !-> upd i' (ast a') n; ast, true))>
 
-  (* still need to add Call cases here *)
+  | ISM_Call : forall _,
+      aeval st e = i ->
 
+  
           where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (ideal_eval_small_step p c st ast b ct stt astt bt ds os).
 
@@ -701,7 +703,7 @@ Lemma seq_to_ideal : forall p c st ast ct stt astt os,
 Proof.
   intros.
   induction H; try now (constructor; rewrite ?orb_true_r, ?andb_false_r).
-Qed. (* I'm not sure why this proof no longer goes through. All I've done is add p. *)
+Qed. 
 
 Lemma seq_small_step_if_total : forall c be ct cf st ast,
   c = <{{if be then ct else cf end}}> ->
