@@ -395,8 +395,16 @@ Fixpoint ultimate_slh (c:com) :=
       let i' := if is_empty (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
                                           else <{{("b" = 1) ? 0 : i}}> in
         <{{a[i'] <- e}}> (* <- Doing nothing here in the is_empty (vars_aexp i) case okay for Spectre v1,
-                               but problematic for return address or code pointer overwrites *)
+                   but problematic for return address or code pointer overwrites *)
+
+  | <{{call e}}> =>
+      let e' := if is_empty (vars_aexp e) then e
+                                          else <{{("b" = 1) ? 0 : e}}> in
+        <{{call e'}}>
+
   end)%string.
+
+(*  *)
 
 (** The masking USLH does for indices requires that our arrays are nonempty. *)
 
@@ -406,113 +414,115 @@ Definition nonempty_arrs (ast : astate) :Prop :=
 (** * Ideal small-step evaluation *)
 
 Reserved Notation
-  "'<((' c , st , ast , b '))>' '-->i_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  "p '|-' '<((' c , st , ast , b '))>' '-->i_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive ideal_eval_small_step :
+Inductive ideal_eval_small_step (p:prog):
     com -> state -> astate -> bool ->
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
   | ISM_Asgn  : forall st ast b e n x,
       aeval st e = n ->
-      <((x := e, st, ast, b))> -->i_[]^^[] <((skip, x !-> n; st, ast, b))>
+      p |- <((x := e, st, ast, b))> -->i_[]^^[] <((skip, x !-> n; st, ast, b))>
   | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt c2,
-      <((c1, st, ast, b))>  -->i_ds^^os <((c1t, stt, astt, bt))>  ->
-      <(((c1;c2), st, ast, b))>  -->i_ds^^os <(((c1t;c2), stt, astt, bt))>
+      p |- <((c1, st, ast, b))>  -->i_ds^^os <((c1t, stt, astt, bt))>  ->
+      p |- <(((c1;c2), st, ast, b))>  -->i_ds^^os <(((c1t;c2), stt, astt, bt))>
   | ISM_Seq_Skip : forall st ast b c2,
-      <(((skip;c2), st, ast, b))>  -->i_[]^^[] <((c2, st, ast, b))>
+      p |- <(((skip;c2), st, ast, b))>  -->i_[]^^[] <((c2, st, ast, b))>
   | ISM_If : forall be ct cf st ast b c' b',
       b' = (is_empty (vars_bexp be) || negb b) && beval st be ->
       c' = (if b' then ct else cf) ->
-      <((if be then ct else cf end, st, ast, b))> -->i_[DStep]^^[OBranch b'] <((c', st, ast, b))>
+      p |- <((if be then ct else cf end, st, ast, b))> -->i_[DStep]^^[OBranch b'] <((c', st, ast, b))>
   | ISM_If_F : forall be ct cf st ast b c' b',
       b' = (is_empty (vars_bexp be) || negb b) && beval st be ->
       c' = (if b' then cf else ct) ->
-      <((if be then ct else cf end, st, ast, b))> -->i_[DForce]^^[OBranch b'] <((c', st, ast, true))>
+      p |- <((if be then ct else cf end, st, ast, b))> -->i_[DForce]^^[OBranch b'] <((c', st, ast, true))>
   | ISM_While : forall be c st ast b,
-      <((while be do c end, st, ast, b))> -->i_[]^^[]
-      <((if be then c; while be do c end else skip end, st, ast, b))>
+      p |- <((while be do c end, st, ast, b))> -->i_[]^^[]
+           <((if be then c; while be do c end else skip end, st, ast, b))>
   | ISM_ARead : forall x a ie st ast (b :bool) i,
       (if negb (is_empty (vars_aexp ie)) && b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
-      <((x <- a[[ie]], st, ast, b))> -->i_[DStep]^^[OARead a i]
-      <((skip, x !-> nth i (ast a) 0; st, ast, b))>
+      p |- <((x <- a[[ie]], st, ast, b))> -->i_[DStep]^^[OARead a i]
+           <((skip, x !-> nth i (ast a) 0; st, ast, b))>
   | ISM_ARead_U : forall x a ie st ast i a' i',
       aeval st ie = i ->
       is_empty (vars_aexp ie) = true ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      <((x <- a[[ie]], st, ast, true))> -->i_[DLoad a' i']^^[OARead a i]
-      <((skip, x !-> nth i' (ast a') 0; st, ast, true))>
+      p |- <((x <- a[[ie]], st, ast, true))> -->i_[DLoad a' i']^^[OARead a i]
+           <((skip, x !-> nth i' (ast a') 0; st, ast, true))>
   | ISM_Write : forall a ie e st ast (b :bool) i n,
       aeval st e = n ->
       (if negb (is_empty (vars_aexp ie)) && b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
-      <((a[ie] <- e, st, ast, b))> -->i_[DStep]^^[OAWrite a i]
-      <((skip, st, a !-> upd i (ast a) n; ast, b))>
+      p |- <((a[ie] <- e, st, ast, b))> -->i_[DStep]^^[OAWrite a i]
+           <((skip, st, a !-> upd i (ast a) n; ast, b))>
   | ISM_Write_U : forall a ie e st ast i n a' i',
       aeval st e = n ->
       is_empty (vars_aexp ie) = true ->
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      <((a[ie] <- e, st, ast, true))> -->i_[DStore a' i']^^[OAWrite a i]
-      <((skip, st, a' !-> upd i' (ast a') n; ast, true))>
+      p |- <((a[ie] <- e, st, ast, true))> -->i_[DStore a' i']^^[OAWrite a i]
+           <((skip, st, a' !-> upd i' (ast a') n; ast, true))>
 
-  where "<(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
-    (ideal_eval_small_step c st ast b ct stt astt bt ds os).
+  (* still need to add Call cases here *)
+
+          where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
+    (ideal_eval_small_step p c st ast b ct stt astt bt ds os).
 
 (* HIDE: This one now has again `_U` cases because of out-of-bounds array
    accesses at constant indices. Since the array sizes are also statically
    known, we could easily reject such programs statically.  *)
 
 Reserved Notation
-  "'<((' c , st , ast , b '))>' '-->i*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  "p '|-' '<((' c , st , ast , b '))>' '-->i*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
+Inductive multi_ideal (p:prog) (c:com) (st:state) (ast:astate) (b:bool) :
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
-  | multi_ideal_refl : <((c, st, ast, b))> -->i*_[]^^[] <((c, st, ast, b))>
+  | multi_ideal_refl : p |- <((c, st, ast, b))> -->i*_[]^^[] <((c, st, ast, b))>
   | multi_ideal_trans (c':com) (st':state) (ast':astate) (b':bool)
                 (c'':com) (st'':state) (ast'':astate) (b'':bool)
                 (ds1 ds2 : dirs) (os1 os2 : obs) :
-      <((c, st, ast, b))> -->i_ds1^^os1 <((c', st', ast', b'))> ->
-      <((c', st', ast', b'))> -->i*_ds2^^os2 <((c'', st'', ast'', b''))> ->
-      <((c, st, ast, b))> -->i*_(ds1++ds2)^^(os1++os2) <((c'', st'', ast'', b''))>
+      p |-<((c, st, ast, b))> -->i_ds1^^os1 <((c', st', ast', b'))> ->
+      p |-<((c', st', ast', b'))> -->i*_ds2^^os2 <((c'', st'', ast'', b''))> ->
+      p |-<((c, st, ast, b))> -->i*_(ds1++ds2)^^(os1++os2) <((c'', st'', ast'', b''))>
 
-  where "<(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
-    (multi_ideal c st ast b ct stt astt bt ds os).
+          where "p |- <(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
+    (multi_ideal p c st ast b ct stt astt bt ds os).
 
-Lemma multi_ideal_trans_nil_l c st ast b c' st' ast' b' ct stt astt bt ds os :
-  <((c, st, ast, b))> -->i_[]^^[] <((c', st', ast', b'))> ->
-  <((c', st', ast', b'))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
-  <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
+Lemma multi_ideal_trans_nil_l p c st ast b c' st' ast' b' ct stt astt bt ds os :
+  p |- <((c, st, ast, b))> -->i_[]^^[] <((c', st', ast', b'))> ->
+  p |- <((c', st', ast', b'))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  p |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
 Proof.
   intros. rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds). eapply multi_ideal_trans; eassumption.
 Qed.
 
-Lemma multi_ideal_trans_nil_r c st ast b c' st' ast' b' ct stt astt bt ds os :
-  <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
-  <((c', st', ast', b'))> -->i*_[]^^[] <((ct, stt, astt, bt))> ->
-  <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
+Lemma multi_ideal_trans_nil_r p c st ast b c' st' ast' b' ct stt astt bt ds os :
+  p |- <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
+  p |- <((c', st', ast', b'))> -->i*_[]^^[] <((ct, stt, astt, bt))> ->
+  p |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
 Proof.
   intros. rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds). eapply multi_ideal_trans; eassumption.
 Qed.
 
-Definition ideal_same_obs c st1 st2 ast1 ast2 : Prop :=
+Definition ideal_same_obs p c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
-    <((c, st1, ast1, false))> -->i*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
-    <((c, st2, ast2, false))> -->i*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
+    p |- <((c, st1, ast1, false))> -->i*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
+    p |- <((c, st2, ast2, false))> -->i*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
     os1 = os2.
 
 Lemma multi_ideal_combined_executions :
-  forall c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost,
-    <((c, st, ast, b))> -->i*_ds^^osm <((cm, stm, astm, bm))> ->
-    <((cm, stm, astm, bm))> -->i*_dsm^^ost <((ct, stt, astt, bt))> ->
-    <((c, st, ast, b))> -->i*_(ds++dsm)^^(osm++ost) <((ct, stt, astt, bt))>.
+  forall p c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost,
+    p |- <((c, st, ast, b))> -->i*_ds^^osm <((cm, stm, astm, bm))> ->
+    p |- <((cm, stm, astm, bm))> -->i*_dsm^^ost <((ct, stt, astt, bt))> ->
+    p |- <((c, st, ast, b))> -->i*_(ds++dsm)^^(osm++ost) <((ct, stt, astt, bt))>.
 Proof.
-  intros c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost Hev1 Hev2.
+  intros p c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost Hev1 Hev2.
   induction Hev1.
   - do 2 rewrite app_nil_l. apply Hev2.
   - do 2 rewrite <- app_assoc. eapply multi_ideal_trans.
@@ -520,34 +530,34 @@ Proof.
     + apply IHHev1. apply Hev2.
 Qed.
 
-Lemma multi_ideal_add_snd_com : forall c st ast ct stt astt ds os c2 b bt,
-  <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
-  <((c;c2, st, ast, b))> -->i*_ds^^os <((ct;c2, stt, astt, bt))>.
+Lemma multi_ideal_add_snd_com : forall p c st ast ct stt astt ds os c2 b bt,
+  p |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  p |- <((c;c2, st, ast, b))> -->i*_ds^^os <((ct;c2, stt, astt, bt))>.
 Proof.
   intros. induction H; repeat econstructor; eauto.
 Qed.
 
 (** * Lemmas for the proof of [ideal_eval_relative_secure] *)
 
-Lemma ideal_eval_small_step_spec_bit_monotonic : forall c st ast ds ct stt astt bt os,
-  <((c, st, ast, true))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+Lemma ideal_eval_small_step_spec_bit_monotonic : forall p c st ast ds ct stt astt bt os,
+  p |- <((c, st, ast, true))> -->i_ds^^os <((ct, stt, astt, bt))> ->
   bt = true.
 Proof.
-  intros c st ast ds ct stt astt bt os Heval. remember true as b eqn:Eqb.
+  intros p c st ast ds ct stt astt bt os Heval. remember true as b eqn:Eqb.
   induction Heval; subst; eauto.
 Qed.
 
-Lemma multi_ideal_spec_bit_monotonic : forall c st ast ds ct stt astt bt os,
-  <((c, st, ast, true))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+Lemma multi_ideal_spec_bit_monotonic : forall p c st ast ds ct stt astt bt os,
+  p |- <((c, st, ast, true))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   bt = true.
 Proof.
-  intros c st ast ds ct stt astt bt os Heval. remember true as b eqn:Eqb.
+  intros p c st ast ds ct stt astt bt os Heval. remember true as b eqn:Eqb.
   induction Heval; subst; eauto. apply ideal_eval_small_step_spec_bit_monotonic in H; subst.
   auto.
 Qed.
 
-Lemma ideal_eval_final_spec_bit_false_one_step : forall c st ast ds stt astt os ct,
-  <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, false))> ->
+Lemma ideal_eval_final_spec_bit_false_one_step : forall p c st ast ds stt astt os ct,
+  p |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, false))> ->
   (forall d, In d ds -> d = DStep).
 Proof.
   intros. remember false as b. rewrite Heqb in H at 2. remember false as b'.
@@ -560,8 +570,8 @@ Proof.
   + now invert H2.
 Qed.
 
-Lemma ideal_eval_final_spec_bit_false : forall c st ast ds stt astt os ct,
-  <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
+Lemma ideal_eval_final_spec_bit_false : forall p c st ast ds stt astt os ct,
+  p |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
   (forall d, In d ds -> d = DStep).
 Proof.
   intros. remember false as b. rewrite Heqb in H at 2. remember false as b'.
@@ -574,20 +584,20 @@ Proof.
     - apply IHmulti_ideal; tauto.
 Qed.
 
-Lemma ideal_eval_small_step_spec_needs_force : forall c st ast ds ct stt astt os,
-  <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
+Lemma ideal_eval_small_step_spec_needs_force : forall p c st ast ds ct stt astt os,
+  p |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
   ds = [DForce].
 Proof.
-  intros c st ast ds ct stt astt os Hev.
+  intros p c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl in *; try discriminate; auto.
 Qed.
 
-Lemma multi_ideal_spec_needs_force : forall c st ast ds ct stt astt os,
-  <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
+Lemma multi_ideal_spec_needs_force : forall p c st ast ds ct stt astt os,
+  p |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
   In DForce ds.
 Proof.
-  intros c st ast ds ct stt astt os Hev.
+  intros p c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl in *; try discriminate.
   apply in_or_app. destruct b' eqn:Eqb'.
@@ -596,12 +606,12 @@ Proof.
 Qed.
 
 Lemma ideal_eval_spec_bit_deterministic :
-  forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
-    <(( c, st1, ast1, b ))> -->i*_ ds ^^ os1 <(( c1, stt1, astt1, bt1 ))> ->
-    <(( c, st2, ast2, b ))> -->i*_ ds ^^ os2 <(( c2, stt2, astt2, bt2 ))> ->
+  forall p c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
+    p |- <(( c, st1, ast1, b ))> -->i*_ ds ^^ os1 <(( c1, stt1, astt1, bt1 ))> ->
+    p |- <(( c, st2, ast2, b ))> -->i*_ ds ^^ os2 <(( c2, stt2, astt2, bt2 ))> ->
     bt1 = bt2.
 Proof.
-  intros c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
+  intros p c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
   destruct b.
   - apply multi_ideal_spec_bit_monotonic in Hev1, Hev2. congruence.
   - destruct bt1, bt2; try reflexivity.
@@ -611,36 +621,36 @@ Proof.
       now eapply ideal_eval_final_spec_bit_false in Hev1; [|eassumption].
 Qed.
 
-Lemma ideal_eval_small_step_obs_length : forall c st ast b ds ct stt astt bt os,
-  <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+Lemma ideal_eval_small_step_obs_length : forall p c st ast b ds ct stt astt bt os,
+  p |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
   length ds = length os.
 Proof.
-  intros c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
+  intros p c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
 Qed.
 
-Lemma multi_ideal_obs_length : forall c st ast b ds ct stt astt bt os,
-  <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+Lemma multi_ideal_obs_length : forall p c st ast b ds ct stt astt bt os,
+  p |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   length ds = length os.
 Proof.
-  intros c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
+  intros p c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
   do 2 rewrite app_length. apply ideal_eval_small_step_obs_length in H.
   auto.
 Qed.
 
-Lemma ideal_eval_small_step_final_spec_bit_false : forall c st ast ds ct stt astt os,
-  <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, false))> ->
+Lemma ideal_eval_small_step_final_spec_bit_false : forall p c st ast ds ct stt astt os,
+  p |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, false))> ->
   (forall d, In d ds -> d = DStep).
 Proof.
-  intros c st ast ds ct stt astt os Hev. remember false as b eqn:Eqb.
+  intros p c st ast ds ct stt astt os Hev. remember false as b eqn:Eqb.
   induction Hev; subst; intros d Hin; simpl in *; try destruct Hin;
   try discriminate; try contradiction; auto.
 Qed.
 
-Lemma multi_ideal_final_spec_bit_false : forall c st ast ds ct stt astt os,
-  <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
+Lemma multi_ideal_final_spec_bit_false : forall p c st ast ds ct stt astt os,
+  p |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
   (forall d, In d ds -> d = DStep).
 Proof.
-  intros c st ast ds ct stt astt os Hev. remember false as b eqn:Eqb.
+  intros p c st ast ds ct stt astt os Hev. remember false as b eqn:Eqb.
   induction Hev; intros d Hin; simpl in *; subst; try contradiction.
   destruct b' eqn:Eqb'.
   - apply multi_ideal_spec_bit_monotonic in Hev. discriminate.
@@ -651,12 +661,12 @@ Proof.
     + apply IHHev; auto.
 Qed.
 
-Lemma ideal_eval_small_step_no_spec : forall c st ast ds ct stt astt bt os,
-    <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+Lemma ideal_eval_small_step_no_spec : forall p c st ast ds ct stt astt bt os,
+  p |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, bt))> ->
     (forall d, In d ds -> d = DStep) ->
-    <((c, st, ast ))> -->^os <((ct, stt, astt))>.
+    p |- <((c, st, ast ))> -->^os <((ct, stt, astt))>.
 Proof.
-  intros c st ast ds ct stt astt bt os Hev.
+  intros p c st ast ds ct stt astt bt os Hev.
   remember false as b eqn:Eqb. induction Hev; intros Hds;
   try (now subst; rewrite ?orb_true_r, ?andb_false_r in *; econstructor; eauto).
   + specialize (Hds DForce). discriminate Hds. now left.
@@ -664,12 +674,12 @@ Proof.
   + specialize (Hds (DStore a' i')). discriminate Hds. now left.
 Qed.
 
-Lemma multi_ideal_no_spec : forall c st ast ds ct stt astt bt os,
-    <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+Lemma multi_ideal_no_spec : forall p c st ast ds ct stt astt bt os,
+    p |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
     (forall d, In d ds -> d = DStep) ->
-    <((c, st, ast ))> -->*^os <((ct, stt, astt))>.
+    p |- <((c, st, ast ))> -->*^os <((ct, stt, astt))>.
 Proof.
-  intros c st ast ds ct stt astt bt os Hev.
+  intros p c st ast ds ct stt astt bt os Hev.
   remember false as b eqn:Eqb. induction Hev; intros Hds; subst.
   - apply multi_seq_refl.
   - assert (L1: forall d, In d ds1 -> d = DStep).
@@ -685,13 +695,13 @@ Proof.
       * apply IHHev; auto.
 Qed.
 
-Lemma seq_to_ideal : forall c st ast ct stt astt os,
-  <((c, st, ast ))> -->^os <((ct, stt, astt))> ->
-  <((c, st, ast, false))> -->i_(repeat DStep (length os))^^os <((ct, stt, astt, false))>.
+Lemma seq_to_ideal : forall p c st ast ct stt astt os,
+  p |- <((c, st, ast ))> -->^os <((ct, stt, astt))> ->
+  p |- <((c, st, ast, false))> -->i_(repeat DStep (length os))^^os <((ct, stt, astt, false))>.
 Proof.
   intros.
   induction H; try now (constructor; rewrite ?orb_true_r, ?andb_false_r).
-Qed.
+Qed. (* I'm not sure why this proof no longer goes through. All I've done is add p. *)
 
 Lemma seq_small_step_if_total : forall c be ct cf st ast,
   c = <{{if be then ct else cf end}}> ->
