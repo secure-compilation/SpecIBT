@@ -208,43 +208,43 @@ Inductive spec_eval_small_step (p:prog) :
     (spec_eval_small_step p c st ast b ct stt astt bt ds os).
 
 Reserved Notation
-  "'<((' c , st , ast , b '))>' '-->*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  "p '|-' '<((' c , st , ast , b '))>' '-->*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive multi_spec (c:com) (st:state) (ast:astate) (b:bool) :
+Inductive multi_spec (p:prog) (c:com) (st:state) (ast:astate) (b:bool) :
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
-  | multi_spec_refl : <((c, st, ast, b))> -->*_[]^^[] <((c, st, ast, b))>
+  | multi_spec_refl : p |- <((c, st, ast, b))> -->*_[]^^[] <((c, st, ast, b))>
   | multi_spec_trans (c':com) (st':state) (ast':astate) (b':bool)
                 (c'':com) (st'':state) (ast'':astate) (b'':bool)
                 (ds1 ds2 : dirs) (os1 os2 : obs) :
-      <((c, st, ast, b))> -->_ds1^^os1 <((c', st', ast', b'))> ->
-      <((c', st', ast', b'))> -->*_ds2^^os2 <((c'', st'', ast'', b''))> ->
-      <((c, st, ast, b))> -->*_(ds1++ds2)^^(os1++os2) <((c'', st'', ast'', b''))>
+      p |- <((c, st, ast, b))> -->_ds1^^os1 <((c', st', ast', b'))> ->
+      p |- <((c', st', ast', b'))> -->*_ds2^^os2 <((c'', st'', ast'', b''))> ->
+      p |- <((c, st, ast, b))> -->*_(ds1++ds2)^^(os1++os2) <((c'', st'', ast'', b''))>
 
-  where "<(( c , st , ast , b ))> -->*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
-    (multi_spec c st ast b ct stt astt bt ds os).
+    where "p |- <(( c , st , ast , b ))> -->*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
+    (multi_spec p c st ast b ct stt astt bt ds os).
 
-Lemma multi_spec_trans_nil_l c st ast b c' st' ast' b' ct stt astt bt ds os :
-  <((c, st, ast, b))> -->_[]^^[] <((c', st', ast', b'))> ->
-  <((c', st', ast', b'))> -->*_ds^^os <((ct, stt, astt, bt))> ->
-  <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))>.
+Lemma multi_spec_trans_nil_l p c st ast b c' st' ast' b' ct stt astt bt ds os :
+  p |- <((c, st, ast, b))> -->_[]^^[] <((c', st', ast', b'))> ->
+  p |- <((c', st', ast', b'))> -->*_ds^^os <((ct, stt, astt, bt))> ->
+  p |- <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))>.
 Proof.
   intros. rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds). eapply multi_spec_trans; eassumption.
 Qed.
 
-Lemma multi_spec_trans_nil_r c st ast b c' st' ast' b' ct stt astt bt ds os :
-  <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
-  <((c', st', ast', b'))> -->*_[]^^[] <((ct, stt, astt, bt))> ->
-  <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))>.
+Lemma multi_spec_trans_nil_r p c st ast b c' st' ast' b' ct stt astt bt ds os :
+  p |- <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
+  p |- <((c', st', ast', b'))> -->*_[]^^[] <((ct, stt, astt, bt))> ->
+  p |- <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))>.
 Proof.
   intros. rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds). eapply multi_spec_trans; eassumption.
 Qed.
 
-Lemma multi_spec_combined_executions : forall c st ast cm stm astm osm ct stt astt ost ds ds' b b' b'',
-  <((c, st, ast, b))> -->*_ds^^osm <((cm, stm, astm, b'))> ->
-  <((cm, stm, astm, b'))> -->*_ds'^^ost <((ct, stt, astt, b''))> ->
-  <((c, st, ast, b))> -->*_(ds++ds')^^(osm++ost) <((ct, stt, astt, b''))>.
+Lemma multi_spec_combined_executions : forall p c st ast cm stm astm osm ct stt astt ost ds ds' b b' b'',
+  p |- <((c, st, ast, b))> -->*_ds^^osm <((cm, stm, astm, b'))> ->
+  p |- <((cm, stm, astm, b'))> -->*_ds'^^ost <((ct, stt, astt, b''))> ->
+  p |- <((c, st, ast, b))> -->*_(ds++ds')^^(osm++ost) <((ct, stt, astt, b''))>.
 Proof.
   intros.
   induction H.
@@ -254,21 +254,21 @@ Proof.
     + apply IHmulti_spec. apply H0.
 Qed.
 
-Lemma multi_spec_add_snd_com : forall c st ast ct stt astt ds os c2 b bt,
-  <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))> ->
-  <((c;c2, st, ast, b))> -->*_ds^^os <((ct;c2, stt, astt, bt))>.
+Lemma multi_spec_add_snd_com : forall p c st ast ct stt astt ds os c2 b bt,
+  p |- <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))> ->
+  p |- <((c;c2, st, ast, b))> -->*_ds^^os <((ct;c2, stt, astt, bt))>.
 Proof.
   intros. induction H; repeat econstructor; eauto.
 Qed.
 
-Lemma multi_spec_seq : forall c1 c2 cm st ast b stm astm bm ds os,
-  <((c1; c2, st, ast, b))> -->*_ds^^os <((cm, stm, astm, bm))> ->
+Lemma multi_spec_seq : forall p c1 c2 cm st ast b stm astm bm ds os,
+  p |- <((c1; c2, st, ast, b))> -->*_ds^^os <((cm, stm, astm, bm))> ->
   (exists st' ast' b' ds1 ds2 os1 os2,
   os = os1 ++ os2 /\ ds = ds1 ++ ds2 /\
-  <((c1, st, ast, b))> -->*_ds1^^os1 <((skip, st', ast', b'))> /\
-  <((c2, st', ast', b'))> -->*_ds2^^os2 <((cm, stm, astm, bm))>) \/
+  p |- <((c1, st, ast, b))> -->*_ds1^^os1 <((skip, st', ast', b'))> /\
+  p |- <((c2, st', ast', b'))> -->*_ds2^^os2 <((cm, stm, astm, bm))>) \/
   (exists c', cm = <{{ c'; c2 }}> /\
-   <((c1, st, ast, b))> -->*_ds^^os <((c', stm, astm, bm))>).
+   p |- <((c1, st, ast, b))> -->*_ds^^os <((c', stm, astm, bm))>).
 Proof.
   intros. remember <{{ c1; c2 }}> as c. revert c1 c2 Heqc.
   induction H; intros; subst.
@@ -282,14 +282,14 @@ Proof.
   + left. repeat eexists; [constructor|eassumption].
 Qed.
 
-Lemma multi_seq_seq : forall c1 c2 cm st ast stm astm os,
-  <((c1; c2, st, ast))> -->*^os <((cm, stm, astm))> ->
+Lemma multi_seq_seq : forall p c1 c2 cm st ast stm astm os,
+  p |- <((c1; c2, st, ast))> -->*^os <((cm, stm, astm))> ->
   (exists st' ast' os1 os2,
   os = os1 ++ os2 /\
-  <((c1, st, ast))> -->*^os1 <((skip, st', ast'))> /\
-  <((c2, st', ast'))> -->*^os2 <((cm, stm, astm))>) \/
+  p |- <((c1, st, ast))> -->*^os1 <((skip, st', ast'))> /\
+  p |- <((c2, st', ast'))> -->*^os2 <((cm, stm, astm))>) \/
   (exists c', cm = <{{ c'; c2 }}> /\
-   <((c1, st, ast))> -->*^os <((c', stm, astm))>).
+  p |- <((c1, st, ast))> -->*^os <((c', stm, astm))>).
 Proof.
   intros. remember <{{ c1; c2 }}> as c. revert c1 c2 Heqc.
   induction H; intros; subst.
@@ -303,10 +303,10 @@ Proof.
   + left. repeat eexists; [constructor|eassumption].
 Qed.
 
-Lemma multi_spec_seq_assoc c1 c2 c3 st ast b c' st' ast' b' ds os :
-  <(((c1; c2); c3, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+Lemma multi_spec_seq_assoc p c1 c2 c3 st ast b c' st' ast' b' ds os :
+  p |- <(((c1; c2); c3, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
   exists c'', 
-  <((c1; c2; c3, st, ast, b))> -->*_ds^^os <((c'', st', ast', b'))> /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}>).
+  p |- <((c1; c2; c3, st, ast, b))> -->*_ds^^os <((c'', st', ast', b'))> /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}>).
 Proof.
   intros. apply multi_spec_seq in H. destruct H.
   + do 8 destruct H. destruct H0, H1. subst. apply multi_spec_seq in H1. destruct H1.
@@ -325,22 +325,22 @@ Qed.
 
 (** * Definition of Relative Secure *)
 
-Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
+Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
-    <((c, st1, ast1))> -->*^os1 <((c1, stt1, astt1))> ->
-    <((c, st2, ast2))> -->*^os2 <((c2, stt2, astt2))> ->
+    p |- <((c, st1, ast1))> -->*^os1 <((c1, stt1, astt1))> ->
+    p |- <((c, st2, ast2))> -->*^os2 <((c2, stt2, astt2))> ->
     (prefix os1 os2) \/ (prefix os2 os1).
 
-Definition spec_same_obs c st1 st2 ast1 ast2 : Prop :=
+Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
-    <((c, st1, ast1, false))> -->*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
-    <((c, st2, ast2, false))> -->*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
+    p |- <((c, st1, ast1, false))> -->*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
+    p |- <((c, st2, ast2, false))> -->*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
     os1 = os2.
 
-Definition relative_secure (trans : com -> com)
+Definition relative_secure (p:prog) (trans : com -> com)
     (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop :=
-  seq_same_obs c st1 st2 ast1 ast2 ->
-  spec_same_obs (trans c) st1 st2 ast1 ast2.
+  seq_same_obs p c st1 st2 ast1 ast2 ->
+  spec_same_obs p (trans c) st1 st2 ast1 ast2.
 
 (** * Ultimate Speculative Load Hardening *)
 
