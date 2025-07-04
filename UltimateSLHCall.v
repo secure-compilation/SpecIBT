@@ -583,6 +583,7 @@ Proof.
   + now invert H1.
   + now invert H1.
   + now invert H2.
+  + now invert H1.
 Qed.
 
 Lemma ideal_eval_final_spec_bit_false : forall p c st ast ds stt astt os ct,
@@ -599,18 +600,27 @@ Proof.
     - apply IHmulti_ideal; tauto.
 Qed.
 
+Print DForce.
+
 Lemma ideal_eval_small_step_spec_needs_force : forall p c st ast ds ct stt astt os,
   p |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
-  ds = [DForce].
+      ds = [DForce] \/ exists (j:nat), ds = [DForceCall j]. (* Did I specify this correctly? Is this actually true? *)
 Proof.
   intros p c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl in *; try discriminate; auto.
+  right. exists j; auto.
 Qed.
+
+(* Proof.
+  intros p c st ast ds ct stt astt os Hev.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  induction Hev; subst; simpl in *; try discriminate; auto.
+   Qed. *) 
 
 Lemma multi_ideal_spec_needs_force : forall p c st ast ds ct stt astt os,
   p |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
-  In DForce ds.
+  In DForce ds \/ exists (j:nat), In (DForceCall j) ds.
 Proof.
   intros p c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
