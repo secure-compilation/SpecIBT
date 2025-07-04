@@ -400,9 +400,20 @@ Fixpoint ultimate_slh (c:com) :=
   | <{{call e}}> =>
       let e' := if is_empty (vars_aexp e) then e
                                           else <{{("b" = 1) ? 0 : e}}> in
-        <{{call e'}}>
+        <{{"callee" := e'; call e'}}>
 
   end)%string.
+
+Definition add_index {a:Type} (xs:list a) : list (nat * a) :=
+  snd (fold_left (fun p c => let '(i,ys) := p in
+                             (S i, ys ++ [(i,c)]))
+         xs (0,[])).
+
+Definition ultimate_slh_prog (p:prog) :=
+  map (fun p =>
+    let '(i,c) := p in
+    <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}>
+  ) (add_index p).
 
 (*  *)
 
