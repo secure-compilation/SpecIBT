@@ -405,9 +405,7 @@ Fixpoint ultimate_slh (c:com) :=
   end)%string.
 
 Definition add_index {a:Type} (xs:list a) : list (nat * a) :=
-  snd (fold_left (fun p c => let '(i,ys) := p in
-                             (S i, ys ++ [(i,c)]))
-         xs (0,[])).
+  combine (seq 0 (length xs)) xs.
 
 Definition ultimate_slh_prog (p:prog) :=
   map (fun p =>
