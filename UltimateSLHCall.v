@@ -475,11 +475,15 @@ Inductive ideal_eval_small_step (p:prog):
       i' < length (ast a') ->
       p |- <((a[ie] <- e, st, ast, true))> -->i_[DStore a' i']^^[OAWrite a i]
            <((skip, st, a' !-> upd i' (ast a') n; ast, true))>
-
-  | ISM_Call : forall _,
-      aeval st e = i ->
-
-  
+  | ISM_Call : forall e i c st ast b,
+      (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
+      nth_error p i = Some c ->
+      p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall i] <((c, st, ast, b))>
+  | ISM_Call_F : forall e i j c st ast b,
+      (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
+      i <> j ->
+      nth_error p j = Some c ->
+      p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^[OCall i] <((c, st, ast, true))>
           where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (ideal_eval_small_step p c st ast b ct stt astt bt ds os).
 
