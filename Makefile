@@ -1,6 +1,6 @@
 COQMFFLAGS := -Q . SECF
 
-EXCLUDE :=
+EXCLUDE := TestingFlexSLH.v TestingSpecCT.v # they don't yet work for Julay
 ALLVFILES := $(filter-out $(EXCLUDE), $(wildcard *.v))
 
 build: Makefile.coq

@@ -1,5 +1,5 @@
 (** * SpecCT: Speculative Constant-Time *)
-(*
+
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
@@ -4117,4 +4117,4 @@ QuickChick (forAll gen_pub_vars (fun P =>
       | None => checker tt (* If the second execution crashes, this isn't a counterexample *)
       end
     )))))))).
- *)
+

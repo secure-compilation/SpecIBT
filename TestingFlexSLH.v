@@ -1,5 +1,5 @@
 (** * FlexSLH: Selective Ultimate SLH *)
-(*
+
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
@@ -1166,13 +1166,13 @@ QuickChick (
   forAllShrink (sized gen_com) shrink (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  check_ideal_misspeculated_unwinding (exorcised_slh c) s1 s2)))). *)
+  check_ideal_misspeculated_unwinding (exorcised_slh c) s1 s2)))).
 
 (** * Flow-sensitive IFC tracking for flex_slh *)
 
 (* Since we want to apply flex_slh to all programs, without rejecting anything
    as "ill-typed", we implement flow-sensitive static IFC tracking: *)
-(*
+
 Inductive acom : Type :=
   | ASkip
   | AAsgn (x : string) (e : aexp)
@@ -1502,4 +1502,3 @@ QuickChick (forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
   check_ideal_misspeculated_unwinding (flex_slh_acom ac) s1 s2)))))).
- *)
