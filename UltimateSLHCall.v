@@ -604,19 +604,13 @@ Print DForce.
 
 Lemma ideal_eval_small_step_spec_needs_force : forall p c st ast ds ct stt astt os,
   p |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
-      ds = [DForce] \/ exists (j:nat), ds = [DForceCall j]. (* Did I specify this correctly? Is this actually true? *)
+      ds = [DForce] \/ exists (j:nat), ds = [DForceCall j].
 Proof.
   intros p c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl in *; try discriminate; auto.
   right. exists j; auto.
 Qed.
-
-(* Proof.
-  intros p c st ast ds ct stt astt os Hev.
-  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  induction Hev; subst; simpl in *; try discriminate; auto.
-   Qed. *) 
 
 Lemma multi_ideal_spec_needs_force : forall p c st ast ds ct stt astt os,
   p |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
@@ -625,9 +619,14 @@ Proof.
   intros p c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl in *; try discriminate.
-  apply in_or_app. destruct b' eqn:Eqb'.
-  - apply ideal_eval_small_step_spec_needs_force in H. subst. simpl. tauto.
-  - right. apply IHHev; auto.
+  destruct b' eqn:Eqb'.
+  - apply ideal_eval_small_step_spec_needs_force in H.
+    destruct H as [| [j H] ].
+    + subst. simpl. left. tauto.
+    + subst. simpl. right. exists j. tauto.
+  - specialize (IHHev Logic.eq_refl Logic.eq_refl). destruct IHHev as [| [j IH] ].
+    + left. apply in_or_app. right. eassumption.
+    + right. exists j. apply in_or_app. right. eassumption.
 Qed.
 
 Lemma ideal_eval_spec_bit_deterministic :
