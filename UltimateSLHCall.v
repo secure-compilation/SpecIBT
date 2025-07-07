@@ -323,6 +323,8 @@ Proof.
       apply multi_spec_add_snd_com, H.
 Qed.
 
+Print prefix.
+
 (** * Definition of Relative Secure *)
 
 Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
@@ -600,8 +602,6 @@ Proof.
     - apply IHmulti_ideal; tauto.
 Qed.
 
-Print DForce.
-
 Lemma ideal_eval_small_step_spec_needs_force : forall p c st ast ds ct stt astt os,
   p |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
       ds = [DForce] \/ exists (j:nat), ds = [DForceCall j].
@@ -640,9 +640,15 @@ Proof.
   - apply multi_ideal_spec_bit_monotonic in Hev1, Hev2. congruence.
   - destruct bt1, bt2; try reflexivity.
     + apply multi_ideal_spec_needs_force in Hev1.
-      now eapply ideal_eval_final_spec_bit_false in Hev2; [|eassumption].
+      destruct Hev1 as [HevDF | HevDFC].
+      * now eapply ideal_eval_final_spec_bit_false in Hev2; [|eassumption].
+      * destruct HevDFC as [j HevDFC].
+        now eapply ideal_eval_final_spec_bit_false in Hev2; [|eassumption].
     + apply multi_ideal_spec_needs_force in Hev2.
-      now eapply ideal_eval_final_spec_bit_false in Hev1; [|eassumption].
+      destruct Hev2 as [HevDF | HevDFC].
+      * now eapply ideal_eval_final_spec_bit_false in Hev1; [|eassumption].
+      * destruct HevDFC as [j HevDFC].
+        now eapply ideal_eval_final_spec_bit_false in Hev1; [|eassumption].
 Qed.
 
 Lemma ideal_eval_small_step_obs_length : forall p c st ast b ds ct stt astt bt os,
@@ -696,6 +702,7 @@ Proof.
   + specialize (Hds DForce). discriminate Hds. now left.
   + specialize (Hds (DLoad a' i')). discriminate Hds. now left.
   + specialize (Hds (DStore a' i')). discriminate Hds. now left.
+  + specialize (Hds (DForceCall j)). discriminate Hds. now left.
 Qed.
 
 Lemma multi_ideal_no_spec : forall p c st ast ds ct stt astt bt os,
@@ -711,8 +718,14 @@ Proof.
     assert (L2: forall d, In d ds2 -> d = DStep).
     { intros d Hd. apply Hds. apply in_or_app. auto. }
     destruct b' eqn:Eqb'.
-    + apply ideal_eval_small_step_spec_needs_force in H. subst.
-      simpl in L1. specialize (L1 DForce (or_introl (Logic.eq_refl DForce))). discriminate L1.
+    + apply ideal_eval_small_step_spec_needs_force in H.
+      destruct H as [HDF | HDFC].
+      * subst. simpl in L1. 
+        specialize (L1 DForce (or_introl (Logic.eq_refl DForce))). 
+        discriminate L1.
+      * destruct HDFC as [j HDFC]. subst. simpl in L1.
+        specialize (L1 (DForceCall j) (or_introl (Logic.eq_refl (DForceCall j)))).
+        discriminate L1.
     + apply ideal_eval_small_step_no_spec in H; auto.
       eapply multi_seq_trans.
       * eapply H.
@@ -727,33 +740,53 @@ Proof.
   induction H; try now (constructor; rewrite ?orb_true_r, ?andb_false_r).
 Qed. 
 
-Lemma seq_small_step_if_total : forall c be ct cf st ast,
+Lemma seq_small_step_if_total : forall p c be ct cf st ast,
   c = <{{if be then ct else cf end}}> ->
   exists c' stt astt os,
-  <((c, st, ast))> -->^os <((c', stt, astt))> /\ os <> [].
+  p |- <((c, st, ast))> -->^os <((c', stt, astt))> /\ os <> [].
 Proof.
   intros c be ct cf st ast Heq. subst.
-  repeat econstructor. intros Contra. inversion Contra.
+  repeat econstructor; subst.
+  - econstructor.
+  - intros Contra. inversion Contra.
 Qed.
 
-Lemma seq_small_step_to_multi_seq : forall c st ast ct stt astt os,
-  <((c, st, ast))> -->^os <((ct, stt, astt))> ->
-  <((c, st, ast))> -->*^os <((ct, stt, astt))>.
+Lemma seq_small_step_to_multi_seq : forall p c st ast ct stt astt os,
+  p |- <((c, st, ast))> -->^os <((ct, stt, astt))> ->
+  p |- <((c, st, ast))> -->*^os <((ct, stt, astt))>.
 Proof.
-  intros c st ast ct stt astt os Hev.
+  intros p c st ast ct stt astt os Hev.
   rewrite <- app_nil_r. eapply multi_seq_trans; eauto.
   apply multi_seq_refl.
 Qed.
 
-Lemma seq_same_obs_com_if : forall be ct cf st1 st2 ast1 ast2,
-  seq_same_obs <{{ if be then ct else cf end }}> st1 st2 ast1 ast2 ->
+(*
+Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
+  forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
+    p |- <((c, st1, ast1))> -->*^os1 <((c1, stt1, astt1))> ->
+    p |- <((c, st2, ast2))> -->*^os2 <((c2, stt2, astt2))> ->
+    (prefix os1 os2) \/ (prefix os2 os1).
+
+*)
+
+(*
+Reserved Notation
+  "p '|-' '<((' c , st , ast '))>' '-->^' os '<((' ct , stt , astt '))>'"
+  (at level 40, c custom com at level 99, ct custom com at level 99,
+   st constr, ast constr, stt constr, astt constr at next level).
+
+*)
+
+Lemma seq_same_obs_com_if (p:prog) : forall be ct cf st1 st2 ast1 ast2,
+  seq_same_obs p <{{ if be then ct else cf end }}> st1 st2 ast1 ast2 ->
   beval st1 be = beval st2 be.
 Proof.
   intros be ct cf st1 st2 ast1 ast2 Hsec.
   remember <{{if be then ct else cf end}}> as c eqn:Eqc.
-  assert (L1: exists c' stt astt os, <((c, st1, ast1))> -->^os <((c', stt, astt))> /\ os <> []).
-  { eapply seq_small_step_if_total; eauto. }
-  assert (L2: exists c' stt astt os, <((c, st2, ast2))> -->^os <((c', stt, astt))> /\ os <> []).
+  (* assert (L1: exists p c' stt astt os, p |- <((c, st1, ast1))> -->^os <((c', stt, astt))> /\ os <> []). *)
+  assert (L1: exists c' stt astt os, p |- <((c, st1, ast1))> -->^os <((c', stt, astt))> /\ os <> []).
+  { eapply seq_small_step_if_total; eauto. }   
+  assert (L2: exists c' stt astt os, p |- <((c, st2, ast2))> -->^os <((c', stt, astt))> /\ os <> []).
   { eapply seq_small_step_if_total; eauto. }
   destruct L1 as [c1 [stt1 [astt1 [os1 [Hev1 Hneq1] ] ] ] ].
   destruct L2 as [c2 [stt2 [astt2 [os2 [Hev2 Hneq2] ] ] ] ].
@@ -769,11 +802,11 @@ Proof.
       * apply prefix_heads in Hpre. inversion Hpre; auto.
 Qed.
 
-Lemma multi_seq_add_snd_com : forall c st ast ct stt astt os c2,
-  <((c, st, ast))> -->*^os <((ct, stt, astt))> ->
-  <((c;c2, st, ast))> -->*^os <((ct;c2, stt, astt))>.
+Lemma multi_seq_add_snd_com : forall p c st ast ct stt astt os c2,
+  p |- <((c, st, ast))> -->*^os <((ct, stt, astt))> ->
+  p |- <((c;c2, st, ast))> -->*^os <((ct;c2, stt, astt))>.
 Proof.
-  intros c st ast ct stt astt os c2 Hev.
+  intros p c st ast ct stt astt os c2 Hev.
   induction Hev.
   - apply multi_seq_refl.
   - eapply multi_seq_trans.
@@ -781,19 +814,51 @@ Proof.
     + apply IHHev.
 Qed.
 
-Lemma seq_same_obs_com_seq : forall c1 c2 st1 st2 ast1 ast2,
-  seq_same_obs <{{ c1; c2 }}> st1 st2 ast1 ast2 ->
-  seq_same_obs c1 st1 st2 ast1 ast2.
+Lemma seq_same_obs_com_seq (p:prog) : forall c1 c2 st1 st2 ast1 ast2,
+  seq_same_obs p <{{ c1; c2 }}> st1 st2 ast1 ast2 ->
+  seq_same_obs p c1 st1 st2 ast1 ast2.
 Proof.
   intros c1 c2 st1 st2 ast1 ast2 Hsec. unfold seq_same_obs.
   intros stt1 stt2 astt1 astt2 os1 os2 ct1 ct2 Hev1 Hev2.
   eapply multi_seq_add_snd_com in Hev1, Hev2. eapply Hsec in Hev2; eauto.
 Qed.
 
-Lemma ideal_one_step_force_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
-  seq_same_obs c st1 st2 ast1 ast2 ->
-  <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
-  <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct, stt2, astt2, true))> ->
+(*
+Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
+  forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
+    p |- <((c, st1, ast1))> -->*^os1 <((c1, stt1, astt1))> ->
+    p |- <((c, st2, ast2))> -->*^os2 <((c2, stt2, astt2))> ->
+    (prefix os1 os2) \/ (prefix os2 os1).
+
+*)
+
+(*
+Inductive observation : Set :=
+    OBranch : bool -> observation
+  | OARead : string -> nat -> observation
+  | OAWrite : string -> nat -> observation
+  | OCall : nat -> observation.
+
+*)
+
+Lemma seq_same_obs_com_call (p:prog) : forall e st1 st2 ast1 ast2,
+  seq_same_obs p <{{call e}}> st1 st2 ast1 ast2 ->
+  aeval st1 e = aeval st2 e.
+Proof.
+  (* intros e st1 st2 ast1 ast2 H. unfold seq_same_obs in H.
+  remember <{{call e}}> as c eqn:Eqc. 
+  assert (L1: exists c' stt astt os, p |- <((c, st1, ast1))> -->^os <((c', stt, astt))> /\ os <> []).
+  { eapply seq_small_step_if_total; eauto. }   
+  assert (L2: exists c' stt astt os, p |- <((c, st2, ast2))> -->^os <((c', stt, astt))> /\ os <> []).
+  { eapply seq_small_step_if_total; eauto. }
+  destruct L1 as [c1 [stt1 [astt1 [os1 [Hev1 Hneq1] ] ] ] ].
+     destruct L2 as [c2 [stt2 [astt2 [os2 [Hev2 Hneq2] ] ] ] ]. *)
+Admitted.
+
+Lemma ideal_one_step_force_obs (p:prog) : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+  seq_same_obs p c st1 st2 ast1 ast2 ->
+  p |- <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
+  p |- <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct, stt2, astt2, true))> ->
   os1 = os2.
 Proof.
   intros c ct st ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 Hobs Hev1.
@@ -805,7 +870,10 @@ Proof.
   try discriminate.
   - eapply IHHev1; eauto. eapply seq_same_obs_com_seq; eauto.
   - apply seq_same_obs_com_if in Hobs. rewrite Hobs. reflexivity.
+  - apply seq_same_obs_com_call in Hobs. rewrite Hobs; auto.
 Qed.
+
+
 
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
