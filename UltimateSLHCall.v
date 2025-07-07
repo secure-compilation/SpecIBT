@@ -841,13 +841,29 @@ Inductive observation : Set :=
 
 *)
 
+
 Lemma seq_same_obs_com_call (p:prog) : forall e st1 st2 ast1 ast2,
   seq_same_obs p <{{call e}}> st1 st2 ast1 ast2 ->
-  aeval st1 e = aeval st2 e.
+  aeval st1 e = aeval st2 e. (* I think this is still true for calls... *)
 Proof.
-  (* intros e st1 st2 ast1 ast2 H. unfold seq_same_obs in H.
-  remember <{{call e}}> as c eqn:Eqc. 
-  assert (L1: exists c' stt astt os, p |- <((c, st1, ast1))> -->^os <((c', stt, astt))> /\ os <> []).
+  intros e st1 st2 ast1 ast2 H. unfold seq_same_obs in H.
+  remember <{{call e}}> as c eqn:Eqc.
+
+  (* however. I am not sure that a seq_small_step_call_total is plausible.
+     Can I say that given call e, it can always small-step sequentially to some c'? No.
+     The small-step semantics for call e contain the premise checking for OOB indices. 
+     If this premise fails -- if call is given an unsuitable argument e -- then the 
+     program gets stuck.
+
+     I think the solution will be something along the lines of building in the premise
+     that checks for OOB indices to whatever lemma I wind up writing, so that it is not
+     about totality anymore but does establish conditions under which the command can succeed, 
+     so that I can in the end assert that if e is the same for both runs, then evaluating
+     it from two arbitrary start states will produce the same result.
+    
+      *)
+
+  (* assert (L1: exists c' stt astt os, p |- <((c, st1, ast1))> -->^os <((c', stt, astt))> /\ os <> []).
   { eapply seq_small_step_if_total; eauto. }   
   assert (L2: exists c' stt astt os, p |- <((c, st2, ast2))> -->^os <((c', stt, astt))> /\ os <> []).
   { eapply seq_small_step_if_total; eauto. }
