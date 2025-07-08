@@ -198,11 +198,20 @@ Inductive spec_eval_small_step (p:prog) :
       aeval st e = i ->
       nth_error p i = Some c ->
       p |- <((call e, st, ast, b))> -->_[DStep]^^[OCall i] <((c, st, ast, b))>
-  | SpecSM_Call_F : forall e i j c st ast b,
+  | SpecSM_Call_F : forall e i j c st ast b os,
       aeval st e = i ->
       i <> j ->
       nth_error p j = Some c ->
-      p |- <((call e, st, ast, b))> -->_[DForceCall j]^^[OCall i] <((c, st, ast, true))>
+      os = (match nth_error p i with
+          | Some _ => [OCall i]
+          | None => []
+          end) ->
+      p |- <((call e, st, ast, b))> -->_[DForceCall j]^^os <((c, st, ast, true))>
+          (* | SpecSM_Call_F : forall e i j c st ast b,
+      aeval st e = i ->
+      i <> j ->
+      nth_error p j = Some c ->
+             p |- <((call e, st, ast, b))> -->_[DForceCall j]^^[OCall i] <((c, st, ast, true))> *)
 
   where "p |- <(( c , st , ast , b ))> -->_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (spec_eval_small_step p c st ast b ct stt astt bt ds os).
@@ -486,11 +495,16 @@ Inductive ideal_eval_small_step (p:prog):
       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
       nth_error p i = Some c ->
       p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall i] <((c, st, ast, b))>
-  | ISM_Call_F : forall e i j c st ast b,
+  | ISM_Call_F : forall e i j c st ast b os,
       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
       i <> j ->
       nth_error p j = Some c ->
-      p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^[OCall i] <((c, st, ast, true))>
+      os = (match nth_error p i with
+          | Some _ => [OCall i]
+          | None => []
+         end) ->
+      p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^os <((c, st, ast, true))>
+
           where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (ideal_eval_small_step p c st ast b ct stt astt bt ds os).
 
@@ -656,12 +670,13 @@ Proof.
         now eapply ideal_eval_final_spec_bit_false in Hev1; [|eassumption].
 Qed.
 
+(* no longer true, if nth_error p i = None... *)
 Lemma ideal_eval_small_step_obs_length : forall p c st ast b ds ct stt astt bt os,
   p |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
   length ds = length os.
 Proof.
   intros p c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
-Qed.
+Admitted.
 
 Lemma multi_ideal_obs_length : forall p c st ast b ds ct stt astt bt os,
   p |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
@@ -820,39 +835,37 @@ Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
 
 *)
 
-Lemma seq_same_obs_call :
-  forall p e st1 st2 ast1 ast2,
-    seq_same_obs p <{{ call e }}> st1 st2 ast1 ast2 ->
-    aeval st1 e = aeval st2 e.
-Proof.
-Admitted. (* is this lemma even valid? *)
 
 Definition initiates_speculation (d : direction) : Prop :=
   match d with
-  | DForce => True
-  | DForceCall _ => True
+  | DForce | DForceCall _ => True
   | _ => False
   end.
 
 Lemma ideal_one_step_force_obs (p:prog) :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 d,
-    initiates_speculation d ->
-    seq_same_obs p c st1 st2 ast1 ast2 ->
+  seq_same_obs p c st1 st2 ast1 ast2 ->
     p |- <((c, st1, ast1, false))> -->i_[d]^^os1 <((ct, stt1, astt1, true))> ->
     p |- <((c, st2, ast2, false))> -->i_[d]^^os2 <((ct, stt2, astt2, true))> ->
     os1 = os2.
 Proof.
-  intros c ct st ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 d Hspec Hobs Hev1.
+  intros c ct st ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 d Hobs Hev1.
   generalize dependent os2; generalize dependent astt2;
   generalize dependent stt2; generalize dependent ast2;
   generalize dependent st2.
+  assert (Hspec: initiates_speculation d).
+  { eapply ideal_eval_small_step_spec_needs_force in Hev1.
+    destruct Hev1.
+    - invert H. simpl. auto.
+    - invert H. invert H0. simpl. auto.
+  }
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  induction Hev1; intros st2 ast2 Hobs stt2 astt2 os2 Hev2; try (inversion Hev2; subst; auto); try discriminate.
+    induction Hev1; intros st2 ast2 Hobs stt2 astt2 os2 Hev2; try (inversion Hev2; subst; auto); try discriminate.
   - eapply IHHev1; eauto. eapply seq_same_obs_com_seq; eauto.
   - apply seq_same_obs_com_if in Hobs. rewrite Hobs. reflexivity.
-  - destruct (negb (is_empty (vars_aexp e)) && false); auto.
-    f_equal. f_equal. eapply seq_same_obs_call; eauto.
-Qed.
+  - Admitted.
+
+
 
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
