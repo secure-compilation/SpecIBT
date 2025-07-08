@@ -331,18 +331,21 @@ Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
     p |- <((c, st1, ast1))> -->*^os1 <((c1, stt1, astt1))> ->
     p |- <((c, st2, ast2))> -->*^os2 <((c2, stt2, astt2))> ->
-    (prefix os1 os2) \/ (prefix os2 os1).
+    (prefix os1 os2) \/ (prefix os2 os1). (* prefix so that we can be termination-insensitive? *)
 
 Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
     p |- <((c, st1, ast1, false))> -->*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
     p |- <((c, st2, ast2, false))> -->*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
-    os1 = os2.
+    os1 = os2. (* prefix not applicable here bc rollback eventually happens? *)
 
 Definition relative_secure (p:prog) (trans : com -> com)
     (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop :=
   seq_same_obs p c st1 st2 ast1 ast2 ->
   spec_same_obs p (trans c) st1 st2 ast1 ast2.
+  (* if we had observational equivalence to begin with, this is preserved by the hardened program
+     I don't see this definition saying that the hardened program can't leak more than the sequential 
+     program did, though. *)
 
 (** * Ultimate Speculative Load Hardening *)
 
@@ -373,6 +376,8 @@ with vars_bexp (a:bexp) : list string :=
   | <{ ~b }> => vars_bexp b
   | <{ b1 && b2 }> => vars_bexp b1 ++ vars_bexp b2
   end.
+
+
 
 Fixpoint ultimate_slh (c:com) :=
   (match c with
@@ -760,23 +765,6 @@ Proof.
   apply multi_seq_refl.
 Qed.
 
-(*
-Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
-  forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
-    p |- <((c, st1, ast1))> -->*^os1 <((c1, stt1, astt1))> ->
-    p |- <((c, st2, ast2))> -->*^os2 <((c2, stt2, astt2))> ->
-    (prefix os1 os2) \/ (prefix os2 os1).
-
-*)
-
-(*
-Reserved Notation
-  "p '|-' '<((' c , st , ast '))>' '-->^' os '<((' ct , stt , astt '))>'"
-  (at level 40, c custom com at level 99, ct custom com at level 99,
-   st constr, ast constr, stt constr, astt constr at next level).
-
-*)
-
 Lemma seq_same_obs_com_if (p:prog) : forall be ct cf st1 st2 ast1 ast2,
   seq_same_obs p <{{ if be then ct else cf end }}> st1 st2 ast1 ast2 ->
   beval st1 be = beval st2 be.
@@ -832,64 +820,39 @@ Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
 
 *)
 
-(*
-Inductive observation : Set :=
-    OBranch : bool -> observation
-  | OARead : string -> nat -> observation
-  | OAWrite : string -> nat -> observation
-  | OCall : nat -> observation.
-
-*)
-
-
-Lemma seq_same_obs_com_call (p:prog) : forall e st1 st2 ast1 ast2,
-  seq_same_obs p <{{call e}}> st1 st2 ast1 ast2 ->
-  aeval st1 e = aeval st2 e. (* I think this is still true for calls... *)
+Lemma seq_same_obs_call :
+  forall p e st1 st2 ast1 ast2,
+    seq_same_obs p <{{ call e }}> st1 st2 ast1 ast2 ->
+    aeval st1 e = aeval st2 e.
 Proof.
-  intros e st1 st2 ast1 ast2 H. unfold seq_same_obs in H.
-  remember <{{call e}}> as c eqn:Eqc.
+Admitted. (* is this lemma even valid? *)
 
-  (* however. I am not sure that a seq_small_step_call_total is plausible.
-     Can I say that given call e, it can always small-step sequentially to some c'? No.
-     The small-step semantics for call e contain the premise checking for OOB indices. 
-     If this premise fails -- if call is given an unsuitable argument e -- then the 
-     program gets stuck.
+Definition initiates_speculation (d : direction) : Prop :=
+  match d with
+  | DForce => True
+  | DForceCall _ => True
+  | _ => False
+  end.
 
-     I think the solution will be something along the lines of building in the premise
-     that checks for OOB indices to whatever lemma I wind up writing, so that it is not
-     about totality anymore but does establish conditions under which the command can succeed, 
-     so that I can in the end assert that if e is the same for both runs, then evaluating
-     it from two arbitrary start states will produce the same result.
-    
-      *)
-
-  (* assert (L1: exists c' stt astt os, p |- <((c, st1, ast1))> -->^os <((c', stt, astt))> /\ os <> []).
-  { eapply seq_small_step_if_total; eauto. }   
-  assert (L2: exists c' stt astt os, p |- <((c, st2, ast2))> -->^os <((c', stt, astt))> /\ os <> []).
-  { eapply seq_small_step_if_total; eauto. }
-  destruct L1 as [c1 [stt1 [astt1 [os1 [Hev1 Hneq1] ] ] ] ].
-     destruct L2 as [c2 [stt2 [astt2 [os2 [Hev2 Hneq2] ] ] ] ]. *)
-Admitted.
-
-Lemma ideal_one_step_force_obs (p:prog) : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
-  seq_same_obs p c st1 st2 ast1 ast2 ->
-  p |- <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
-  p |- <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct, stt2, astt2, true))> ->
-  os1 = os2.
+Lemma ideal_one_step_force_obs (p:prog) :
+  forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 d,
+    initiates_speculation d ->
+    seq_same_obs p c st1 st2 ast1 ast2 ->
+    p |- <((c, st1, ast1, false))> -->i_[d]^^os1 <((ct, stt1, astt1, true))> ->
+    p |- <((c, st2, ast2, false))> -->i_[d]^^os2 <((ct, stt2, astt2, true))> ->
+    os1 = os2.
 Proof.
-  intros c ct st ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 Hobs Hev1.
+  intros c ct st ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 d Hspec Hobs Hev1.
   generalize dependent os2; generalize dependent astt2;
   generalize dependent stt2; generalize dependent ast2;
   generalize dependent st2.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  induction Hev1; intros st2 ast2 Hobs stt2 astt2 os2 Hev2; try(inversion Hev2; subst; auto);
-  try discriminate.
+  induction Hev1; intros st2 ast2 Hobs stt2 astt2 os2 Hev2; try (inversion Hev2; subst; auto); try discriminate.
   - eapply IHHev1; eauto. eapply seq_same_obs_com_seq; eauto.
   - apply seq_same_obs_com_if in Hobs. rewrite Hobs. reflexivity.
-  - apply seq_same_obs_com_call in Hobs. rewrite Hobs; auto.
+  - destruct (negb (is_empty (vars_aexp e)) && false); auto.
+    f_equal. f_equal. eapply seq_same_obs_call; eauto.
 Qed.
-
-
 
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
