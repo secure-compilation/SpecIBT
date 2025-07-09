@@ -856,13 +856,32 @@ Proof.
   generalize dependent stt2; generalize dependent ast2;
   generalize dependent st2.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  remember DForce as d. revert Heqd.
+  remember [DForce] as d. revert Heqd.
   induction Hev1; intros Heqd st2 ast2 Hobs stt2 astt2 os2 Hev2;
   try(inversion Hev2; subst; auto); try discriminate.
   - eapply IHHev1; eauto. eapply seq_same_obs_com_seq; eauto.
   - apply seq_same_obs_com_if in Hobs. rewrite Hobs. reflexivity.
-  - 
 Qed.
+
+Lemma ideal_one_step_forcecall_obs (p:prog) :
+  forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 j,
+  seq_same_obs p c st1 st2 ast1 ast2 ->
+    p |- <((c, st1, ast1, false))> -->i_[(DForceCall j)]^^os1 <((ct, stt1, astt1, true))> ->
+    p |- <((c, st2, ast2, false))> -->i_[(DForceCall j)]^^os2 <((ct, stt2, astt2, true))> ->
+    os1 = os2.
+Proof.
+  intros c ct st ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 j Hobs Hev1.
+  generalize dependent os2; generalize dependent astt2;
+  generalize dependent stt2; generalize dependent ast2;
+  generalize dependent st2.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  remember [(DForceCall j)] as d. revert Heqd.
+  induction Hev1; intros Heqd st2 ast2 Hobs stt2 astt2 os2 Hev2;
+  try(inversion Hev2; subst; auto); try discriminate.
+  - eapply IHHev1; eauto. eapply seq_same_obs_com_seq; eauto.
+  -     
+Qed.
+
 
 (*
 Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
