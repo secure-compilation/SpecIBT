@@ -63,6 +63,8 @@ with bexp : Type :=
   | BNot (b : bexp)
   | BAnd (b1 b2 : bexp).
 
+Definition BOr b1 b2 := BNot (BAnd (BNot b1) (BNot b2)).
+
 Scheme aexp_bexp_ind := Induction for aexp Sort Prop
 with bexp_aexp_ind := Induction for bexp Sort Prop.
 Combined Scheme aexp_bexp_mutind from aexp_bexp_ind,bexp_aexp_ind.
@@ -173,6 +175,7 @@ Notation "x > y"   := (BGt x y) (in custom com at level 70, no associativity).
 Notation "x = y"   := (BEq x y) (in custom com at level 70, no associativity).
 Notation "x <> y"  := (BNeq x y) (in custom com at level 70, no associativity).
 Notation "x && y"  := (BAnd x y) (in custom com at level 80, left associativity).
+Notation "x || y"  := (BOr x y) (in custom com at level 80, left associativity).
 Notation "'~' b"   := (BNot b) (in custom com at level 75, right associativity).
 
 Open Scope com_scope.
