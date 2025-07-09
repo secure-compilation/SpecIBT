@@ -49,6 +49,7 @@ Inductive seq_eval_small_step (p:prog) :
       aeval st e = n ->
       p |- <((x := e, st, ast))> -->^[] <((skip, x !-> n; st, ast))>
   | SSM_Seq : forall c1 st ast os c1t stt astt c2,
+
       p |- <((c1, st, ast))>  -->^os <((c1t, stt, astt))>  ->
       p |- <(((c1;c2), st, ast))>  -->^os <(((c1t;c2), stt, astt))>
   | SSM_Seq_Skip : forall st ast c2,
@@ -75,7 +76,7 @@ Inductive seq_eval_small_step (p:prog) :
   | SSM_Call : forall e i c st ast,
       aeval st e = i ->
       nth_error p i = Some c ->
-      p |- <((call e, st, ast))> -->^[OCall i] <((c, st, ast))>
+      p |- <((call e, st, ast))> -->^[OCall (Some i)] <((c, st, ast))>
 
   where "p |- <(( c , st , ast ))> -->^ os  <(( ct ,  stt , astt ))>" :=
     (seq_eval_small_step p c st ast ct stt astt os).
@@ -197,16 +198,21 @@ Inductive spec_eval_small_step (p:prog) :
   | SpecSM_Call : forall e i c st ast b,
       aeval st e = i ->
       nth_error p i = Some c ->
-      p |- <((call e, st, ast, b))> -->_[DStep]^^[OCall i] <((c, st, ast, b))>
+      p |- <((call e, st, ast, b))> -->_[DStep]^^[OCall (Some i)] <((c, st, ast, b))>
   | SpecSM_Call_F : forall e i j c st ast b os,
       aeval st e = i ->
       i <> j ->
       nth_error p j = Some c ->
-      os = (match nth_error p i with
+      os = [OCall (option_map (fun _ => i) (nth_error p i))] ->
+      (* os = (match nth_error p i with
           | Some _ => [OCall i]
           | None => []
-          end) ->
+         end) -> *)
       p |- <((call e, st, ast, b))> -->_[DForceCall j]^^os <((c, st, ast, true))>
+
+          (*  *)
+
+
           (* | SpecSM_Call_F : forall e i j c st ast b,
       aeval st e = i ->
       i <> j ->
@@ -494,15 +500,16 @@ Inductive ideal_eval_small_step (p:prog):
   | ISM_Call : forall e i c st ast b,
       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
       nth_error p i = Some c ->
-      p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall i] <((c, st, ast, b))>
+      p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall (Some i)] <((c, st, ast, b))>
   | ISM_Call_F : forall e i j c st ast b os,
       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
       i <> j ->
       nth_error p j = Some c ->
-      os = (match nth_error p i with
+      os = [OCall (option_map (fun _ => i) (nth_error p i))] ->
+      (* os = (match nth_error p i with
           | Some _ => [OCall i]
           | None => []
-         end) ->
+         end) -> *)
       p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^os <((c, st, ast, true))>
 
           where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
@@ -676,7 +683,8 @@ Lemma ideal_eval_small_step_obs_length : forall p c st ast b ds ct stt astt bt o
   length ds = length os.
 Proof.
   intros p c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
-Admitted.
+  subst. auto.
+Qed.
 
 Lemma multi_ideal_obs_length : forall p c st ast b ds ct stt astt bt os,
   p |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
@@ -826,6 +834,36 @@ Proof.
   eapply multi_seq_add_snd_com in Hev1, Hev2. eapply Hsec in Hev2; eauto.
 Qed.
 
+
+(* Definition initiates_speculation (d : direction) : Prop :=
+  match d with
+  | DForce | DForceCall _ => True
+  | _ => False
+   end. *)
+
+
+(* trying to push this through just for DForce and then write a 
+   separate lemma for DForceCall *)
+Lemma ideal_one_step_force_obs (p:prog) :
+  forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+  seq_same_obs p c st1 st2 ast1 ast2 ->
+    p |- <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
+    p |- <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct, stt2, astt2, true))> ->
+    os1 = os2.
+Proof.
+  intros c ct st ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 Hobs Hev1.
+  generalize dependent os2; generalize dependent astt2;
+  generalize dependent stt2; generalize dependent ast2;
+  generalize dependent st2.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  remember DForce as d. revert Heqd.
+  induction Hev1; intros Heqd st2 ast2 Hobs stt2 astt2 os2 Hev2;
+  try(inversion Hev2; subst; auto); try discriminate.
+  - eapply IHHev1; eauto. eapply seq_same_obs_com_seq; eauto.
+  - apply seq_same_obs_com_if in Hobs. rewrite Hobs. reflexivity.
+  - 
+Qed.
+
 (*
 Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
@@ -834,37 +872,6 @@ Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
     (prefix os1 os2) \/ (prefix os2 os1).
 
 *)
-
-
-Definition initiates_speculation (d : direction) : Prop :=
-  match d with
-  | DForce | DForceCall _ => True
-  | _ => False
-  end.
-
-Lemma ideal_one_step_force_obs (p:prog) :
-  forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 d,
-  seq_same_obs p c st1 st2 ast1 ast2 ->
-    p |- <((c, st1, ast1, false))> -->i_[d]^^os1 <((ct, stt1, astt1, true))> ->
-    p |- <((c, st2, ast2, false))> -->i_[d]^^os2 <((ct, stt2, astt2, true))> ->
-    os1 = os2.
-Proof.
-  intros c ct st ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 d Hobs Hev1.
-  generalize dependent os2; generalize dependent astt2;
-  generalize dependent stt2; generalize dependent ast2;
-  generalize dependent st2.
-  assert (Hspec: initiates_speculation d).
-  { eapply ideal_eval_small_step_spec_needs_force in Hev1.
-    destruct Hev1.
-    - invert H. simpl. auto.
-    - invert H. invert H0. simpl. auto.
-  }
-  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-    induction Hev1; intros st2 ast2 Hobs stt2 astt2 os2 Hev2; try (inversion Hev2; subst; auto); try discriminate.
-  - eapply IHHev1; eauto. eapply seq_same_obs_com_seq; eauto.
-  - apply seq_same_obs_com_if in Hobs. rewrite Hobs. reflexivity.
-  - Admitted.
-
 
 
 (** * Relative Security of Ultimate Speculative Load Hardening *)
