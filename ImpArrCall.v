@@ -320,7 +320,7 @@ Inductive observation : Type :=
   | OBranch (b : bool)
   | OARead (a : string) (i : nat)
   | OAWrite (a : string) (i : nat)
-  | OCall (i : nat).
+  | OCall (i : option nat).
 
 Definition obs := list observation.
 
