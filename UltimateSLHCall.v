@@ -204,20 +204,7 @@ Inductive spec_eval_small_step (p:prog) :
       i <> j ->
       nth_error p j = Some c ->
       os = [OCall (option_map (fun _ => i) (nth_error p i))] ->
-      (* os = (match nth_error p i with
-          | Some _ => [OCall i]
-          | None => []
-         end) -> *)
       p |- <((call e, st, ast, b))> -->_[DForceCall j]^^os <((c, st, ast, true))>
-
-          (*  *)
-
-
-          (* | SpecSM_Call_F : forall e i j c st ast b,
-      aeval st e = i ->
-      i <> j ->
-      nth_error p j = Some c ->
-             p |- <((call e, st, ast, b))> -->_[DForceCall j]^^[OCall i] <((c, st, ast, true))> *)
 
   where "p |- <(( c , st , ast , b ))> -->_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (spec_eval_small_step p c st ast b ct stt astt bt ds os).
@@ -346,22 +333,19 @@ Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
     p |- <((c, st1, ast1))> -->*^os1 <((c1, stt1, astt1))> ->
     p |- <((c, st2, ast2))> -->*^os2 <((c2, stt2, astt2))> ->
-    (prefix os1 os2) \/ (prefix os2 os1). (* prefix so that we can be termination-insensitive? *)
+    (prefix os1 os2) \/ (prefix os2 os1). 
 
 Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
     p |- <((c, st1, ast1, false))> -->*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
     p |- <((c, st2, ast2, false))> -->*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
-    os1 = os2. (* prefix not applicable here bc rollback eventually happens? *)
+    os1 = os2. 
 
 Definition relative_secure (p:prog) (trans : com -> com)
     (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop :=
   seq_same_obs p c st1 st2 ast1 ast2 ->
   spec_same_obs p (trans c) st1 st2 ast1 ast2.
-  (* if we had observational equivalence to begin with, this is preserved by the hardened program
-     I don't see this definition saying that the hardened program can't leak more than the sequential 
-     program did, though. *)
-
+  
 (** * Ultimate Speculative Load Hardening *)
 
 Definition is_empty {A} (l:list A) := match l with [] => true | _ => false end.
@@ -506,13 +490,9 @@ Inductive ideal_eval_small_step (p:prog):
       i <> j ->
       nth_error p j = Some c ->
       os = [OCall (option_map (fun _ => i) (nth_error p i))] ->
-      (* os = (match nth_error p i with
-          | Some _ => [OCall i]
-          | None => []
-         end) -> *)
       p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^os <((c, st, ast, true))>
 
-          where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
+    where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (ideal_eval_small_step p c st ast b ct stt astt bt ds os).
 
 (* HIDE: This one now has again `_U` cases because of out-of-bounds array
@@ -841,9 +821,6 @@ Qed.
   | _ => False
    end. *)
 
-
-(* trying to push this through just for DForce and then write a 
-   separate lemma for DForceCall *)
 Lemma ideal_one_step_force_obs (p:prog) :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs p c st1 st2 ast1 ast2 ->
@@ -863,6 +840,7 @@ Proof.
   - apply seq_same_obs_com_if in Hobs. rewrite Hobs. reflexivity.
 Qed.
 
+(* This lemma has been much more intractable than I expected. Not sure why. *)
 Lemma ideal_one_step_forcecall_obs (p:prog) :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 j,
   seq_same_obs p c st1 st2 ast1 ast2 ->
@@ -875,13 +853,23 @@ Proof.
   generalize dependent stt2; generalize dependent ast2;
   generalize dependent st2.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  remember [(DForceCall j)] as d. revert Heqd.
-  induction Hev1; intros Heqd st2 ast2 Hobs stt2 astt2 os2 Hev2;
-  try(inversion Hev2; subst; auto); try discriminate.
-  - eapply IHHev1; eauto. eapply seq_same_obs_com_seq; eauto.
-  -     
-Qed.
-
+  remember [(DForceCall j)] as d. revert Heqd. revert j.
+  induction Hev1; try discriminate; intros.
+  - apply IHHev1 with (j:=j) (st2:=st2) (ast2:=ast2) (stt2:=stt2) (astt2:=astt2); subst; auto.
+    + apply seq_same_obs_com_seq with (c2:=c2); assumption.
+    + apply ISM_Seq with (c2:=c2) in Hev1. apply seq_same_obs_com_seq in Hobs. 
+      admit.
+  - apply ISM_Call_F with (p:=p) (j:=j) (c:=c) (ast:=ast) (os:=os) in H; subst; auto.
+    (* need more information about os2 *)     
+Admitted.    
+(* 
+| ISM_Call_F : forall e i j c st ast b os,
+      (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
+      i <> j ->
+      nth_error p j = Some c ->
+      os = [OCall (option_map (fun _ => i) (nth_error p i))] ->
+      p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^os <((c, st, ast, true))>
+*)
 
 (*
 Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
@@ -891,7 +879,6 @@ Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop :=
     (prefix os1 os2) \/ (prefix os2 os1).
 
 *)
-
 
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
