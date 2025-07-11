@@ -73,10 +73,12 @@ Inductive seq_eval_small_step (p:prog) :
       i < length (ast a) ->
       p |- <((a[ie] <- e, st, ast))> -->^[OAWrite a i]
            <((skip, st, a !-> upd i (ast a) n; ast))>
+  (* we still only take a sequential step if the index is in bounds,
+     but the observation does not include the index *)
   | SSM_Call : forall e i c st ast,
       aeval st e = i ->
       nth_error p i = Some c ->
-      p |- <((call e, st, ast))> -->^[OCall (Some i)] <((c, st, ast))>
+      p |- <((call e, st, ast))> -->^[OCall] <((c, st, ast))>
 
   where "p |- <(( c , st , ast ))> -->^ os  <(( ct ,  stt , astt ))>" :=
     (seq_eval_small_step p c st ast ct stt astt os).
@@ -120,7 +122,7 @@ Lemma seq_small_step_obs_type : forall p c st1 ast1 stt1 astt1 ct1 os1 ct2 st2 a
   | OBranch _ :: os => exists b, os1 = OBranch b :: os
   | OARead _ _ :: os => exists a i, os1 = OARead a i :: os
   | OAWrite _ _ :: os => exists a i, os1 = OAWrite a i :: os
-  | OCall _ :: os => exists i, os1 = OCall i :: os
+  | OCall :: os => os1 = OCall :: os
   end.
 Proof.
   intros p; induction c; intros st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2 H1 H2;
@@ -198,13 +200,13 @@ Inductive spec_eval_small_step (p:prog) :
   | SpecSM_Call : forall e i c st ast b,
       aeval st e = i ->
       nth_error p i = Some c ->
-      p |- <((call e, st, ast, b))> -->_[DStep]^^[OCall (Some i)] <((c, st, ast, b))>
-  | SpecSM_Call_F : forall e i j c st ast b os,
+      p |- <((call e, st, ast, b))> -->_[DStep]^^[OCall] <((c, st, ast, b))>
+  | SpecSM_Call_F : forall e i c st ast b,
       aeval st e = i ->
-      i <> j ->
-      nth_error p j = Some c ->
-      os = [OCall (option_map (fun _ => i) (nth_error p i))] ->
-      p |- <((call e, st, ast, b))> -->_[DForceCall j]^^os <((c, st, ast, true))>
+      (* i <> j ->
+         nth_error p j = Some c -> *)
+      (* os = [OCall (option_map (fun _ => i) (nth_error p i))] -> *)
+      p |- <((call e, st, ast, b))> -->_[DForceCall]^^[OCall] <((c, st, ast, true))>
 
   where "p |- <(( c , st , ast , b ))> -->_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (spec_eval_small_step p c st ast b ct stt astt bt ds os).
@@ -324,8 +326,6 @@ Proof.
     - destruct H as (c'&->&H). exists <{{ c'; c2; c3 }}>. split; [|discriminate].
       apply multi_spec_add_snd_com, H.
 Qed.
-
-Print prefix.
 
 (** * Definition of Relative Secure *)
 
@@ -484,13 +484,13 @@ Inductive ideal_eval_small_step (p:prog):
   | ISM_Call : forall e i c st ast b,
       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
       nth_error p i = Some c ->
-      p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall (Some i)] <((c, st, ast, b))>
-  | ISM_Call_F : forall e i j c st ast b os,
+      p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall] <((c, st, ast, b))>
+  | ISM_Call_F : forall e i c st ast b,
       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
-      i <> j ->
-      nth_error p j = Some c ->
-      os = [OCall (option_map (fun _ => i) (nth_error p i))] ->
-      p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^os <((c, st, ast, true))>
+      (* i <> j -> 
+         nth_error p j = Some c -> *)
+      (* os = [OCall (option_map (fun _ => i) (nth_error p i))] -> *)
+      p |- <((call e, st, ast, b))> -->i_[DForceCall]^^[OCall] <((c, st, ast, true))>
 
     where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (ideal_eval_small_step p c st ast b ct stt astt bt ds os).
@@ -610,29 +610,27 @@ Qed.
 
 Lemma ideal_eval_small_step_spec_needs_force : forall p c st ast ds ct stt astt os,
   p |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
-      ds = [DForce] \/ exists (j:nat), ds = [DForceCall j].
+      ds = [DForce] \/ ds = [DForceCall].
 Proof.
   intros p c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl in *; try discriminate; auto.
-  right. exists j; auto.
 Qed.
 
 Lemma multi_ideal_spec_needs_force : forall p c st ast ds ct stt astt os,
   p |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
-  In DForce ds \/ exists (j:nat), In (DForceCall j) ds.
+  In DForce ds \/ In DForceCall ds.
 Proof.
   intros p c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl in *; try discriminate.
   destruct b' eqn:Eqb'.
   - apply ideal_eval_small_step_spec_needs_force in H.
-    destruct H as [| [j H] ].
-    + subst. simpl. left. tauto.
-    + subst. simpl. right. exists j. tauto.
-  - specialize (IHHev Logic.eq_refl Logic.eq_refl). destruct IHHev as [| [j IH] ].
+    destruct H as [ H1 | H2 ]; subst; simpl; try (left; tauto); try (right; tauto).
+  - specialize (IHHev Logic.eq_refl Logic.eq_refl). 
+    destruct IHHev as [ H1 | H2 ].
     + left. apply in_or_app. right. eassumption.
-    + right. exists j. apply in_or_app. right. eassumption.
+    + right. apply in_or_app. right. eassumption.
 Qed.
 
 Lemma ideal_eval_spec_bit_deterministic :
@@ -648,12 +646,12 @@ Proof.
     + apply multi_ideal_spec_needs_force in Hev1.
       destruct Hev1 as [HevDF | HevDFC].
       * now eapply ideal_eval_final_spec_bit_false in Hev2; [|eassumption].
-      * destruct HevDFC as [j HevDFC].
+      * (* destruct HevDFC as [j HevDFC]. *)
         now eapply ideal_eval_final_spec_bit_false in Hev2; [|eassumption].
     + apply multi_ideal_spec_needs_force in Hev2.
       destruct Hev2 as [HevDF | HevDFC].
       * now eapply ideal_eval_final_spec_bit_false in Hev1; [|eassumption].
-      * destruct HevDFC as [j HevDFC].
+      * (* destruct HevDFC as [j HevDFC]. *)
         now eapply ideal_eval_final_spec_bit_false in Hev1; [|eassumption].
 Qed.
 
@@ -663,7 +661,6 @@ Lemma ideal_eval_small_step_obs_length : forall p c st ast b ds ct stt astt bt o
   length ds = length os.
 Proof.
   intros p c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
-  subst. auto.
 Qed.
 
 Lemma multi_ideal_obs_length : forall p c st ast b ds ct stt astt bt os,
@@ -710,7 +707,7 @@ Proof.
   + specialize (Hds DForce). discriminate Hds. now left.
   + specialize (Hds (DLoad a' i')). discriminate Hds. now left.
   + specialize (Hds (DStore a' i')). discriminate Hds. now left.
-  + specialize (Hds (DForceCall j)). discriminate Hds. now left.
+  + specialize (Hds (DForceCall)). discriminate Hds. now left.
 Qed.
 
 Lemma multi_ideal_no_spec : forall p c st ast ds ct stt astt bt os,
@@ -731,8 +728,8 @@ Proof.
       * subst. simpl in L1. 
         specialize (L1 DForce (or_introl (Logic.eq_refl DForce))). 
         discriminate L1.
-      * destruct HDFC as [j HDFC]. subst. simpl in L1.
-        specialize (L1 (DForceCall j) (or_introl (Logic.eq_refl (DForceCall j)))).
+      * (* destruct HDFC as [j HDFC]. *) subst. simpl in L1.
+        specialize (L1 DForceCall (or_introl (Logic.eq_refl DForceCall))).
         discriminate L1.
     + apply ideal_eval_small_step_no_spec in H; auto.
       eapply multi_seq_trans.
@@ -746,6 +743,7 @@ Lemma seq_to_ideal : forall p c st ast ct stt astt os,
 Proof.
   intros.
   induction H; try now (constructor; rewrite ?orb_true_r, ?andb_false_r).
+  simpl.
 Qed. 
 
 Lemma seq_small_step_if_total : forall p c be ct cf st ast,
@@ -814,6 +812,13 @@ Proof.
   eapply multi_seq_add_snd_com in Hev1, Hev2. eapply Hsec in Hev2; eauto.
 Qed.
 
+Lemma seq_same_obs_com_call (p:prog) : forall e st1 st2 ast1 ast2,
+  seq_same_obs p <{{ call e }}> st1 st2 ast1 ast2 ->
+  aeval st1 e = aeval st2 e.
+Proof.
+  intros. 
+Admitted. 
+
 
 (* Definition initiates_speculation (d : direction) : Prop :=
   match d with
@@ -848,20 +853,24 @@ Lemma ideal_one_step_forcecall_obs (p:prog) :
     p |- <((c, st2, ast2, false))> -->i_[(DForceCall j)]^^os2 <((ct, stt2, astt2, true))> ->
     os1 = os2.
 Proof.
-  intros c ct st ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 j Hobs Hev1.
+  intros c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 j Hobs Hev1.
   generalize dependent os2; generalize dependent astt2;
   generalize dependent stt2; generalize dependent ast2;
   generalize dependent st2.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   remember [(DForceCall j)] as d. revert Heqd. revert j.
   induction Hev1; try discriminate; intros.
-  - apply IHHev1 with (j:=j) (st2:=st2) (ast2:=ast2) (stt2:=stt2) (astt2:=astt2); subst; auto.
-    + apply seq_same_obs_com_seq with (c2:=c2); assumption.
-    + apply ISM_Seq with (c2:=c2) in Hev1. apply seq_same_obs_com_seq in Hobs. 
-      admit.
-  - apply ISM_Call_F with (p:=p) (j:=j) (c:=c) (ast:=ast) (os:=os) in H; subst; auto.
-    (* need more information about os2 *)     
-Admitted.    
+  - apply seq_same_obs_com_seq in Hobs. destruct IHHev1 with (j:=j) (st2:=st2) 
+    (ast2:=ast2) (stt2:=stt2) (astt2:=astt2) (os2:=os2); auto. inversion H; subst; auto.
+    discriminate.
+  - inversion H3; subst; auto. rewrite andb_false_r in *.
+    injection Heqd; intros. rewrite <- H in *. clear Eqbt Heqd H7 H8 H.
+    (* apply seq_same_obs_com_call in Hobs. *)
+    
+
+        
+Admitted.  
+
 (* 
 | ISM_Call_F : forall e i j c st ast b os,
       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->

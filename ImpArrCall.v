@@ -320,7 +320,7 @@ Inductive observation : Type :=
   | OBranch (b : bool)
   | OARead (a : string) (i : nat)
   | OAWrite (a : string) (i : nat)
-  | OCall (i : option nat).
+  | OCall.
 
 Definition obs := list observation.
 
@@ -341,7 +341,7 @@ Inductive direction :=
 | DForce
 | DLoad (a : string) (i : nat)
 | DStore (a : string) (i : nat)
-| DForceCall (j : nat).
+| DForceCall.
 
 Definition dirs := list direction.
 
