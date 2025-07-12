@@ -341,7 +341,9 @@ Inductive direction :=
 | DForce
 | DLoad (a : string) (i : nat)
 | DStore (a : string) (i : nat)
-| DForceCall.
+| DForceCall (j : nat).
+
+Print direction.
 
 Definition dirs := list direction.
 
