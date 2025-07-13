@@ -320,7 +320,8 @@ Inductive observation : Type :=
   | OBranch (b : bool)
   | OARead (a : string) (i : nat)
   | OAWrite (a : string) (i : nat)
-  | OCall.
+  | OCall (i : nat)
+  | OForceCall.
 
 Definition obs := list observation.
 
@@ -331,8 +332,6 @@ Definition obs := list observation.
 
 (** The observations are the same as above, so we can just reuse them. *)
 
-Print observation.
-
 (** We additionally add adversary provided directions to our semantics, which
     control speculation behavior. *)
 
@@ -342,8 +341,6 @@ Inductive direction :=
 | DLoad (a : string) (i : nat)
 | DStore (a : string) (i : nat)
 | DForceCall (j : nat).
-
-Print direction.
 
 Definition dirs := list direction.
 

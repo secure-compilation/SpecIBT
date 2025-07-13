@@ -35,6 +35,8 @@ Set Default Goal Selector "!".
 
 (** Sequential small-step semantics *)
 
+Print observation.
+
 Ltac invert H := inversion H; subst; clear H.
 
 Reserved Notation
@@ -78,7 +80,7 @@ Inductive seq_eval_small_step (p:prog) :
   | SSM_Call : forall e i c st ast,
       aeval st e = i ->
       nth_error p i = Some c ->
-      p |- <((call e, st, ast))> -->^[OCall] <((c, st, ast))>
+      p |- <((call e, st, ast))> -->^[OCall i] <((c, st, ast))>
 
   where "p |- <(( c , st , ast ))> -->^ os  <(( ct ,  stt , astt ))>" :=
     (seq_eval_small_step p c st ast ct stt astt os).
@@ -122,7 +124,8 @@ Lemma seq_small_step_obs_type : forall p c st1 ast1 stt1 astt1 ct1 os1 ct2 st2 a
   | OBranch _ :: os => exists b, os1 = OBranch b :: os
   | OARead _ _ :: os => exists a i, os1 = OARead a i :: os
   | OAWrite _ _ :: os => exists a i, os1 = OAWrite a i :: os
-  | OCall :: os => os1 = OCall :: os
+  | OCall _ :: os => exists i, os1 = OCall i :: os
+  | OForceCall :: os => os1 = OForceCall :: os
   end.
 Proof.
   intros p; induction c; intros st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2 H1 H2;
@@ -203,12 +206,12 @@ Inductive spec_eval_small_step (p:prog) :
   | SpecSM_Call : forall e i c st ast b,
       aeval st e = i ->
       nth_error p i = Some c ->
-      p |- <((call e, st, ast, b))> -->_[DStep]^^[OCall] <((c, st, ast, b))>
+      p |- <((call e, st, ast, b))> -->_[DStep]^^[OCall i] <((c, st, ast, b))>
   | SpecSM_Call_F : forall e i j c st ast b,
       aeval st e = i ->
       i <> j ->
       nth_error p j = Some c ->
-      p |- <((call e, st, ast, b))> -->_[DForceCall j]^^[OCall] <((c, st, ast, true))>
+      p |- <((call e, st, ast, b))> -->_[DForceCall j]^^[OForceCall] <((c, st, ast, true))>
 
   where "p |- <(( c , st , ast , b ))> -->_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (spec_eval_small_step p c st ast b ct stt astt bt ds os).
@@ -486,12 +489,12 @@ Inductive ideal_eval_small_step (p:prog):
   | ISM_Call : forall e i c st ast b,
       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
       nth_error p i = Some c ->
-      p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall] <((c, st, ast, b))>
+      p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall i] <((c, st, ast, b))>
   | ISM_Call_F : forall e i j c st ast b,
       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
       i <> j -> 
       nth_error p j = Some c ->     
-      p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^[OCall] <((c, st, ast, true))>
+      p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^[OForceCall] <((c, st, ast, true))>
 
     where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (ideal_eval_small_step p c st ast b ct stt astt bt ds os).
@@ -746,7 +749,6 @@ Lemma seq_to_ideal : forall p c st ast ct stt astt os,
 Proof.
   intros.
   induction H; try now (constructor; rewrite ?orb_true_r, ?andb_false_r).
-  simpl. apply ISM_Call with (i:=i); try (rewrite andb_false_r); auto.
 Qed. 
 
 Lemma seq_small_step_if_total : forall p c be ct cf st ast,
@@ -815,20 +817,6 @@ Proof.
   eapply multi_seq_add_snd_com in Hev1, Hev2. eapply Hsec in Hev2; eauto.
 Qed.
 
-(* Lemma seq_same_obs_com_call (p:prog) : forall e st1 st2 ast1 ast2,
-  seq_same_obs p <{{ call e }}> st1 st2 ast1 ast2 ->
-  aeval st1 e = aeval st2 e.
-Proof.
-  intros. 
-   Admitted.*) 
-
-
-(* Definition initiates_speculation (d : direction) : Prop :=
-  match d with
-  | DForce | DForceCall _ => True
-  | _ => False
-   end. *)
-
 Lemma ideal_one_step_force_obs (p:prog) :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs p c st1 st2 ast1 ast2 ->
@@ -867,7 +855,6 @@ Proof.
     discriminate.
   - inversion H2; auto.
 Qed.
-
 
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
