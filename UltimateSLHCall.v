@@ -75,8 +75,6 @@ Inductive seq_eval_small_step (p:prog) :
       i < length (ast a) ->
       p |- <((a[ie] <- e, st, ast))> -->^[OAWrite a i]
            <((skip, st, a !-> upd i (ast a) n; ast))>
-  (* we still only take a sequential step if the index is in bounds,
-     but the observation does not include the index *)
   | SSM_Call : forall e i c st ast,
       aeval st e = i ->
       nth_error p i = Some c ->
@@ -618,8 +616,8 @@ Lemma ideal_eval_small_step_spec_needs_force : forall p c st ast ds ct stt astt 
 Proof.
   intros p c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  induction Hev; subst; simpl in *; try discriminate; auto.
-  right; exists j; auto.
+  induction Hev; subst; simpl in *; try discriminate;
+  try (right; exists j); auto.
 Qed.
 
 Lemma multi_ideal_spec_needs_force : forall p c st ast ds ct stt astt os,
@@ -637,7 +635,8 @@ Proof.
   - specialize (IHHev Logic.eq_refl Logic.eq_refl). 
     destruct IHHev as [ H1 | H2 ].
     + left. apply in_or_app. right. eassumption.
-    + right. destruct H2 as [j H2]. exists j. apply in_or_app. right. eassumption.
+    + right. destruct H2 as [j H2]. exists j. apply in_or_app. 
+      right. eassumption.
 Qed.
 
 Lemma ideal_eval_spec_bit_deterministic :
@@ -791,9 +790,8 @@ Proof.
   - inversion Hev2; subst; clear Hev2.
     + destruct Hneq2; auto.
     + inversion H1; subst; clear H1. inversion H; subst; clear H.
-      destruct Hpre as [Hpre | Hpre]; simpl in Hpre.
-      * apply prefix_heads in Hpre. inversion Hpre; auto.
-      * apply prefix_heads in Hpre. inversion Hpre; auto.
+      destruct Hpre as [Hpre | Hpre]; simpl in Hpre;
+      apply prefix_heads in Hpre; inversion Hpre; auto.
 Qed.
 
 Lemma multi_seq_add_snd_com : forall p c st ast ct stt astt os c2,
