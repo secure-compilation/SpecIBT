@@ -559,3 +559,93 @@ Lemma beval_unused_update : forall X st be n,
   b_unused X be ->
   beval (X !-> n; st) be = beval st be.
 Proof. intros X st be n. apply aeval_beval_unused_update. Qed.
+
+Require Import Coq.Arith.Wf_nat.
+Require Import Coq.Relations.Relation_Operators.
+Require Import Coq.Wellfounded.Lexicographic_Product.
+Require Import Coq.Wellfounded.Inverse_Image.
+
+Check lt_wf.
+(* lt_wf : well_founded lt *)
+
+Check lexprod.
+(* lexprod : forall (A : Type) (B : A -> Type),
+       (A -> A -> Prop) ->
+       (forall x : A, B x -> B x -> Prop) ->
+       {x : A & B x} -> {x : A & B x} -> Prop *)
+
+Check wf_lexprod.
+(* wf_lexprod
+     : forall (A : Type) (B : A -> Type) (leA : A -> A -> Prop)
+         (leB : forall x : A, B x -> B x -> Prop),
+       well_founded leA ->
+       (forall x : A, well_founded (leB x)) ->
+       well_founded (lexprod A B leA leB) *)
+
+Definition to_sig (p : nat * nat) : { x : nat & nat } :=
+  existT (fun _ => nat) (fst p) (snd p).
+
+Definition lex_sig : { x : nat & nat } -> { x : nat & nat } -> Prop :=
+  lexprod nat (fun _ => nat) lt (fun _ => lt).
+
+Definition lex_nat_nat (p q : nat*nat) : Prop :=
+  lex_sig (to_sig p) (to_sig q).
+
+Lemma lex_sig_wf : well_founded lex_sig.
+Proof.
+  apply wf_lexprod; [ apply lt_wf | intro; apply lt_wf ].
+Qed.
+
+Lemma lex_nat_nat_wf : well_founded lex_nat_nat.
+Proof.
+  unfold lex_nat_nat. apply wf_inverse_image. apply lex_sig_wf.
+Qed.
+
+Lemma lex_ind (P : nat*nat -> Prop)
+  (IH : forall p, (forall q, lex_nat_nat q p -> P q) -> P p)
+  : forall p, P p.
+Proof.
+  apply (well_founded_induction_type lex_nat_nat_wf).
+  intros [x y] IHrec.
+  apply IH; exact IHrec.
+Qed.
+
+Definition lex_nat_nat_spec (p q : nat*nat) : Prop :=
+  fst p < fst q \/ (fst p = fst q /\ snd p < snd q).
+
+Lemma lex_nat_nat_equiv : forall p q,
+  lex_nat_nat p q <-> lex_nat_nat_spec p q.
+Proof.
+  (* destruct both pairs to expose components *)
+  destruct p as [x y], q as [x' y'].
+  split.
+  - (* → direction: analyze the lexprod constructors *)
+    intros H.
+    inversion H; subst; clear H.
+    + (* left_lex: x < x' *)
+      left; assumption.
+    + (* right_lex: x = x' and y < y' *)
+      right; split.
+      * reflexivity.
+      * assumption.
+  - unfold lex_nat_nat_spec.
+    intros.
+    destruct H as [Hlt | H]; simpl in *.
+    (* ← direction: by cases on the spec *)
+    + (* x < x' ⇒ left_lex *)
+      apply left_lex; assumption.
+    + (* x = x' and y < y' ⇒ right_lex *)
+      destruct H as [Heq Hlt].
+      subst x'.
+      apply right_lex; assumption.
+Qed.
+
+Lemma lex_nat_nat_ind (P : nat*nat -> Prop)
+  (IH : forall p, (forall q, lex_nat_nat_spec q p -> P q) -> P p)
+  : forall p, P p.
+Proof.
+  setoid_rewrite <- lex_nat_nat_equiv in IH. now apply lex_ind.
+Qed.
+
+
+

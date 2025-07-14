@@ -35,8 +35,6 @@ Set Default Goal Selector "!".
 
 (** Sequential small-step semantics *)
 
-Print observation.
-
 Ltac invert H := inversion H; subst; clear H.
 
 Reserved Notation
@@ -146,9 +144,6 @@ Proof.
 Qed.
 
 (** Small-step speculative semantics *)
-
-Print direction.
-Print dirs.
 
 Reserved Notation
   "p '|-' '<((' c , st , ast , b '))>' '-->_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
@@ -860,12 +855,13 @@ Qed.
     relating the speculative semantics of the hardened program with the ideal
     semantics, by means of a backwards compiler correctness (BCC) result. *)
 
-Lemma ideal_unused_overwrite_one_step : forall st ast b ds c c' st' ast' b' os X n,
+Lemma ideal_unused_overwrite_one_step (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
-  <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
-  <((c, X !-> n; st, ast, b))> -->i_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
+  p |- <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
+  p |- <((c, X !-> n; st, ast, b))> -->i_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
 Proof.
-  intros. induction H0.
+  intros. induction H0. (* H0 :  p |- <(( c, st, ast, b ))> -->i_ ds ^^ os <(( c', st', ast', b' ))> *)
+  (* H : unused X c -- invert gives you the result of the match statement for whichever case of c it is *)
   + invert H. repeat econstructor; [|assumption..].
     rewrite t_update_permute; [constructor|assumption].
     now apply aeval_unused_update.
@@ -882,32 +878,39 @@ Proof.
   + invert H. rewrite t_update_permute; [|tauto]. repeat constructor; [now rewrite aeval_unused_update|assumption..].
   + invert H. repeat constructor; [now rewrite aeval_unused_update..|assumption].
   + invert H. repeat constructor. 1, 3 : now rewrite aeval_unused_update. all:assumption.
-Qed.
+  +  (* invert H. --> The type of H is not inductive.
+        I tried other strategies to complete this case but kept coming back against 
+        the need to prove something about the command we step to from call e, which 
+        could be anything.
+        So, it seems like this part is broken even apart from prog_size_ind.
+      *)
+Admitted.
+(* Qed. *)
 
-Lemma ideal_unused_overwrite : forall st ast b ds c c' st' ast' b' os X n,
+Lemma ideal_unused_overwrite (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
-  <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
-  <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))>.
+  p |- <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
+  p |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))>.
 Proof.
   intros. induction H0; [constructor|].
   eapply ideal_unused_overwrite_one_step in H0; [|eassumption]. destruct H0.
   econstructor; [eassumption|tauto].
 Qed.
 
-Lemma ideal_unused_update : forall st ast b ds c c' st' ast' b' os X n,
+Lemma ideal_unused_update (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
-  <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))> ->
-  <((c, st, ast, b))> -->i*_ds^^os <((c', X !-> st X; st', ast', b'))>.
+  p |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))> ->
+  p |- <((c, st, ast, b))> -->i*_ds^^os <((c', X !-> st X; st', ast', b'))>.
 Proof.
   intros. rewrite <- (t_update_same _ st X) at 1.
   eapply ideal_unused_overwrite with (X:=X) (n:=(st X)) in H0; [|assumption].
   now rewrite !t_update_shadow in H0.
 Qed.
 
-Lemma spec_unused_overwrite_one_step : forall st ast b ds c c' st' ast' b' os X n,
+Lemma spec_unused_overwrite_one_step (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
-  <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
-  <((c, X !-> n; st, ast, b))> -->_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
+  p |- <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
+  p |- <((c, X !-> n; st, ast, b))> -->_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
 Proof.
   intros. induction H0.
   + invert H. repeat econstructor; [|assumption..].
@@ -926,22 +929,24 @@ Proof.
   + invert H. repeat constructor. rewrite t_update_permute; [|tauto]. now constructor; [apply aeval_unused_update|..].
   + invert H. now repeat constructor; [apply aeval_unused_update..|].
   + invert H. now repeat constructor; [apply aeval_unused_update..| |].
-Qed.
+  + (* same thing happening here as in ideal_unused_overwrite_one_step *)
+Admitted.
+(* Qed. *)
 
-Lemma spec_unused_overwrite : forall st ast b ds c c' st' ast' b' os X n,
+Lemma spec_unused_overwrite (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
-  <((c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-  <((c, X !-> n; st, ast, b))> -->*_ds^^os <((c', X !-> n; st', ast', b'))>.
+  p |- <((c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  p |- <((c, X !-> n; st, ast, b))> -->*_ds^^os <((c', X !-> n; st', ast', b'))>.
 Proof.
   intros. induction H0; [constructor|].
   eapply spec_unused_overwrite_one_step in H0; [|eassumption]. destruct H0.
   econstructor; [eassumption|tauto].
 Qed.
 
-Lemma spec_unused_update : forall st ast b ds c c' st' ast' b' os X n,
+Lemma spec_unused_update (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
-  <((c, X !-> n; st, ast, b))> -->*_ds^^os <((c', X !-> n; st', ast', b'))> ->
-  <((c, st, ast, b))> -->*_ds^^os <((c', X !-> st X; st', ast', b'))>.
+  p |- <((c, X !-> n; st, ast, b))> -->*_ds^^os <((c', X !-> n; st', ast', b'))> ->
+  p |- <((c, st, ast, b))> -->*_ds^^os <((c', X !-> st X; st', ast', b'))>.
 Proof.
   intros. rewrite <- (t_update_same _ st X) at 1.
   eapply spec_unused_overwrite with (X:=X) (n:=(st X)) in H0; [|assumption].
@@ -955,9 +960,9 @@ Proof.
   intros. simpl. now f_equal.
 Qed.
 
-Lemma spec_eval_preserves_nonempty_arrs : forall c c' st ast b ds st' ast' b' os,
+Lemma spec_eval_preserves_nonempty_arrs (p:prog) : forall c c' st ast b ds st' ast' b' os,
   nonempty_arrs ast ->
-  <((c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  p |- <((c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
   nonempty_arrs ast'.
 Proof.
   unfold nonempty_arrs.
@@ -970,9 +975,9 @@ Proof.
   all: now apply String.eqb_eq in Heq; subst; rewrite t_update_eq, upd_length.
 Qed.
 
-Lemma ideal_eval_preserves_nonempty_arrs : forall c c' st ast b ds st' ast' b' os,
+Lemma ideal_eval_preserves_nonempty_arrs (p:prog) : forall c c' st ast b ds st' ast' b' os,
   nonempty_arrs ast ->
-  <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
+  p |- <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
   nonempty_arrs ast'.
 Proof.
   unfold nonempty_arrs.
@@ -1008,23 +1013,23 @@ Ltac fold_cons :=
 Ltac com_step :=
   repeat ((try now apply multi_ideal_refl); (try now apply multi_spec_refl);
   lazymatch goal with
-  | |- <(( <{{ skip; _ }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => eapply multi_ideal_trans_nil_l; [now apply ISM_Seq_Skip|]
-  | |- <(( <{{ _; ?C }}>, _, _, _ ))> -->i*_ _^^_ <(( <{{ _; ?C }}>, _, _, _ ))> => apply multi_ideal_add_snd_com; eassumption
-  | |- <(( <{{ _; _ }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com; eassumption|]
-  | |- <(( <{{ if _ then _ else _ end }}>, _, _, _ ))> -->i*_ [_]^^[_] <(( _, _, _, _ ))> => eapply multi_ideal_trans_nil_r; [|now constructor]
-  | Heq : beval _ _ = _, Hbe : is_empty _ = _ |- <(( <{{ if _ then _ else _ end }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> =>
+  | |- _ |- <(( <{{ skip; _ }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => eapply multi_ideal_trans_nil_l; [now apply ISM_Seq_Skip|]
+  | |- _ |- <(( <{{ _; ?C }}>, _, _, _ ))> -->i*_ _^^_ <(( <{{ _; ?C }}>, _, _, _ ))> => apply multi_ideal_add_snd_com; eassumption
+  | |- _ |- <(( <{{ _; _ }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com; eassumption|]
+  | |- _ |- <(( <{{ if _ then _ else _ end }}>, _, _, _ ))> -->i*_ [_]^^[_] <(( _, _, _, _ ))> => eapply multi_ideal_trans_nil_r; [|now constructor]
+  | Heq : beval _ _ = _, Hbe : is_empty _ = _ |- _ |- <(( <{{ if _ then _ else _ end }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> =>
     fold_cons; econstructor; [constructor; [(try now rewrite ?Heq, ?Hbe); now rewrite andb_comm, Heq|reflexivity]|]
-  | |- <(( <{{ if _ then _ else _ end }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => fold_cons; econstructor; [now constructor|]
-  | |- <(( <{{ while _ do _ end }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => eapply multi_ideal_trans_nil_l; [now constructor|]
+  | |- _ |- <(( <{{ if _ then _ else _ end }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => fold_cons; econstructor; [now constructor|]
+  | |- _ |- <(( <{{ while _ do _ end }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => eapply multi_ideal_trans_nil_l; [now constructor|]
   | |- _ => now constructor
   end).
 
-Lemma ultimate_slh_bcc_generalized : forall c ds st ast (b b' : bool) c' st' ast' os,
+Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
-  <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-  exists c'', <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>
+  p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
 Proof.
   intros c ds. apply prog_size_ind with (c:=c) (ds:=ds). clear.
