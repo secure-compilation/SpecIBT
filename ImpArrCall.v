@@ -560,6 +560,8 @@ Lemma beval_unused_update : forall X st be n,
   beval (X !-> n; st) be = beval st be.
 Proof. intros X st be n. apply aeval_beval_unused_update. Qed.
 
+(** Lexicographic induction *)
+
 Require Import Coq.Arith.Wf_nat.
 Require Import Coq.Relations.Relation_Operators.
 Require Import Coq.Wellfounded.Lexicographic_Product.
