@@ -855,40 +855,40 @@ Qed.
     relating the speculative semantics of the hardened program with the ideal
     semantics, by means of a backwards compiler correctness (BCC) result. *)
 
-(* commenting these out for now since the call case breaks them
+(* commenting these out for now since the call case breaks them *)
 
 Lemma ideal_unused_overwrite_one_step (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
-  unused X c ->
+  unused_prog X p ->
   p |- <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
   p |- <((c, X !-> n; st, ast, b))> -->i_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
-
 Proof.
-  intros. induction H0.   
-  + invert H. repeat econstructor; [|assumption..].
-    rewrite t_update_permute; [constructor|assumption].
-    now apply aeval_unused_update.
-  + invert H. eapply IHideal_eval_small_step in H1. destruct H1.
-    repeat econstructor; assumption.
-  + split; [|now invert H]. apply ISM_Seq_Skip.
-  + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto].
-    now rewrite beval_unused_update.
-  + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto].
-    now rewrite beval_unused_update.
-  + invert H. now repeat constructor.
-  + invert H. repeat constructor. rewrite t_update_permute; [constructor|assumption].
-    { now rewrite aeval_unused_update. } assumption.
-  + invert H. rewrite t_update_permute; [|tauto]. repeat constructor; [now rewrite aeval_unused_update|assumption..].
-  + invert H. repeat constructor; [now rewrite aeval_unused_update..|assumption].
-  + invert H. repeat constructor. 1, 3 : now rewrite aeval_unused_update. all:assumption.
-  + (* invert H. --> "The type of H is not inductive."
-        I tried other strategies to complete this case but kept coming back against 
-        the need to prove something about the command we step to from call e, which
-        could be anything. specifically, unused X c is what you have to show.
-        So, it seems like this part is broken even apart from prog_size_ind.
-      *)
-Admitted.
+  (* intros. induction H0.    *)
+  (* + invert H. repeat econstructor; [|assumption..]. *)
+  (*   rewrite t_update_permute; [constructor|assumption]. *)
+  (*   now apply aeval_unused_update. *)
+  (* + invert H. eapply IHideal_eval_small_step in H1. destruct H1. *)
+  (*   repeat econstructor; assumption. *)
+  (* + split; [|now invert H]. apply ISM_Seq_Skip. *)
+  (* + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto]. *)
+  (*   now rewrite beval_unused_update. *)
+  (* + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto]. *)
+  (*   now rewrite beval_unused_update. *)
+  (* + invert H. now repeat constructor. *)
+  (* + invert H. repeat constructor. rewrite t_update_permute; [constructor|assumption]. *)
+  (*   { now rewrite aeval_unused_update. } assumption. *)
+  (* + invert H. rewrite t_update_permute; [|tauto]. repeat constructor; [now rewrite aeval_unused_update|assumption..]. *)
+  (* + invert H. repeat constructor; [now rewrite aeval_unused_update..|assumption]. *)
+  (* + invert H. repeat constructor. 1, 3 : now rewrite aeval_unused_update. all:assumption. *)
+  (* + (* invert H. --> "The type of H is not inductive." *)
+  (*       I tried other strategies to complete this case but kept coming back against  *)
+  (*       the need to prove something about the command we step to from call e, which *)
+  (*       could be anything. specifically, unused X c is what you have to show. *)
+  (*       So, it seems like this part is broken even apart from prog_size_ind. *)
+  (*     *) *)
+Abort.
 (* Qed. *)
 
+(*
 Lemma ideal_unused_overwrite (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
   p |- <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
@@ -900,7 +900,7 @@ Proof.
 Qed.
 
 Lemma ideal_unused_update (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
-  unused X c ->
+  unused X c p ->
   p |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))> ->
   p |- <((c, st, ast, b))> -->i*_ds^^os <((c', X !-> st X; st', ast', b'))>.
 Proof.
@@ -1032,6 +1032,17 @@ Ltac com_step :=
          prog_size c' ds' < prog_size c ds -> P c' ds') ->
    P c ds) -> forall (c : com) (ds : dirs), P c ds *)
 
+Definition measure (c : com) (ds : list direction) : nat * nat :=
+  (length ds, com_size c).
+
+Lemma lex_ind2 : forall P : com -> dirs -> Prop,
+    (forall c ds,
+        (forall c' ds',
+            lex_nat_nat_spec (measure c' ds') (measure c ds) -> P c' ds') ->
+        P c ds) -> forall c ds, P c ds.
+Proof.
+Admitted.
+
 (* Lemma lex_nat_nat_ind (P : nat*nat -> Prop)
   (IH : forall p, (forall q, lex_nat_nat_spec q p -> P q) -> P p)
    : forall p, P p. *) 
@@ -1039,23 +1050,98 @@ Ltac com_step :=
 (* Definition lex_nat_nat_spec (p q : nat*nat) : Prop :=
   fst p < fst q \/ (fst p = fst q /\ snd p < snd q). *)
 
-Definition measure (c : com) (ds : list direction) : nat * nat :=
-  (length ds, com_size c).
+Section EXAMPLE.
+
+Variable p: prog.
+
+Lemma unused_prog_unused :
+  forall c, In c p -> unused_prog "b" p -> unused "b" c.
+Proof.
+Admitted.
+
+Definition Property (c:com) (ds: dirs) := forall st ast (b b':bool) c' st' ast' os,
+  nonempty_arrs ast ->
+  unused_prog "b" p ->
+  unused "b" c ->
+  st "b" = (if b then 1 else 0) ->
+  p |- <(( (ultimate_slh c), st, ast, b ))> -->*_ ds ^^ os <(( c', st', ast', b' ))> ->
+  exists c'' : com,
+    p |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c'', "b" !-> st "b"; st', ast', b' ))> /\
+    (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)).
+
+Lemma induction_example : forall c ds, Property c ds.
+Proof.
+  intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
+  intros c ds IH.
+  destruct c; simpl in *.
+  8:{
+    red. intros. invert H3.
+    { admit. (* star refl *) }
+    simpl in H4.
+    invert H4. simpl in *.
+    unfold Property in IH.
+    admit. }
+Abort.
+
+End EXAMPLE.
 
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
+  unused_prog "b" p ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
   p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
       exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
-Proof. 
+Proof.
+  intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
+  intros c ds IH. intros until os. intros ast_arrs unused_p unused_c st_b st_st'.
+
+  invert st_st'.
+  { rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
+    split; [|tauto]. now destruct c; try discriminate. }
+  destruct c; simpl in *; invert H.
+
+  2:{
+    (* Seq *)
+    eapply multi_spec_seq in H0.
+    destruct H0.
+    + do 8 destruct H. destruct H0, H1. subst.
+      eapply multi_spec_trans in H12; [|apply H1]. clear H1.
+      eapply IH in H12; [| |tauto..].
+      2:{ red. simpl. admit. }
+      destruct H12 as (c''&st_x&->&Hx); [reflexivity|].
+      eapply IH in H2.
+      { destruct H2, H. exists x6. split; [|tauto]. rewrite !app_assoc. com_step.
+        erewrite <- t_update_same, <- t_update_shadow in H at 1.
+        admit. }
+      (* apply ideal_unused_update in H; try tauto. rewrite t_update_eq in H; eauto. } *)
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
+      auto.
+      (* { unfold prog_size. rewrite !app_length. simpl. lia. } *)
+      (* { eapply ideal_eval_preserves_nonempty_arrs; eassumption. } *)
+      (* { tauto. } *)
+      (* tauto. *)
+    + do 2 destruct H. subst.
+      eapply multi_spec_trans in H12; [|apply H0].
+      eapply IH in H12; [ | |tauto..].
+      2:{ admit. }
+      destruct H12 as (c''&st_st'&H').
+      exists <{{ c''; c2 }}>. split; [|discriminate]. com_step. }
+
+  (* Call *)
+  10:{ admit. }
+
   intros c ds. remember (measure c ds) as c_ds. revert c ds Heqc_ds.
-  induction c_ds using lex_nat_nat_ind. rename H into IH.
+  (* pattern c_ds. *)
+  (* eapply lex_nat_nat_ind. *)
+  (* induction c_ds using lex_nat_nat_ind. rename H into IH. *)
 
-
-   (* apply prog_size_ind with (c:=c) (ds:=ds). clear. *)
-   intros c ds cds_measure. intros until os. intros ast_arrs unused_c st_b st_st'. invert st_st'.
+  (* apply prog_size_ind with (c:=c) (ds:=ds). clear. *)
+  intros c ds cds_measure. intros until os. intros ast_arrs unused_c st_b st_st'. invert st_st'.
   { rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
     split; [|tauto]. now destruct c; try discriminate. }
   destruct c; simpl in *; invert H.
@@ -1063,8 +1149,6 @@ Proof.
   (* try to take care of call case first, so that unused_update lemmas could be modified to 
      apply only to cases where c <> call e, and the rest of the proof proceed more or less as before. *)
   11 : { (* Call *)
-
-            
   }
   - (* Asgn *)
     invert H0; [|now inversion H].
