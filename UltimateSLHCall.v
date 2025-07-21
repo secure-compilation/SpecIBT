@@ -1049,23 +1049,23 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c
   p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
       exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
-Proof.
-   intros c ds. remember (measure c ds) as c_ds. revert c ds Heqc_ds.
-   induction c_ds using lex_nat_nat_ind. rename H into IH.
+Proof. 
+  intros c ds. remember (measure c ds) as c_ds. revert c ds Heqc_ds.
+  induction c_ds using lex_nat_nat_ind. rename H into IH.
 
 
    (* apply prog_size_ind with (c:=c) (ds:=ds). clear. *)
-  intros c ds cds_measure. intros until os. intros ast_arrs unused_c st_b st_st'. invert st_st'.
+   intros c ds cds_measure. intros until os. intros ast_arrs unused_c st_b st_st'. invert st_st'.
   { rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
     split; [|tauto]. now destruct c; try discriminate. }
   destruct c; simpl in *; invert H.
 
   (* try to take care of call case first, so that unused_update lemmas could be modified to 
      apply only to cases where c <> call e, and the rest of the proof proceed more or less as before. *)
-  11 : { eapply IH; eauto.
-    - (* unfold measure, lex_nat_nat_spec. invert H12; rewrite app_nil_l. 
-      This didn't work...it's looking at R ds2 ds2. *)
-        }
+  11 : { (* Call *)
+
+            
+  }
   - (* Asgn *)
     invert H0; [|now inversion H].
     eexists. split; [eapply multi_ideal_trans|split; [tauto|] ].

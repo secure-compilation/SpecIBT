@@ -492,6 +492,16 @@ Definition prog_size (c :com) (ds :dirs) :nat := com_size c + length ds.
 
 (** The induction principle on [prog_size] *)
 
+Check Coq.Arith.PeanoNat.Nat.induction.
+
+Check measure_induction.
+(* measure_induction
+     : forall (X : Type) (f : X -> nat) (A : X -> Type),
+       (forall x : X, (forall y : X, f y < f x -> A y) -> A x) ->
+       forall x : X, A x *)
+
+
+
 Lemma prog_size_ind :
   forall P : com -> dirs -> Prop,
   (forall c ds,
@@ -503,7 +513,8 @@ Proof.
   intros.
   remember (fun c_ds => P (fst c_ds) (snd c_ds)) as P'.
   replace (P c ds) with (P' (c, ds)) by now rewrite HeqP'.
-  eapply measure_induction with (f:=fun c_ds => prog_size (fst c_ds) (snd c_ds)). intros. rewrite HeqP'.
+  eapply measure_induction with (f:=fun c_ds => prog_size (fst c_ds) (snd c_ds)). 
+  intros. rewrite HeqP'.
   apply H. intros.
   remember (c', ds') as c_ds'.
   replace (P c' ds') with (P' c_ds') by now rewrite Heqc_ds', HeqP'.
