@@ -859,6 +859,7 @@ Qed.
 
 Lemma ideal_unused_overwrite_one_step (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
   unused_prog X p ->
+  unused X c ->
   p |- <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
   p |- <((c, X !-> n; st, ast, b))> -->i_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
 Proof.
@@ -885,75 +886,80 @@ Proof.
   (*       could be anything. specifically, unused X c is what you have to show. *)
   (*       So, it seems like this part is broken even apart from prog_size_ind. *)
   (*     *) *)
-Abort.
+Admitted.
 (* Qed. *)
 
-(*
+
 Lemma ideal_unused_overwrite (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
+  unused_prog X p ->
   unused X c ->
   p |- <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
   p |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))>.
 Proof.
-  intros. induction H0; [constructor|].
-  eapply ideal_unused_overwrite_one_step in H0; [|eassumption]. destruct H0.
+  intros. induction H1; [constructor|].
+  eapply ideal_unused_overwrite_one_step in H1; [|eassumption|eassumption]. destruct H1.
   econstructor; [eassumption|tauto].
 Qed.
 
 Lemma ideal_unused_update (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
-  unused X c p ->
+  unused_prog X p ->
+  unused X c ->
   p |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))> ->
   p |- <((c, st, ast, b))> -->i*_ds^^os <((c', X !-> st X; st', ast', b'))>.
 Proof.
   intros. rewrite <- (t_update_same _ st X) at 1.
-  eapply ideal_unused_overwrite with (X:=X) (n:=(st X)) in H0; [|assumption].
-  now rewrite !t_update_shadow in H0.
+  eapply ideal_unused_overwrite with (X:=X) (n:=(st X)) in H1; [ |assumption|assumption].
+  now rewrite !t_update_shadow in H1.
 Qed.
 
 Lemma spec_unused_overwrite_one_step (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
+  unused_prog X p ->
   unused X c ->
   p |- <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
   p |- <((c, X !-> n; st, ast, b))> -->_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
 Proof.
-  intros. induction H0.
-  + invert H. repeat econstructor; [|assumption..].
-    rewrite t_update_permute; [constructor|assumption].
-    now apply aeval_unused_update.
-  + invert H. eapply IHspec_eval_small_step in H1. destruct H1.
-    repeat econstructor; assumption.
-  + split; [|now invert H]. apply SpecSM_Seq_Skip.
-  + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto].
-    now rewrite beval_unused_update.
-  + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto].
-    now rewrite beval_unused_update.
-  + invert H. now repeat constructor.
-  + invert H. repeat constructor. rewrite t_update_permute; [constructor|assumption].
-    { now rewrite aeval_unused_update. } assumption.
-  + invert H. repeat constructor. rewrite t_update_permute; [|tauto]. now constructor; [apply aeval_unused_update|..].
-  + invert H. now repeat constructor; [apply aeval_unused_update..|].
-  + invert H. now repeat constructor; [apply aeval_unused_update..| |].
-  + (* same thing happening here as in ideal_unused_overwrite_one_step *)
+  (* intros. induction H1. *)
+  (* + invert H. repeat econstructor; [|assumption..]. *)
+  (*   rewrite t_update_permute; [constructor|assumption]. *)
+  (*   now apply aeval_unused_update. *)
+  (* + invert H. eapply IHspec_eval_small_step in H1. destruct H1. *)
+  (*   repeat econstructor; assumption. *)
+  (* + split; [|now invert H]. apply SpecSM_Seq_Skip. *)
+  (* + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto]. *)
+  (*   now rewrite beval_unused_update. *)
+  (* + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto]. *)
+  (*   now rewrite beval_unused_update. *)
+  (* + invert H. now repeat constructor. *)
+  (* + invert H. repeat constructor. rewrite t_update_permute; [constructor|assumption]. *)
+  (*   { now rewrite aeval_unused_update. } assumption. *)
+  (* + invert H. repeat constructor. rewrite t_update_permute; [|tauto]. now constructor; [apply aeval_unused_update|..]. *)
+  (* + invert H. now repeat constructor; [apply aeval_unused_update..|]. *)
+  (* + invert H. now repeat constructor; [apply aeval_unused_update..| |]. *)
+  (* + (* same thing happening here as in ideal_unused_overwrite_one_step *) *)
 Admitted.
 (* Qed. *)
 
 Lemma spec_unused_overwrite (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
+  unused_prog X p ->
   p |- <((c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
   p |- <((c, X !-> n; st, ast, b))> -->*_ds^^os <((c', X !-> n; st', ast', b'))>.
 Proof.
-  intros. induction H0; [constructor|].
-  eapply spec_unused_overwrite_one_step in H0; [|eassumption]. destruct H0.
+  intros. induction H1; [constructor|].
+  eapply spec_unused_overwrite_one_step in H1; [|eassumption|eassumption]. destruct H1.
   econstructor; [eassumption|tauto].
 Qed.
 
 Lemma spec_unused_update (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
+  unused_prog X p ->
   p |- <((c, X !-> n; st, ast, b))> -->*_ds^^os <((c', X !-> n; st', ast', b'))> ->
   p |- <((c, st, ast, b))> -->*_ds^^os <((c', X !-> st X; st', ast', b'))>.
 Proof.
   intros. rewrite <- (t_update_same _ st X) at 1.
-  eapply spec_unused_overwrite with (X:=X) (n:=(st X)) in H0; [|assumption].
-  now rewrite !t_update_shadow in H0.
-   Qed. *)
+  eapply spec_unused_overwrite with (X:=X) (n:=(st X)) in H1; [|assumption|assumption].
+  now rewrite !t_update_shadow in H1.
+Qed.
 
 Lemma upd_length : forall l i a,
   length (upd i l a) = length l.
@@ -1114,8 +1120,7 @@ Proof.
       eapply IH in H2.
       { destruct H2, H. exists x6. split; [|tauto]. rewrite !app_assoc. com_step.
         erewrite <- t_update_same, <- t_update_shadow in H at 1.
-        admit. }
-      (* apply ideal_unused_update in H; try tauto. rewrite t_update_eq in H; eauto. } *)
+      apply ideal_unused_update in H; try tauto. rewrite t_update_eq in H; eauto. }
       { admit. }
       { admit. }
       { admit. }
