@@ -1412,6 +1412,19 @@ Proof.
   - (* Call *) admit.
 Admitted.
 
+(* HIDE: YH:
+         How about a statement like this?
+         This means all commands in the program satisfy backwards compiler correctness of uslh."
+
+Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
+  nonempty_arrs ast ->
+  unused_prog p ->
+  In c p ->
+  st "b" = (if b then 1 else 0) ->
+  p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
+Proof.
+ *)
 Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused "b" c ->
@@ -1859,6 +1872,26 @@ Qed.
 
 (* LATER: Strengthen the conclusion so that our theorem is termination sensitive
    (and also error sensitive) by looking at prefixes there too. *)
+
+(* HIDE: YH:This pairs with the new bcc lemma definition I suggested above.
+Theorem ultimate_slh_relative_secure :
+  forall c st1 st2 ast1 ast2,
+    (* some extra assumptions needed by slh_bcc *)
+    unused_prog p ->
+    In c p ->
+    st1 "b" = 0 ->
+    st2 "b" = 0 ->
+    nonempty_arrs ast1 ->
+    nonempty_arrs ast2 ->
+    relative_secure ultimate_slh c st1 st2 ast1 ast2.
+Proof.
+
+Question: Do we need to define relative security for programs?
+          I think that in languages like Imp that we're dealing with,
+          we could define it as satisfying relative security for all commands in the program.
+          Though for languages with a structure that starts from main, like C,
+          we would need to define it differently.
+ *)
 
 Theorem ultimate_slh_relative_secure :
   forall c st1 st2 ast1 ast2,
