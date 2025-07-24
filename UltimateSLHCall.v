@@ -1104,17 +1104,24 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
   (ultimate_slh_prog p) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>
+      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee";"b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
 Proof.
   intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
   intros c ds IH. intros until os. intros ast_arrs unused_p unused_c st_b st_st'.
   invert st_st'.
   (* multi_spec_refl *)
-  { rewrite t_update_same. eexists. split; [apply multi_ideal_refl|]. 
+  { repeat rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
     split; [|tauto]. now destruct c. }
   (* multi_spec_trans *)
   destruct c; simpl in *; invert H.
+  11:{
+    (* Call *) invert H12. invert H0.
+    (* reflexive *)
+    + eexists. split; try discriminate.
+      simpl. rewrite t_update_permute; [|unfold not; intros; discriminate].
+      rewrite t_update_shadow. repeat rewrite t_update_same. econstructor.
+    + admit. }
     - (* Asgn *)
     invert H0; [|now inversion H].
     eexists. split; [eapply multi_ideal_trans|split; [tauto|] ].
@@ -1431,10 +1438,7 @@ Proof.
       eexists. split; [|tauto]. repeat econstructor; tauto.
     + simpl in H15. rewrite st_b in H15. simpl in H15.
       specialize (ast_arrs a). lia.
-  - Print ultimate_slh_prog. 
-
-
-    (* Call *) invert H12. invert H0.
+  - (* Call *) invert H12. invert H0.
     (* reflexive *)
     + eexists. split; try discriminate.
       simpl. rewrite t_update_permute; [|unfold not; intros; discriminate].
