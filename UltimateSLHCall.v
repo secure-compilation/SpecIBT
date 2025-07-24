@@ -1097,12 +1097,13 @@ End EXAMPLE.
 
 Ltac measure1 := unfold measure, lex_nat_nat_spec; simpl; try (rewrite !app_length); simpl; lia.
 
+(* YH: Do we need to check that "callee" is also not used in the program?  *)
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused_prog "b" p ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
-  p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  (ultimate_slh_prog p) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
       exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
 Proof.
