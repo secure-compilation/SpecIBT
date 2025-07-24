@@ -1223,13 +1223,19 @@ Proof.
         split; [|eassumption]. now com_step.
   - (* While *)
     invert H12. invert H0.
+    (* reflexive multistep *)
     { eexists. split; [|discriminate]. simpl. rewrite t_update_same. constructor. }
+    (* transitive multistep *)
     invert H. invert H12; simpl in *.
+    (* step *)
     + destruct (is_empty (vars_bexp be)) eqn:Hbe.
+      (* optimization *)
       * destruct (beval st'1 be) eqn:Heq.
+        (* be true *)
         -- invert H1; [solve_refl|]. invert H. invert H12. invert H11. invert H12. invert H0; [solve_refl|].
            invert H. invert H12. invert H11; [inversion H12|]. apply multi_spec_seq_assoc in H1.
            destruct H1 as (?&H&H'). apply multi_spec_seq in H. destruct H.
+           (* two goals bc conclusion of multi_spec_seq is of form P \/ Q *)
            ++ do 8 destruct H. destruct H0, H1. subst. simpl in H1. rewrite Heq, t_update_same in H1.
               apply IH in H1; auto;  [ |measure1|tauto].
               destruct H1 as (c''&H&(->&H'')); [reflexivity|].
@@ -1247,20 +1253,26 @@ Proof.
               destruct H0, H. eexists. split; [|intro abs; apply H' in abs; discriminate]. com_step. simpl.
               rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds0).
               eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com; eassumption|constructor].
+        (* be false *)
         -- invert H1; [solve_refl|]. invert H; [inversion H12|]. invert H0; [solve_refl|]. invert H. 
            invert H1; [|inversion H].
            eexists. split; [|split; [reflexivity|now rewrite t_update_eq; simpl; rewrite Heq] ]. com_step. 
            rewrite t_update_shadow, t_update_same. simpl.
            constructor.
+      (* no optimization *)
       * destruct (beval st'1 be) eqn:Heq.
-        -- destruct b'1.
+        (* be true *)
+        -- destruct b'1. (* b'1 is the start state of semantic spec flag in ideal semantics *)
+           (* b'1 true *)
            ++ simpl in H1. rewrite st_b, Heq in H1. simpl in H1. invert H1; [solve_refl|].
               invert H; [inversion H12|]. invert H0; [solve_refl|]. invert H. invert H1; [|inversion H].
               eexists. split; [|split; [reflexivity|now rewrite t_update_eq; simpl; rewrite st_b, Heq] ]. 
               rewrite t_update_shadow, t_update_same.
               com_step. simpl. rewrite st_b, Heq.  simpl. com_step. constructor; [now rewrite Hbe, Heq|reflexivity].
+           (* b'1 false *)
            ++ simpl in H1. rewrite st_b, Heq in H1. simpl in H1. apply multi_spec_seq_assoc in H1.
               destruct H1 as (?&H&H'). apply multi_spec_seq in H. destruct H.
+              (* two goals bc conclusion of multi_spec_seq is of form P \/ Q *)
               ** do 8 destruct H. destruct H0, H1. subst. simpl in H1. invert H1. invert H. invert H13. 
                  invert H0. invert H; [inversion H13|].
                  simpl in H1. rewrite st_b, Heq in H1. simpl in H1. rewrite <- st_b, t_update_same in H1.
@@ -1292,47 +1304,47 @@ Proof.
                  destruct H0, H. eexists. split; [|intro Hc'; apply H' in Hc'; discriminate]. simpl. 
                  rewrite st_b, Heq. simpl.
                  com_step. apply multi_ideal_add_snd_com. rewrite <- st_b. eassumption.
+        (* be false *)
         -- simpl in H1. rewrite Heq, andb_false_r in H1. invert H1; [solve_refl|]. invert H; [inversion H12|]. 
            invert H0; [solve_refl|]. invert H. invert H1; [|inversion H].
            eexists. split; [|split; [reflexivity|now simpl; rewrite t_update_eq, Heq, andb_false_r, st_b] ]. simpl. 
            rewrite Heq, andb_false_r, t_update_shadow, t_update_same.
            com_step. now constructor; [rewrite Heq, andb_false_r|].
+    (* force *)
     + destruct (is_empty (vars_bexp be)) eqn:Hbe.
+      (* optimization *)
       * destruct (beval st'1 be) eqn:Heq.
+        (* be true *)
         -- invert H1; [solve_refl|]. invert H; [inversion H12|]. invert H0; [solve_refl|]. invert H. 
            invert H1; [|inversion H].
            eexists. split; [|split; [reflexivity|now simpl; rewrite t_update_eq, Heq] ]. simpl. 
            rewrite t_update_shadow, t_update_same. com_step.
            now constructor; [rewrite Hbe, Heq|].
+        (* be false *)
         -- invert H1; [solve_refl|]. invert H. invert H12. invert H11. invert H12. invert H0; [solve_refl|].
            invert H. invert H12. invert H11; [inversion H12|]. apply multi_spec_seq_assoc in H1.
            destruct H1 as (?&H&H'). apply multi_spec_seq in H. destruct H.
+           (* two goals bc conclusion of multi_spec_seq is of form P \/ Q *)
            ++ do 8 destruct H. destruct H0, H1. subst. simpl in H1. rewrite Heq in H1.
-              apply IH in H1; auto; [ |measure1|tauto].
+              apply IH in H1; auto; [|measure1|tauto].
               destruct H1 as (c''&H&(->&H'')); [reflexivity|]. rewrite t_update_eq in H.
-              apply ideal_unused_update in H; simpl; try tauto.
+              apply ideal_unused_update in H; try tauto.
               replace <{{while be do "b" := be ? "b" : 1; (ultimate_slh c) end; "b" := be ? 1 : "b"}}> with
                 (ultimate_slh <{{ while be do c end }}>) in H2 by now simpl; rewrite Hbe.
               pose proof (ideal_eval_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ ast_arrs H).
-              apply IH in H2; auto; [|measure1].
-              destruct H2 as (c''&H1&H1'').
-              eexists. split; [|now intro c'_skip; apply H' in c'_skip; apply H1'']. 
-              eapply multi_ideal_trans_nil_l; [eapply ISM_While|].
-             
-              (* 
-              (* before com_step the directives are concatenated, which matches what 
-                 multi_ideal_combined_executions wants. *)
-              com_step. simpl.
-              (* this is where things go wrong: *)
+              apply IH in H2; auto; [|measure1]. destruct H2 as (c''&H1&H1'').
+              eexists. split; [|now intro c'_skip; apply H' in c'_skip; apply H1'']. com_step. simpl.
               eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com, H|].
-              erewrite st_b, <- t_update_shadow with (m:=st'). apply ideal_unused_overwrite; [simpl; tauto|].
-              eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|]. eassumption. *) admit.
+              erewrite st_b, <- t_update_shadow with (m:=st'). apply ideal_unused_overwrite; 
+              simpl; try tauto. eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|]. eassumption.          
            ++ do 2 destruct H. subst. simpl in H0. rewrite Heq in H0. apply IH in H0; auto; [ |measure1|tauto].
               destruct H0, H. eexists. split; [|intro abs; apply H' in abs; discriminate]. 
               simpl. com_step. rewrite t_update_eq in H.
               apply ideal_unused_update in H; auto; [|tauto].
               apply multi_ideal_add_snd_com. eassumption.
+      (* no optimization *)
       * destruct (beval st'1 be) eqn:Heq.
+        (* be true *)
         -- simpl in H1. rewrite st_b, Heq in H1. destruct b'0.
            ++ simpl in H1. invert H1; [solve_refl|]. invert H. invert H12. invert H11. invert H12. 
               invert H0; [solve_refl|]. invert H. invert H12.
@@ -1362,6 +1374,7 @@ Proof.
            ++ simpl in H1. invert H1; [solve_refl|]. invert H; [inversion H12|]. invert H0; [solve_refl|]. invert H. invert H1; [|inversion H].
               eexists. split; [|split; [reflexivity|now simpl; rewrite t_update_eq, st_b, Heq] ]. simpl. rewrite t_update_shadow, t_update_same, st_b, Heq. simpl.
               com_step. now constructor; [rewrite Hbe, Heq|].
+        (* be false *)
         -- simpl in H1. rewrite Heq, andb_false_r in H1.
            invert H1; [solve_refl|]. invert H. invert H12. invert H11. invert H12. invert H0; [solve_refl|]. invert H. invert H12.
            invert H11; [inversion H12|]. apply multi_spec_seq_assoc in H1.
@@ -1373,14 +1386,22 @@ Proof.
                 (ultimate_slh <{{ while be do c end }}>) in H2 by now simpl; rewrite Hbe.
               pose proof (ideal_eval_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ ast_arrs Hc). 
               apply IH in H2; auto; [|measure1].
-              destruct H2, H0. eexists. split; [|now intro Hc'; apply H1, H']. simpl. rewrite Heq, andb_false_r.
+              destruct H2, H0. eexists. split; [|now intro Hc'; apply H1, H']. simpl.
+              rewrite Heq, andb_false_r.
               pose proof (multi_ideal_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ Hc). subst.
-              rewrite t_update_eq, <- x0b, t_update_same in Hc. rewrite x0b in H0. simpl. fold_cons. eapply multi_ideal_trans_nil_l; [constructor|].
+              rewrite t_update_eq, <- x0b, t_update_same in Hc. rewrite x0b in H0. simpl. 
+              fold_cons. eapply multi_ideal_trans_nil_l; [constructor|].
               eapply ideal_unused_update; simpl; try tauto. rewrite x0b in Hc. 
-
-              (* econstructor; [now constructor; [rewrite beval_unused_update, Heq, andb_false_r|] |].
+              rewrite !app_comm_cons. 
+              assert (app_cons : forall [A : Type] (x : A) (l : list A), 
+                        x :: l = [x] ++ l).
+              { intros. simpl. reflexivity. }
+              rewrite app_cons. rewrite (app_cons observation (OBranch false) x5). 
+              rewrite <- app_assoc. rewrite <- (app_assoc [OBranch false] x5 x6).
+              (* is there a more graceful way to target the exact rewrites I want? *)
+              econstructor; [now constructor; [rewrite beval_unused_update, Heq, andb_false_r|] |].
               eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com; eassumption|]. 
-                 now eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|]. *) admit.
+              now eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|].
            ++ do 2 destruct H. subst. simpl in H0. rewrite Heq, andb_false_r in H0.
               apply IH in H0; auto; [ |measure1|tauto].
               destruct H0, H. rewrite t_update_eq in H. apply ideal_unused_update in H; try tauto.
@@ -1409,7 +1430,20 @@ Proof.
       eexists. split; [|tauto]. repeat econstructor; tauto.
     + simpl in H15. rewrite st_b in H15. simpl in H15.
       specialize (ast_arrs a). lia.
-  - (* Call *) admit.
+  - Print ultimate_slh_prog. 
+
+
+    (* Call *) invert H12. invert H0.
+    (* reflexive *)
+    + eexists. split; try discriminate.
+      simpl. rewrite t_update_permute; [|unfold not; intros; discriminate].
+      rewrite t_update_same. 
+             
+      
+
+    (* transitive *)
+    + admit. 
+    admit.
 Admitted.
 
 (* HIDE: YH:
