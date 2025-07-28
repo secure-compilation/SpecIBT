@@ -417,15 +417,6 @@ Definition ultimate_slh_prog (p:prog) :=
     <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}>
   ) (add_index p).
 
-Check ultimate_slh_prog.
-Print prog.
-
-(* ultimate_slh_prog
-     : prog -> list com
-
-prog = list com
-     : Set *)
-
 (** The masking USLH does for indices requires that our arrays are nonempty. *)
 
 Definition nonempty_arrs (ast : astate) :Prop :=
@@ -1118,12 +1109,19 @@ Proof.
   intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
   intros c ds IH. intros until os. 
   intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'.
+  (* st_st' is target multistep under speculation *)
   invert st_st'.
   (* multi_spec_refl *)
   { repeat rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
     split; [|tauto]. now destruct c. }
   (* multi_spec_trans *)
-  destruct c; (*simpl in *;*) invert H. (* H is single step of target *)
+  (* case analysis on commands, then invert single target step *)
+  (* the inversion produces extra cases corresponding to commands 
+     that have the option of attacker directives (although not Call.
+     I think because it's in the form of a sequence so further 
+     unwrapping is needed to access those two cases) *)
+
+  destruct c; (*simpl in *;*) invert H.   
   11 : { (* Call *) 
     invert H12. invert H0. 
     (* reflexive *)
@@ -1137,7 +1135,19 @@ Proof.
       { inv H12. }
       rename p0 into f.
       destruct (is_empty (vars_aexp f)) eqn: Hf. 
-      { (* no variables in expression f. *) admit. }
+      { (* no variables in expression f. *)
+        (* inv H1.
+        - simpl in *. exists <{{ call f }}>. rewrite t_update_permute.
+          + rewrite t_update_shadow. constructor; auto. 
+            do 2 rewrite t_update_same. apply multi_ideal_refl.
+          + unfold not; intros; discriminate.
+        - simpl. inv H.
+          + inv H0.
+            * simpl. rewrite aeval_unused_update. 
+              -- rewrite t_update_permute.
+           ++ rewrite t_update_shadow. do 2 rewrite t_update_same. *)
+          admit. 
+             }
         inv H1.
     (* refl case *)
       { exists <{{ call f }}>. simpl. split.
@@ -1345,19 +1355,44 @@ Proof.
            destruct H1 as (?&H&H'). apply multi_spec_seq in H. destruct H.
            (* two goals bc conclusion of multi_spec_seq is of form P \/ Q *)
            ++ do 8 destruct H. destruct H0, H1. subst. simpl in H1. rewrite Heq, t_update_same in H1.
-              apply IH in H1; auto;[|measure1|inversion unused_c|inversion unused_c_callee]; 
-              try (destruct H1); auto.              
-              (* destruct H1 as (c''&H&(->&H'')); [reflexivity|].*)
+              apply IH in H1; auto;[|measure1|inversion unused_c|inversion unused_c_callee]; auto.
+              destruct H1 as (c''&H&(->&H'')); [reflexivity|].
               replace <{{while be do "b" := be ? "b" : 1; (ultimate_slh c) end; "b" := be ? 1 : "b"}}> with
                 (ultimate_slh <{{ while be do c end }}>) in H2 by now simpl; rewrite Hbe.
-                (* need to clean up H states so it has correct type *)
               pose proof (ideal_eval_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ ast_arrs H).
               apply IH in H2; auto; [|measure1]. 
               destruct H2 as (c''&H1&H1'').
               eexists. split; [|now intro c'_skip; apply H' in c'_skip; apply H1'']. com_step. simpl.
               eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com, H|].
               erewrite st_b, <- t_update_shadow with (m:=st'). apply ideal_unused_overwrite; simpl; try tauto.
-              eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|]. eassumption.
+              eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|]. rewrite t_update_shadow. 
+              apply ideal_unused_overwrite; auto. 
+        (* ideal_unused_overwrite:
+        forall (p : prog) (st : state) (ast : astate) (b : bool) 
+          (ds : dirs) (c c' : com) (st' : state) (ast' : astate) 
+          (b' : bool) (os : obs) (X : string) (n : nat),
+        unused_prog X p ->
+        unused X c ->
+        p |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c', st', ast', b' ))> ->
+        p |- <(( c, X !-> n; st, ast, b ))> -->i*_ ds ^^ os <(( c', X !-> n; st', ast', b' ))>
+
+        ideal_unused_update:
+        forall (p : prog) (st : total_map nat) (ast : astate) 
+          (b : bool) (ds : dirs) (c c' : com) (st' : total_map nat) 
+          (ast' : astate) (b' : bool) (os : obs) (X : string) 
+          (n : nat),
+        unused_prog X p ->
+        unused X c ->
+        p |- <(( c, X !-> n; st, ast, b ))> -->i*_ ds ^^ os <(( c', X !-> n; st', ast', b' ))> ->
+        p |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c', X !-> st X; st', ast', b' ))>
+
+
+      *)
+
+
+
+                            Search unused. eapply ideal_unused_overwrite; eauto. eapply ideal_unused_overwrite in H1; eauto. 
+              rewrite t_update_shadow in H1. 
            ++ do 2 destruct H. subst. simpl in H0. rewrite Heq, t_update_same in H0. 
               apply IH in H0; auto; [ |measure1|tauto]. 
               destruct H0, H. eexists. split; [|intro abs; apply H' in abs; discriminate]. com_step. simpl.
