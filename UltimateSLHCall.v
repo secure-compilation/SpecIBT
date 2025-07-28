@@ -1043,6 +1043,7 @@ Ltac com_step :=
   | |- _ => now constructor
   end).
 
+
 (* prog_size_ind: forall P : com -> dirs -> Prop,
        (forall (c : com) (ds : dirs),
         (forall (c' : com) (ds' : dirs),
@@ -1052,20 +1053,14 @@ Ltac com_step :=
 Definition measure (c : com) (ds : list direction) : nat * nat :=
   (length ds, com_size c).
 
+(* matches syntactic form of prog_size_ind; easier to apply *)
 Lemma lex_ind2 : forall P : com -> dirs -> Prop,
     (forall c ds,
         (forall c' ds',
             lex_nat_nat_spec (measure c' ds') (measure c ds) -> P c' ds') ->
         P c ds) -> forall c ds, P c ds.
 Proof.
-Admitted.
-
-(* Lemma lex_nat_nat_ind (P : nat*nat -> Prop)
-  (IH : forall p, (forall q, lex_nat_nat_spec q p -> P q) -> P p)
-   : forall p, P p. *) 
-
-(* Definition lex_nat_nat_spec (p q : nat*nat) : Prop :=
-  fst p < fst q \/ (fst p = fst q /\ snd p < snd q). *)
+Admitted. (* TODO need to prove *)
 
 Section EXAMPLE.
 
@@ -1074,7 +1069,9 @@ Variable p: prog.
 Lemma unused_prog_unused :
   forall c, In c p -> unused_prog "b" p -> unused "b" c.
 Proof.
-Admitted.
+  intros. unfold unused_prog in H0. rewrite Forall_forall in H0. 
+  specialize H0 with (x:=c). apply H0 in H; auto.
+Qed.
 
 Definition Property (c:com) (ds: dirs) := forall st ast (b b':bool) c' st' ast' os,
   nonempty_arrs ast ->
@@ -1103,8 +1100,10 @@ Abort.
 End EXAMPLE.
 
 Ltac measure1 := unfold measure, lex_nat_nat_spec; simpl; try (rewrite !app_length); simpl; lia.
+(* also make a tactic for all the places where extra cases popped up re unused variables *)
 
-(* YH: Do we need to check that "callee" is also not used in the program?  *)
+(* YH: Do we need to check that "callee" is also not used in the program?  
+   JLB: added premises checking this. *)
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused_prog "b" p ->
@@ -1113,23 +1112,20 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c
   unused "callee" c ->
   st "b" = (if b then 1 else 0) ->
   (ultimate_slh_prog p) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee";"b" !-> st "b"; st', ast', b'))>
+      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
 Proof.
   intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
   intros c ds IH. intros until os. 
-  intros ast_arrs unused_p unused_c unusedp_callee unusedc_callee st_b st_st'.
+  intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'.
   invert st_st'.
   (* multi_spec_refl *)
   { repeat rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
     split; [|tauto]. now destruct c. }
   (* multi_spec_trans *)
-  destruct c; simpl in *; invert H.
-  11:{ (* H12 and H0 are generated as premises for multi_spec_trans, from `invert st_st`.
-          The single step (H12) is the evaluation of "callee" := e', the first command in the `call e` sequence,
-          and the multistep (H0) is the sequence command but with `"callee" := e'` replaced with c1t, 
-          the command H12 says it evaluates to. *)
-  (* Call *) invert H12. invert H0. (* since H0 is multistep it generates refl and trans goals *)
+  destruct c; (*simpl in *;*) invert H. (* H is single step of target *)
+  11 : { (* Call *) 
+    invert H12. invert H0. 
     (* reflexive *)
     + eexists. split; try discriminate.
       simpl. rewrite t_update_permute; [|unfold not; intros; discriminate].
@@ -1140,26 +1136,30 @@ Proof.
       (* c1t; code & c1t <> skip *)
       { inv H12. }
       rename p0 into f.
-      destruct (is_empty (vars_aexp f)) eqn: Hf.
-      { admit. (* no variables in expression f. *) }
-      inv H1.
-      (* refl case *)
+      destruct (is_empty (vars_aexp f)) eqn: Hf. 
+      { (* no variables in expression f. *) admit. }
+        inv H1.
+    (* refl case *)
       { exists <{{ call f }}>. simpl. split.
         2:{ intros. inv H. }
         rewrite t_update_permute; [|unfold not; intros; discriminate].
-        rewrite t_update_shadow. do 2 rewrite t_update_same. econstructor. }
+        rewrite t_update_shadow. do 2 rewrite t_update_same. constructor. }
       (* transitive *)
       inv H; simpl.
-      (* Regular Call case *)
+      (* DStep/OCall *)
       * simpl in *. destruct b'0 eqn:Hmsf; rewrite st_b in *.
-        (* already misspeculated *)
+        (* already misspeculating *)
         { rewrite Nat.eqb_refl in *.
           rewrite t_update_neq in *; try discriminate.
           rewrite st_b in *. rewrite Nat.eqb_refl in *.
           destruct p; simpl in *.
           { inv H3. }
           inv H3. inv H0.
-          { admit. }
+          { rewrite t_update_permute; try (unfold not; intros; discriminate).
+            rewrite t_update_shadow. rewrite t_update_permute; try (unfold not; intros; discriminate).
+            rewrite <- st_b. rewrite t_update_same. rewrite t_update_same.
+            rewrite st_b.
+            admit. }
           inv H. inv H12. inv H1.
           { admit. }
           inv H.
@@ -1168,7 +1168,7 @@ Proof.
           eapply IH in H0; auto; cycle 1.
           { measure1. }
           { inv unused_p. auto. }
-          { inv unusedp_callee. auto. }
+          { inv unused_p_callee. auto. }
           { destruct H0 as [c'' A]. destruct A as [STEPS SKIP].
             exists c''. split; auto.
             replace (DStep :: ds2) with ([DStep] ++ ds2) by auto.
@@ -1187,10 +1187,15 @@ Proof.
             rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
             rewrite t_update_neq in *; try discriminate.
             rewrite t_update_permute; [|unfold not; intros; discriminate].
-            rewrite t_update_same in STEPS. rewrite st_b in STEPS. auto. } }
-        (* Regular case *)
-        { admit. }
-      (* Misspeculated Call case *)
+            rewrite t_update_same in STEPS. rewrite st_b in STEPS. auto. 
+          } 
+        }
+        (* not yet misspeculated *)
+        { simpl in *. 
+
+
+          admit. }
+      (* DForceCall/OForceCall *)
       * simpl in *. admit. }
 
   - (* Asgn *)
@@ -1198,31 +1203,41 @@ Proof.
     eexists. split; [eapply multi_ideal_trans|split; [tauto|] ].
     + apply ISM_Asgn. reflexivity.
     + rewrite t_update_permute with (x1:="b") (x2:=x);
-      try (rewrite t_update_permute with (x1:="callee") (x2:=x)); try tauto.
+      try (rewrite t_update_permute with (x1:="callee") (x2:=x)); try tauto;
+      try (unfold not; intros).
+      2 : { unfold not. intros. unfold unused in unused_c_callee; 
+        destruct unused_c_callee. contradiction. }
+      2 : { unfold not. intros. unfold unused in unused_c.
+        destruct unused_c. contradiction. }
       do 2 rewrite t_update_same. constructor.
-    + rewrite <- st_b. apply t_update_neq. tauto. 
-
+    + rewrite <- st_b. apply t_update_neq. unfold not. intros.
+      unfold unused in unused_c. destruct unused_c. contradiction.
   - (* Seq *)
     eapply multi_spec_seq in H0.
     destruct H0.
     + do 8 destruct H. destruct H0, H1. subst.
       eapply multi_spec_trans in H12; [|apply H1]. clear H1.
-      eapply IH in H12; eauto; [ |measure1|tauto|tauto].
-      destruct H12 as (c''&st_x&->&Hx); [reflexivity|]. eapply IH in H2; try tauto.
+      eapply IH in H12; eauto; [|measure1|inversion unused_c|inversion unused_c_callee];
+      auto. destruct H12 as (c''&st_x&->&Hx); [reflexivity|]. eapply IH in H2; try tauto.
       { destruct H2, H. exists x6. split; [|tauto]. rewrite !app_assoc. com_step.
         erewrite <- t_update_same, <- t_update_shadow in H at 1.
-        apply ideal_unused_update in H; try tauto; rewrite t_update_eq in H; eauto.
-        admit. }
+        apply ideal_unused_update in H; try tauto; [|inversion unused_c_callee; auto].
+        rewrite t_update_eq in H. admit.
+      }
       { measure1. }
       { eapply ideal_eval_preserves_nonempty_arrs; eassumption. }
+      { inversion unused_c; auto. }
+      { inversion unused_c_callee; auto. }
     + do 2 destruct H. subst.
       eapply multi_spec_trans in H12; [|apply H0].
-      eapply IH in H12; eauto; try measure1; try tauto.       
+      eapply IH in H12; eauto; try measure1; try tauto; 
+      [|inversion unused_c|inversion unused_c_callee]; auto.
       destruct H12 as (c''&st_st'&H').
       exists <{{ c''; c2 }}>. split; [|discriminate]. com_step.
   - (* Seq-Skip *)
     destruct c1; invert H2.
-    eapply IH in H0; eauto; try measure1; try tauto. destruct H0 as (c''&st'0_st'&H').
+    eapply IH in H0; eauto; try measure1; [|inversion unused_c|inversion unused_c_callee]; auto. 
+    destruct H0 as (c''&st'0_st'&H').
     exists c''. split; [|tauto]. simpl. now com_step.
   - (* If *)
     destruct (is_empty (vars_bexp be)) eqn:Hbe.
@@ -1231,33 +1246,38 @@ Proof.
         invert H. invert H12. invert H1; [solve_refl|].
         invert H; [inversion H12|].
         simpl in H0. rewrite st_b, Heq in H0. simpl in H0. rewrite <- st_b, t_update_same in H0.
-        eapply IH in H0; eauto; try measure1; try tauto.        
+        eapply IH in H0; eauto; try measure1; [|inversion unused_c|inversion unused_c_callee]; 
+        try (destruct H1; auto).
         destruct H0 as (c''&st'0_st'&H').
         exists c''. simpl. split; [|tauto]. now com_step.
       * invert H0; [solve_refl|].
         invert H. invert H12. invert H1; [solve_refl|].
         invert H; [inversion H12|].
         simpl in H0. rewrite st_b, Heq in H0. simpl in H0. rewrite <- st_b, t_update_same in H0.
-        eapply IH in H0; eauto; try measure1; try tauto.                 
+        eapply IH in H0; eauto; try measure1; [|inversion unused_c|inversion unused_c_callee]; 
+        try (destruct H1; auto).
         destruct H0 as (c''&st'0_st'&H').
         exists c''. simpl. split; [|tauto]. now com_step.
     + case (beval st'0 be) eqn:Heq.
       * simpl in H0; destruct b'0; rewrite st_b in H0; simpl in H0.
         ++ invert H0; [solve_refl|]. invert H. invert H12. invert H1; [solve_refl|].
            invert H; [inversion H12|]. simpl in H0. rewrite st_b in H0; simpl in H0. rewrite <- st_b, t_update_same in H0.
-           eapply IH in H0; eauto; try measure1; try tauto.           
+           eapply IH in H0; eauto; try measure1; [|inversion unused_c|inversion unused_c_callee]; 
+           try (destruct H1; auto).           
            destruct H0 as (c''&st'0_st'&H'). eexists. simpl. rewrite st_b at 2. simpl.
            split; [|eassumption]. now com_step.
         ++ rewrite Heq in H0. invert H0; [solve_refl|]. invert H. invert H12. invert H1; [solve_refl|]. 
            invert H; [inversion H12|].
            simpl in H0. rewrite st_b, Heq in H0. simpl in H0. rewrite <- st_b, t_update_same in H0.
-           apply IH in H0; auto; try measure1; try tauto.           
+           apply IH in H0; auto; try measure1; [|inversion unused_c|inversion unused_c_callee]; 
+           try (destruct H1; auto).         
            destruct H0 as (c''&st'0_st'&H'). eexists. simpl. rewrite st_b at 2. simpl.
            split; [|eassumption]. com_step. now rewrite Heq.
       * simpl in H0. rewrite Heq, andb_false_r in H0. invert H0; [solve_refl|]. invert H. invert H12. 
         invert H1; [solve_refl|].
         invert H; [inversion H12|]. simpl in H0. rewrite Heq, andb_false_r in H0. rewrite t_update_same in H0.
-        apply IH in H0; auto; try measure1; try tauto. 
+        apply IH in H0; auto; try measure1; [|inversion unused_c|inversion unused_c_callee]; 
+        try (destruct H1; auto).
         destruct H0 as (c''&st'0_st'&H'). eexists. simpl. rewrite Heq, andb_false_r. simpl.
         split; [|eassumption]. now com_step.
   - (* If-Force *)
@@ -1267,59 +1287,52 @@ Proof.
         invert H. invert H12. invert H1; [solve_refl|].
         invert H; [inversion H12|].
         simpl in H0. rewrite st_b, Heq in H0. simpl in H0.
-        eapply IH in H0; eauto; try measure1; try tauto. 
+        eapply IH in H0; eauto; try measure1; [|inversion unused_c|inversion unused_c_callee]; 
+        try (destruct H1; auto).
         destruct H0 as (c''&st'0_st'&H'). rewrite t_update_eq in st'0_st'.
-        exists c''. simpl. split; try tauto. 
-        
-        Check ideal_unused_overwrite.
-               
-        (* ideal_unused_update
-     : forall (p : prog) (st : total_map nat) (ast : astate) 
-         (b : bool) (ds : dirs) (c c' : com) (st' : total_map nat)
-         (ast' : astate) (b' : bool) (os : obs) (X : string) 
-         (n : nat),
-       unused_prog X p ->
-       unused X c ->
-       p |- <(( c, X !-> n; st, ast, b ))> -->i*_ ds ^^ os <(( c',
-       X !-> n; st', ast', b' ))> ->
-       p |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c', 
-       X !-> st X; st', ast', b' ))> *)
-
-        (* apply ideal_unused_update in st'0_st'. ; try tauto.
-           exists c''. simpl. split; [|tauto]. now com_step. *) admit.
+        eapply ideal_unused_update in unused_p; eauto.
+        -- exists c''. simpl.  split; [|tauto].
+           eapply ideal_unused_update in unused_p_callee; eauto.
+           admit.
+        -- admit.
       * invert H0; [solve_refl|].
         invert H. invert H12. invert H1; [solve_refl|].
         invert H; [inversion H12|].
         simpl in H0. rewrite st_b, Heq in H0. simpl in H0.
-        eapply IH in H0; eauto; try measure1; try tauto. 
+        eapply IH in H0; eauto; try measure1; [|inversion unused_c|inversion unused_c_callee]; 
+        try (destruct H1; auto).
         destruct H0 as (c''&st'0_st'&H').
         rewrite t_update_eq in st'0_st'. (* apply ideal_unused_update in st'0_st'; try tauto.
-                                            exists c''. simpl. split; [|tauto]. now com_step.*) admit.
+                                            exists c''. simpl. split; [|tauto]. now com_step.*) 
+        admit.
     + case (beval st'0 be) eqn:Heq.
       * simpl in H0; destruct b; rewrite st_b in H0; simpl in H0.
-        ++ invert H0; [solve_refl|]. invert H. invert H12. invert H1; [solve_refl|].
+        -- invert H0; [solve_refl|]. invert H. invert H12. invert H1; [solve_refl|].
            invert H; [inversion H12|]. simpl in H0. rewrite st_b in H0; simpl in H0. rewrite <- st_b, t_update_same in H0.
-           apply IH in H0; auto; [ |measure1|tauto].
+           apply IH in H0; auto; [|measure1|inversion unused_c|inversion unused_c_callee]; 
+           try (destruct H1); auto.
            destruct H0 as (c''&st'0_st'&H'). eexists. simpl. rewrite st_b at 2. simpl.
            split; [|eassumption]. now com_step.
-        ++ rewrite Heq in H0. invert H0; [solve_refl|]. invert H. invert H12. invert H1; [solve_refl|]. 
+        -- rewrite Heq in H0. invert H0; [solve_refl|]. invert H. invert H12. invert H1; [solve_refl|]. 
            invert H; [inversion H12|].
            simpl in H0. rewrite st_b, Heq in H0. simpl in H0.
-           apply IH in H0; auto;  [ |measure1|tauto].
+           apply IH in H0; auto; [|measure1|inversion unused_c|inversion unused_c_callee]; 
+           try (destruct H1); auto. 
            destruct H0 as (c''&st'0_st'&H'). eexists. simpl. rewrite st_b at 2. simpl.
-           rewrite t_update_eq in st'0_st'. apply ideal_unused_update in st'0_st'; auto; [|tauto].
-           split; [|eassumption]. com_step. now rewrite Heq.
+           rewrite t_update_eq in st'0_st'. (* apply ideal_unused_update in st'0_st'; auto; [|tauto].
+                                               split; [|eassumption]. com_step. now rewrite Heq.*) admit.
       * simpl in H0. rewrite Heq, andb_false_r in H0. invert H0; [solve_refl|]. invert H. invert H12. 
         invert H1; [solve_refl|].
         invert H; [inversion H12|]. simpl in H0. rewrite Heq, andb_false_r in H0.
-        apply IH in H0; auto; [ |measure1|tauto]. 
+        apply IH in H0; auto; [|measure1|inversion unused_c|inversion unused_c_callee]; 
+           try (destruct H1); auto.
         destruct H0 as (c''&st'0_st'&H'). eexists. simpl. rewrite Heq, andb_false_r. simpl.
-        rewrite t_update_eq in st'0_st'. apply ideal_unused_update in st'0_st'; auto; [|tauto].
-        split; [|eassumption]. now com_step.
+        rewrite t_update_eq in st'0_st'. (* apply ideal_unused_update in st'0_st'; auto; [|tauto].
+        split; [|eassumption]. now com_step.*) admit.
   - (* While *)
     invert H12. invert H0.
     (* reflexive multistep *)
-    { eexists. split; [|discriminate]. simpl. rewrite t_update_same. constructor. }
+    { eexists. split; [|discriminate]. simpl. rewrite t_update_same. rewrite t_update_same. constructor. }
     (* transitive multistep *)
     invert H. invert H12; simpl in *.
     (* step *)
@@ -1332,10 +1345,12 @@ Proof.
            destruct H1 as (?&H&H'). apply multi_spec_seq in H. destruct H.
            (* two goals bc conclusion of multi_spec_seq is of form P \/ Q *)
            ++ do 8 destruct H. destruct H0, H1. subst. simpl in H1. rewrite Heq, t_update_same in H1.
-              apply IH in H1; auto;  [ |measure1|tauto].
-              destruct H1 as (c''&H&(->&H'')); [reflexivity|].
+              apply IH in H1; auto;[|measure1|inversion unused_c|inversion unused_c_callee]; 
+              try (destruct H1); auto.              
+              (* destruct H1 as (c''&H&(->&H'')); [reflexivity|].*)
               replace <{{while be do "b" := be ? "b" : 1; (ultimate_slh c) end; "b" := be ? 1 : "b"}}> with
                 (ultimate_slh <{{ while be do c end }}>) in H2 by now simpl; rewrite Hbe.
+                (* need to clean up H states so it has correct type *)
               pose proof (ideal_eval_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ ast_arrs H).
               apply IH in H2; auto; [|measure1]. 
               destruct H2 as (c''&H1&H1'').

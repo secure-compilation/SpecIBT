@@ -497,12 +497,6 @@ Definition prog_size (c :com) (ds :dirs) :nat := com_size c + length ds.
 
 Check Coq.Arith.PeanoNat.Nat.induction.
 
-Check measure_induction.
-(* measure_induction
-     : forall (X : Type) (f : X -> nat) (A : X -> Type),
-       (forall x : X, (forall y : X, f y < f x -> A y) -> A x) ->
-       forall x : X, A x *)
-
 Lemma prog_size_ind :
   forall P : com -> dirs -> Prop,
   (forall c ds,
@@ -544,43 +538,6 @@ Ltac prog_size_auto :=
         [| repeat rewrite app_length]; lia);
   try ( apply prog_size_monotonic; left; split; simpl;
         [auto | repeat rewrite app_length; lia] ).
-
-(* Adding same tactic for lex_ind2 *)
-
-(* Definition measure (c : com) (ds : list direction) : nat * nat :=
-  (length ds, com_size c).
-
-Lemma lex_ind2 : forall P : com -> dirs -> Prop,
-    (forall c ds,
-        (forall c' ds',
-            lex_nat_nat_spec (measure c' ds') (measure c ds) -> P c' ds') ->
-        P c ds) -> forall c ds, P c ds.
-Proof.
-Admitted.
-
-Definition lex_nat_nat_spec (p q : nat*nat) : Prop :=
-  fst p < fst q \/ (fst p = fst q /\ snd p < snd q).
-
- *)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 Lemma aeval_beval_unused_update : forall X st n,
   (forall ae, a_unused X ae ->
