@@ -1034,67 +1034,8 @@ Ltac com_step :=
   | |- _ => now constructor
   end).
 
-
-(* prog_size_ind: forall P : com -> dirs -> Prop,
-       (forall (c : com) (ds : dirs),
-        (forall (c' : com) (ds' : dirs),
-         prog_size c' ds' < prog_size c ds -> P c' ds') ->
-   P c ds) -> forall (c : com) (ds : dirs), P c ds *)
-
 Definition measure (c : com) (ds : dirs) : nat * nat :=
   (length ds, com_size c).
-
-(*
-
-Section LEX_ORDER.
-
-Variable A: Type.
-Variable B: Type.
-Variable ordA: A -> A -> Prop.
-Variable ordB: B -> B -> Prop.
-
-Inductive lex_ord: A*B -> A*B -> Prop :=
-  | lex_ord_left: forall a1 b1 a2 b2,
-      ordA a1 a2 -> lex_ord (a1,b1) (a2,b2)
-  | lex_ord_right: forall a b1 b2,
-      ordB b1 b2 -> lex_ord (a,b1) (a,b2).
-
-Lemma wf_lex_ord:
-  well_founded ordA -> well_founded ordB -> well_founded lex_ord.
-Proof.
-  intros Awf Bwf.
-  assert (forall a, Acc ordA a -> forall b, Acc ordB b -> Acc lex_ord (a, b)).
-  { induction 1. induction 1. constructor; intros. inv H3.
-    - apply H0; auto.
-    - apply H2; auto. }
-  red; intros. destruct a as [a b]. apply H; auto.
-Qed.
-
-Lemma transitive_lex_ord:
-  transitive _ ordA -> transitive _ ordB -> transitive _ lex_ord.
-Proof.
-  intros trA trB; red; intros.
-  inv H; inv H0.
-  - left; eapply trA; eauto.
-  - left; auto.
-  - left; auto.
-  - right; eapply trB; eauto.
-Qed.
-
-
-   measure_induction
-     : forall (X : Type) (f : X -> nat) (A : X -> Type),
-       (forall x : X, (forall y : X, f y < f x -> A y) -> A x) ->
-       forall x : X, A x
-
-  lex_nat_nat_spec =
-fun p q : nat * nat => fst p < fst q \/ fst p = fst q /\ snd p < snd q
-     : nat * nat -> nat * nat -> Prop *)
-
-(* well_founded_ind: *)
-(*   forall [A : Type] [R : A -> A -> Prop], *)
-(*   well_founded R -> *)
-(*   forall P : A -> Prop, (forall x : A, (forall y : A, R y x -> P y) -> P x) -> forall a : A, P a *)
 
 Definition lex_ord (cds1 cds2: com * dirs) : Prop :=
   lex_nat_nat_spec (measure (fst cds1) (snd cds1)) (measure (fst cds2) (snd cds2)).
@@ -1102,7 +1043,8 @@ Definition lex_ord (cds1 cds2: com * dirs) : Prop :=
 Lemma lex_ord_wf:
   well_founded lex_ord.
 Proof.
-Admitted.
+  unfold lex_ord, well_founded. intros. Search Acc. apply Acc_intro. intros. 
+  Admitted.
   
 (* matches syntactic form of prog_size_ind; easier to apply *)
 Lemma lex_ind2 : forall P : com -> dirs -> Prop,
@@ -1121,31 +1063,6 @@ Proof.
   eapply H. intros.
   specialize (H0 (c', ds')). simpl in H0. auto.
 Qed.
-
-  (* forall (c' : com) (ds' : list direction),
-   Datatypes.length ds' < Datatypes.length ds \/
-   Datatypes.length ds' = Datatypes.length ds /\ 
-     com_size c' < com_size c -> lex_ord (measure c ds) (measure c' ds'))). *)
-   
-(* Lemma prog_size_ind :
-  forall P : com -> dirs -> Prop,
-  (forall c ds,
-    ( forall c' ds',
-      prog_size c' ds' < prog_size c ds ->
-      P c' ds') -> P c ds  ) ->
-  (forall c ds, P c ds).
-Proof.
-  intros.
-  remember (fun c_ds => P (fst c_ds) (snd c_ds)) as P'.
-  replace (P c ds) with (P' (c, ds)) by now rewrite HeqP'.
-  eapply measure_induction with (f:=fun c_ds => prog_size (fst c_ds) (snd c_ds)). 
-  intros. rewrite HeqP'.
-  apply H. intros.
-  remember (c', ds') as c_ds'.
-  replace (P c' ds') with (P' c_ds') by now rewrite Heqc_ds', HeqP'.
-  apply H0. now rewrite Heqc_ds'.
-Qed.
- *)
 
 Section EXAMPLE.
 
@@ -1193,7 +1110,6 @@ Abort.
 End EXAMPLE.
 
 Ltac measure1 := unfold measure, lex_nat_nat_spec; simpl; try (rewrite !app_length); simpl; lia.
-(* also make a tactic for all the places where extra cases popped up re unused variables *)
 Ltac strs_neq := unfold not; intros; discriminate.
 
 Lemma ultimate_slh_prog_length :
@@ -1205,6 +1121,17 @@ Proof.
   rewrite length_combine.
   rewrite length_seq. rewrite min_id. reflexivity.
 Qed.
+
+Lemma uslh_prog_to_uslh_com : 
+  forall p c n,
+  nth_error (ultimate_slh_prog p) n = Some c ->
+  nth_error p n = Some (ultimate_slh c).
+Proof.
+  intros. induction n; destruct p; simpl in *; try discriminate; auto.
+  - induction c; simpl in *; try discriminate; auto. 
+    admit.
+  - admit.
+Admitted.
 
 (* YH: Do we need to check that "callee" is also not used in the program?  
    JLB: added premises checking this. *)
@@ -1222,7 +1149,7 @@ Proof.
   intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
   intros c ds IH. intros until os. 
   intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'.
-  (* st_st' is target multistep under speculation *)
+  (* st_st' is target multistep *)
   invert st_st'.
   (* multi_spec_refl *)
   { repeat rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
@@ -1252,64 +1179,44 @@ Proof.
           rename p0 into f. 
           destruct (is_empty (vars_aexp f)) eqn: Hf.
           { (* optimization (no variables in expression f) *)
-            simpl. inv H1.
+            simpl. inv H1. (* H1 is tgt multistep call f *)
             (* refl *)
             - exists <{{ call f }}>. split; [|intros; inv H].
               rewrite t_update_permute; [|strs_neq].
               rewrite t_update_shadow. do 2 rewrite t_update_same.
               constructor.
-            (* trans *)
-            - (* eapply IH; eauto. *)
-              inv H.
-              + inv H0.
-                (* refl *)
-                * rewrite t_update_neq; [|strs_neq].
+            (* trans: we now have H: tgt single step call f --> c'0
+               and H0: tgt multi, ds os not concat, c'0 --> c'  *)
+            - inv H. (* produces 2 cases: DStep++ds2, OCall++os2, call f --> c''
+                                      and DForceCall++ds2, OForceCall++os2, call f --> c'' *)
+              + (* DStep *)
+                inv H0. (* inverting multi produces refl and trans cases.
+                           refl: ds2/os2 instantiated as [] 
+                           trans: ds2/os2 instantiated as ds1++ds0/os1++os0 *)
+                (* reflexive : [] *)
+                * rewrite t_update_neq; [|strs_neq]. 
                   rewrite t_update_permute; [|strs_neq].
                   rewrite t_update_shadow. 
                   rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
-                  rewrite t_update_permute; [|strs_neq].
-
-                  assert (exists c'', c' = <{{ "b" := ("callee" = (aeval st f)) ? "b" : 1; (ultimate_slh c'') }}>).
-                  { admit. (* H3 *) }
-                  destruct H as [c'' COM].
-
-                  (* exists c'. split; auto. do 2 rewrite t_update_same. *)
-                  
-                  (* apply multi_ideal_trans with (c':=c') (st':=st) (ast':=ast') (b':=b'); *)
-                  (* [|constructor]. apply ISM_Call; [rewrite Hf; auto|]. *)
-                  (* rewrite <- H3.                    *)
-                  (* This would have been provable before we 
-                  updated p to (ultimate_slh p) |- for the speculative 
-                  premise. Trying to write a lemma showing that the length 
-                  isn't changed by uslh_prog but it's complicated. And the goal 
-                  is generated by applying ideal semantics, so it doesn't make 
-                  sense to update it there. *)
-                  admit.
-                (* transitive *)
+                  rewrite t_update_permute; [|strs_neq]. 
+                  exists (ultimate_slh c'). split; try split; [|rewrite H|]; auto.
+                  do 2 rewrite t_update_same. apply multi_ideal_trans with 
+                  (c':=(ultimate_slh c')) (st':=st) (ast':=ast') (b':=b'); 
+                  [|apply multi_ideal_refl]. apply ISM_Call.
+                  -- rewrite Hf. auto.
+                  -- admit. (* started lemma for this one *)
+                  (* trans *)
                 * rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
-                  (* eapply multi_spec_trans in H1; eauto. *)
-                  assert (exists c'', c'0 = <{{ "b" := ("callee" = (aeval st f)) ? "b" : 1; (ultimate_slh c'') }}>).
+                  assert (exists c'', c'0 = <{{ "b" := ("callee" = (aeval st f)) ? "b" : 1; 
+                     (ultimate_slh c'') }}>).
                   { admit. (* H3 *) }
                   destruct H0 as [c'' COM].
-                  subst.
-
-                  inv H. inv H1.
-                  2:{ 
-                  
-
-                    H :
-    ultimate_slh_prog p |- <(( "b" := ("callee" = (aeval st f)) ? "b" : 1; (ultimate_slh c''),
-    "callee" !-> aeval st f; st, ast'0, b'0 ))> -->_ ds1 ^^ os1 <(( c'1, st'0, ast'1, b'1 ))>
-
-                  inv H.
-                  apply IH; auto.
-                  -- admit. (* uh oh *)
-                  -- eapply multi_spec_trans.
-                     ++ simpl. rewrite Hf. admit.
-                     ++ eapply multi_spec_trans; eauto. admit.
-              + admit.
+                  subst. inv H. inv H1. 
+                  -- admit.
+                  -- admit.
+              + (* DForceCall *) admit.
           }
       (* no optimization *)
       inv H1.
