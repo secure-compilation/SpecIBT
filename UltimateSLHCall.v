@@ -1179,14 +1179,12 @@ Lemma uslh_prog_doesnt_change_length_p :
   forall (p:prog),
     length (ultimate_slh_prog p) = length p.
 Proof.
-  intros. induction p; auto. fold_cons. rewrite length_app. 
-  rewrite <- IHp. rewrite <- length_app. Admitted.
-  (* problem is I'm having to prove this by constructing a list
-     of pairs (index, com) to which I append a com (non-indexed) 
-     and say it's equal to the list of pairs (index, com) that 
-     included that command originally so it got made into 
-     a pair. Their lengths _are_ equal but I can't actually 
-     construct such a list. *)
+  intros. unfold ultimate_slh_prog.
+  rewrite length_map.
+  unfold add_index.
+  rewrite length_combine.
+  rewrite length_seq. rewrite min_id. reflexivity.
+Qed.
 
 (* YH: Do we need to check that "callee" is also not used in the program?  
    JLB: added premises checking this. *)
