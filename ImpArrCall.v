@@ -506,8 +506,12 @@ Lemma prog_size_ind :
   (forall c ds, P c ds).
 Proof.
   intros.
+  (* measure_induction takes only one argument, so package up c and ds as a pair,
+     and unwrap the pair inside. *)
   remember (fun c_ds => P (fst c_ds) (snd c_ds)) as P'.
+  (* prove this new function has the same type as the old one *)
   replace (P c ds) with (P' (c, ds)) by now rewrite HeqP'.
+  (* prog_size takes one argument and returns a nat. *)
   eapply measure_induction with (f:=fun c_ds => prog_size (fst c_ds) (snd c_ds)). 
   intros. rewrite HeqP'.
   apply H. intros.

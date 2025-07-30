@@ -133,7 +133,7 @@ Qed.
 
 Corollary seq_small_step_obs_length : forall p c st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2,
   p |- <((c, st1, ast1))> -->^os1 <((ct1, stt1, astt1))> ->
-  p |- <((c, st2, ast2))> -->^os2 <((ct2, stt2, astt2))> ->
+p |- <((c, st2, ast2))> -->^os2 <((ct2, stt2, astt2))> ->
   length os1 = length os2.
 Proof.
   intros. eapply seq_small_step_obs_type in H; [|now apply H0].
@@ -1044,6 +1044,53 @@ Ltac com_step :=
 Definition measure (c : com) (ds : list direction) : nat * nat :=
   (length ds, com_size c).
 
+(*
+
+Section LEX_ORDER.
+
+Variable A: Type.
+Variable B: Type.
+Variable ordA: A -> A -> Prop.
+Variable ordB: B -> B -> Prop.
+
+Inductive lex_ord: A*B -> A*B -> Prop :=
+  | lex_ord_left: forall a1 b1 a2 b2,
+      ordA a1 a2 -> lex_ord (a1,b1) (a2,b2)
+  | lex_ord_right: forall a b1 b2,
+      ordB b1 b2 -> lex_ord (a,b1) (a,b2).
+
+Lemma wf_lex_ord:
+  well_founded ordA -> well_founded ordB -> well_founded lex_ord.
+Proof.
+  intros Awf Bwf.
+  assert (forall a, Acc ordA a -> forall b, Acc ordB b -> Acc lex_ord (a, b)).
+  { induction 1. induction 1. constructor; intros. inv H3.
+    - apply H0; auto.
+    - apply H2; auto. }
+  red; intros. destruct a as [a b]. apply H; auto.
+Qed.
+
+Lemma transitive_lex_ord:
+  transitive _ ordA -> transitive _ ordB -> transitive _ lex_ord.
+Proof.
+  intros trA trB; red; intros.
+  inv H; inv H0.
+  - left; eapply trA; eauto.
+  - left; auto.
+  - left; auto.
+  - right; eapply trB; eauto.
+Qed.
+
+
+   measure_induction
+     : forall (X : Type) (f : X -> nat) (A : X -> Type),
+       (forall x : X, (forall y : X, f y < f x -> A y) -> A x) ->
+       forall x : X, A x
+
+  lex_nat_nat_spec =
+fun p q : nat * nat => fst p < fst q \/ fst p = fst q /\ snd p < snd q
+     : nat * nat -> nat * nat -> Prop *)
+
 (* matches syntactic form of prog_size_ind; easier to apply *)
 Lemma lex_ind2 : forall P : com -> dirs -> Prop,
     (forall c ds,
@@ -1051,18 +1098,52 @@ Lemma lex_ind2 : forall P : com -> dirs -> Prop,
             lex_nat_nat_spec (measure c' ds') (measure c ds) -> P c' ds') ->
         P c ds) -> forall c ds, P c ds.
 Proof.
-Admitted. (* TODO need to prove *)
+  intros. Admitted.    
+
+
+  (* forall (c' : com) (ds' : list direction),
+   Datatypes.length ds' < Datatypes.length ds \/
+   Datatypes.length ds' = Datatypes.length ds /\ 
+     com_size c' < com_size c -> lex_ord (measure c ds) (measure c' ds'))). *)
+   
+(* Lemma prog_size_ind :
+  forall P : com -> dirs -> Prop,
+  (forall c ds,
+    ( forall c' ds',
+      prog_size c' ds' < prog_size c ds ->
+      P c' ds') -> P c ds  ) ->
+  (forall c ds, P c ds).
+Proof.
+  intros.
+  remember (fun c_ds => P (fst c_ds) (snd c_ds)) as P'.
+  replace (P c ds) with (P' (c, ds)) by now rewrite HeqP'.
+  eapply measure_induction with (f:=fun c_ds => prog_size (fst c_ds) (snd c_ds)). 
+  intros. rewrite HeqP'.
+  apply H. intros.
+  remember (c', ds') as c_ds'.
+  replace (P c' ds') with (P' c_ds') by now rewrite Heqc_ds', HeqP'.
+  apply H0. now rewrite Heqc_ds'.
+Qed.
+ *)
 
 Section EXAMPLE.
 
 Variable p: prog.
 
 Lemma unused_prog_unused :
-  forall c, In c p -> unused_prog "b" p -> unused "b" c.
+  forall (p : prog) (c : com) (X : string), 
+    In c p -> unused_prog X p -> unused X c.
 Proof.
   intros. unfold unused_prog in H0. rewrite Forall_forall in H0. 
   specialize H0 with (x:=c). apply H0 in H; auto.
 Qed.
+
+(* Lemma unused_prog_unused :
+  forall c, In c p -> unused_prog "b" p -> unused "b" c.
+Proof.
+  intros. unfold unused_prog in H0. rewrite Forall_forall in H0. 
+  specialize H0 with (x:=c). apply H0 in H; auto.
+   Qed.*)
 
 Definition Property (c:com) (ds: dirs) := forall st ast (b b':bool) c' st' ast' os,
   nonempty_arrs ast ->
@@ -1092,6 +1173,20 @@ End EXAMPLE.
 
 Ltac measure1 := unfold measure, lex_nat_nat_spec; simpl; try (rewrite !app_length); simpl; lia.
 (* also make a tactic for all the places where extra cases popped up re unused variables *)
+Ltac strs_neq := unfold not; intros; discriminate.
+
+Lemma uslh_prog_doesnt_change_length_p :
+  forall (p:prog),
+    length (ultimate_slh_prog p) = length p.
+Proof.
+  intros. induction p; auto. fold_cons. rewrite length_app. 
+  rewrite <- IHp. rewrite <- length_app. Admitted.
+  (* problem is I'm having to prove this by constructing a list
+     of pairs (index, com) to which I append a com (non-indexed) 
+     and say it's equal to the list of pairs (index, com) that 
+     included that command originally so it got made into 
+     a pair. Their lengths _are_ equal but I can't actually 
+     construct such a list. *)
 
 (* YH: Do we need to check that "callee" is also not used in the program?  
    JLB: added premises checking this. *)
@@ -1121,35 +1216,64 @@ Proof.
      I think because it's in the form of a sequence so further 
      unwrapping is needed to access those two cases) *)
 
-  destruct c; (*simpl in *;*) invert H.   
-  11 : { (* Call *) 
-    invert H12. invert H0. 
-    (* reflexive *)
-    + eexists. split; try discriminate.
-      simpl. rewrite t_update_permute; [|unfold not; intros; discriminate].
-      rewrite t_update_shadow. repeat rewrite t_update_same. econstructor.
-    (* transitive *)
-    + (* now H is single step and H1 is multistep. *)
-      inv H.
-      (* c1t; code & c1t <> skip *)
-      { inv H12. }
-      rename p0 into f.
-      destruct (is_empty (vars_aexp f)) eqn: Hf. 
-      { (* no variables in expression f. *)
-        (* inv H1.
-        - simpl in *. exists <{{ call f }}>. rewrite t_update_permute.
-          + rewrite t_update_shadow. constructor; auto. 
-            do 2 rewrite t_update_same. apply multi_ideal_refl.
-          + unfold not; intros; discriminate.
-        - simpl. inv H.
-          + inv H0.
-            * simpl. rewrite aeval_unused_update. 
-              -- rewrite t_update_permute.
-           ++ rewrite t_update_shadow. do 2 rewrite t_update_same. *)
-          admit. 
-             }
-        inv H1.
-    (* refl case *)
+  destruct c; (*simpl in *;*) invert H.
+  11 : { (* Call *)
+        (* hypotheses: single and multi spec, hardened prog 
+          h12: single, invert first. h0: multi. *)
+        invert H12. invert H0. (* inverting multistep produces refl & trans cases *)
+
+        (* reflexive *)
+        - eexists. split; try discriminate.
+          simpl. rewrite t_update_permute; [|strs_neq].
+          rewrite t_update_shadow. repeat rewrite t_update_same. econstructor.
+
+        (* transitive *)
+        - inv H.
+          (* now H12 single: skip->c1t / H1 multi: c1t;call->c' *)
+          { inv H12. } (* now we have call command exposed in hypothesis *)
+          rename p0 into f. 
+          destruct (is_empty (vars_aexp f)) eqn: Hf.
+          { (* optimization (no variables in expression f) *)
+            simpl. inv H1.
+            (* refl *)
+            - exists <{{ call f }}>. split; [|intros; inv H].
+              rewrite t_update_permute; [|strs_neq].
+              rewrite t_update_shadow. do 2 rewrite t_update_same.
+              constructor.
+            (* trans *)
+            - (* eapply IH; eauto. *)
+              inv H.
+              + inv H0.
+                * rewrite t_update_neq; [|strs_neq].
+                  rewrite t_update_permute; [|strs_neq].
+                  rewrite t_update_shadow. 
+                  rewrite aeval_unused_update with (n:=(aeval st f)); auto.
+                  rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
+                  rewrite t_update_permute; [|strs_neq].
+                  exists c'. split; auto. do 2 rewrite t_update_same.
+                  apply multi_ideal_trans with (c':=c') (st':=st) (ast':=ast') (b':=b');
+                  [|constructor]. apply ISM_Call; [rewrite Hf; auto|].
+                  rewrite <- H3.                   
+                  (* This would have been provable before we 
+                  updated p to (ultimate_slh p) |- for the speculative 
+                  premise. Trying to write a lemma showing that the length 
+                  isn't changed by uslh_prog but it's complicated. And the goal 
+                  is generated by applying ideal semantics, so it doesn't make 
+                  sense to update it there. *)
+                                    admit.
+                * rewrite aeval_unused_update with (n:=(aeval st f)); auto.
+                  rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
+                  eapply multi_spec_trans in H1; eauto. 
+                  apply IH; auto.
+                  -- admit. (* uh oh *)
+                  -- eapply multi_spec_trans.
+                     ++ simpl. rewrite Hf. admit.
+                     ++ eapply multi_spec_trans; eauto. admit.
+              + admit.
+          }
+      (* no optimization *)
+      inv H1.
+      (* refl case *)
       { exists <{{ call f }}>. simpl. split.
         2:{ intros. inv H. }
         rewrite t_update_permute; [|unfold not; intros; discriminate].
@@ -1157,21 +1281,32 @@ Proof.
       (* transitive *)
       inv H; simpl.
       (* DStep/OCall *)
-      * simpl in *. destruct b'0 eqn:Hmsf; rewrite st_b in *.
-        (* already misspeculating *)
+      * (* simpl in *. *) Opaque unused. simpl in *.
+        destruct b'0 eqn:Hmsf; rewrite st_b in *.
+        (* already misspeculating *) 
         { rewrite Nat.eqb_refl in *.
           rewrite t_update_neq in *; try discriminate.
           rewrite st_b in *. rewrite Nat.eqb_refl in *.
           destruct p; simpl in *.
-          { inv H3. }
+          (* program is empty list *)
+          { inv H3.  }
+          (* program is nonempty list *)
           inv H3. inv H0.
           { rewrite t_update_permute; try (unfold not; intros; discriminate).
             rewrite t_update_shadow. rewrite t_update_permute; try (unfold not; intros; discriminate).
             rewrite <- st_b. rewrite t_update_same. rewrite t_update_same.
-            rewrite st_b.
+            rewrite st_b. unfold unused_prog in unused_p_callee.
             admit. }
           inv H. inv H12. inv H1.
-          { admit. }
+          { simpl. rewrite t_update_neq; [|strs_neq]. eapply IH in ast_arrs; eauto.
+            - destruct ast_arrs as [c'' A]. destruct A as [STEPS SKIP].
+              exists c''. split; auto; [|intros; discriminate]. 
+              rewrite <- st_b. rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
+              rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq]. eapply STEPS.
+            - admit. (* uh oh *)
+            - auto.
+            - simpl. rewrite Hf. admit.
+          }
           inv H.
           { inv H12. }
           simpl in *. rewrite t_update_neq in H0; try discriminate.
@@ -1180,11 +1315,7 @@ Proof.
           { inv unused_p. auto. }
           { inv unused_p_callee. auto. }
           { destruct H0 as [c'' A]. destruct A as [STEPS SKIP].
-            exists c''. split; auto.
-            replace (DStep :: ds2) with ([DStep] ++ ds2) by auto.
-            replace (OCall 0 :: os2) with ([OCall 0] ++ os2) by auto.
-
-            econstructor 2.
+            exists c''. split; auto. fold_cons. econstructor 2.
             { econstructor.
               - rewrite Hf. simpl. auto.
               - simpl. auto. }
@@ -1193,20 +1324,62 @@ Proof.
             rewrite t_update_eq in *; try discriminate.
             rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
             eapply ideal_unused_update in STEPS; eauto.
-            2:{ admit. }
+            2:{ apply unused_prog_unused with (p:=(c :: p)); auto.
+                unfold In. left; reflexivity. }
             rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
             rewrite t_update_neq in *; try discriminate.
             rewrite t_update_permute; [|unfold not; intros; discriminate].
-            rewrite t_update_same in STEPS. rewrite st_b in STEPS. auto. 
-          } 
+            rewrite t_update_same in STEPS. rewrite st_b in STEPS. auto.
+          }
         }
         (* not yet misspeculated *)
-        { simpl in *. 
-
-
+        { simpl. simpl in H0, H3. 
           admit. }
       (* DForceCall/OForceCall *)
       * simpl in *. admit. }
+
+
+
+(* This was a bad idea I had for rearranging the structure of the 
+   Call case, but I won't delete it just yet. It starts just before 
+   the existing proof destructs on whether the optimization applies.
+
+             Opaque unused.
+          inv H1; remember ((if is_empty (vars_aexp f) then f else <{{ ("b" = 1) ? 0 : f }}>))
+          as index.
+          + (* multi_spec_refl *) simpl in *. exists <{{ call f }}>. split; [|intros; inv H].
+            rewrite t_update_permute; [|strs_neq]. rewrite t_update_shadow.
+            do 2 rewrite t_update_same. constructor. 
+          + (* multi_spec_trans *) inv H; 
+            remember ((if is_empty (vars_aexp f) then f else <{{ ("b" = 1) ? 0 : f }}>)) as index.
+            * (* DStep *) simpl in *. 
+               destruct (is_empty (vars_aexp f)).
+               -- rewrite Heqindex in *. Transparent unused. 
+                  simpl in unused_c_callee. rewrite aeval_unused_update; auto.
+                  rewrite aeval_unused_update in H3; auto.
+                  assert (U : unused "callee" <{{ call f }}> = a_unused "callee" f).
+                  { simpl; reflexivity. }
+                  destruct b'0.
+                  ++ (* true: already speculating *)
+                     (* I don't understand why sometimes IH is such that 
+                       measure works and sometimes not. I don't understand when 
+                       the strategy should be to apply it and when not. *)
+                     admit.
+                  ++ (* false: not speculating *) admit.
+                     
+                     
+
+               -- admit.
+            * (* DForceCall *) Opaque unused. simpl in *.
+               inv H0. 
+              -- remember ((if is_empty (vars_aexp f) then f else <{{ ("b" = 1) ? 0 : f }}>)) as index.
+                 rewrite t_update_permute; [|strs_neq]. rewrite t_update_shadow.
+                 rewrite t_update_permute; [|strs_neq]. 
+                 rewrite t_update_neq; [|strs_neq].
+                 destruct b'1.
+                               ++ (* b'1 true (already speculating) *) *)
+
+
 
   - (* Asgn *)
     invert H0; [|now inversion H].
