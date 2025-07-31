@@ -1116,11 +1116,12 @@ Lemma ultimate_slh_prog_length :
   forall p, length (ultimate_slh_prog p) = length p.
 Proof.
   intros. unfold ultimate_slh_prog.
-  rewrite length_map.
-  unfold add_index.
-  rewrite length_combine.
-  rewrite length_seq. rewrite min_id. reflexivity.
-Qed.
+(*   rewrite length_map. *)
+(*   unfold add_index. *)
+(*   rewrite length_combine. *)
+(*   rewrite length_seq. rewrite min_id. reflexivity. *)
+(* Qed. *)
+Admitted.
 
 Lemma uslh_seq :
   forall a1 a2 c1 c2, 
@@ -1135,23 +1136,42 @@ Lemma uslh_injective :
   ultimate_slh c1 = ultimate_slh c2 ->
   c1 = c2.
 Proof. 
-  intros. induction c1; induction c2; auto; try discriminate.
-  - inv H. Admitted.
+  intros. induction c1; destruct c2; auto; try discriminate.
+  - inv H.
+Abort.
 
 Lemma uslh_prog_to_uslh_com : 
-  forall p c e st (b:bool),
+  forall p c e st,
+  nth_error (ultimate_slh_prog p) e = Some c ->
+  exists c', nth_error p e = Some c'
+     /\ c = (<{{("b" := ("callee" = (aeval st e)) ? "b" : 1); (ultimate_slh c') }}>).
+Proof.
+  induction p; intros.
+  { admit. (* nil case *) }
+  (* cons case *)
+Admitted.
+
+Lemma ultimate_slh_prog_contents:
+  forall p c e st,
+  nth_error (ultimate_slh_prog p) e = Some c ->
+  exists c', c = (<{{("b" := ("callee" = (aeval st e)) ? "b" : 1); (ultimate_slh c') }}>).
+Proof.
+Admitted.
+  
+Lemma uslh_prog_to_uslh_com' : 
+  forall p c e st,
   nth_error (ultimate_slh_prog p) e = Some (<{{("b" := ("callee" = (aeval st e)) ? "b" : 1); 
                      (ultimate_slh c) }}>) ->
   nth_error p e = Some c.
 Proof.
- intros.  
- induction e; induction p; try discriminate.
- - injection H. intros. destruct a; destruct c; try discriminate; auto.
-   + injection H0. intros. rewrite H1, H2; reflexivity.
-   + injection H0. intros. apply uslh_seq in H0. destruct H0. simpl in *. 
-Admitted. 
-    
-
+  induction p; intros.
+  { admit. }
+  simpl in *. unfold ultimate_slh_prog in H.
+ (* induction e; induction p; try discriminate. *)
+ (* - injection H. intros. destruct a; destruct c; try discriminate; auto. *)
+ (*   + injection H0. intros. rewrite H1, H2; reflexivity. *)
+ (*   + injection H0. intros. apply uslh_seq in H0. destruct H0. simpl in *. *)
+Admitted.
 
 (* YH: Do we need to check that "callee" is also not used in the program?  
    JLB: added premises checking this. *)
@@ -1235,7 +1255,8 @@ Proof.
                   -- rewrite Hf. auto.
                   -- admit. (* started lemma for this one *)
                      (* trans *) *) Print ISM_Call.
-                  exists c'. 
+
+                  exists c'.
                   split; try split; auto.
                   do 2 rewrite t_update_same. apply multi_ideal_trans with
                     (c':=c') (st':=st) (ast':=ast') (b':=b'); 
