@@ -1147,16 +1147,70 @@ Lemma uslh_prog_to_uslh_com :
      /\ c = (<{{("b" := ("callee" = (aeval st e)) ? "b" : 1); (ultimate_slh c') }}>).
 Proof.
   induction p; intros.
-  { admit. (* nil case *) }
+  (* nil case *)
+  - destruct e; simpl in *; discriminate.
   (* cons case *)
+  - unfold ultimate_slh_prog in H.
 Admitted.
 
 Lemma ultimate_slh_prog_contents:
-  forall p c e st,
-  nth_error (ultimate_slh_prog p) e = Some c ->
-  exists c', c = (<{{("b" := ("callee" = (aeval st e)) ? "b" : 1); (ultimate_slh c') }}>).
+  forall p cmd e st,
+  nth_error (ultimate_slh_prog p) e = Some cmd ->
+  exists c', cmd = (<{{("b" := ("callee" = (aeval st e)) ? "b" : 1); (ultimate_slh c') }}>).
 Proof.
+  induction p; intros.
+  - simpl. unfold ultimate_slh_prog in H. unfold add_index in H. simpl in H.
+    induction e; discriminate.
+  - apply IHp. destruct e.
+    (* very annoying! for some reason with respect to the 
+       application of uslh_prog to p inside the IH, it doesn't 
+       remember that we're in the case where p is nonempty,
+       and this is crucial to these cases succeeding. I don't know 
+       how to get it to know that p <> []. *)
+    + simpl in H. unfold ultimate_slh_prog. injection H. intros.
+      rewrite <- H0. admit.
+    + rewrite nth_error_S in H. simpl in H. rewrite nth_error_S.
+      unfold tl. 
+    (* I'll come back to this assert, but for the moment it seemed easier to 
+       prove this by searching up relevant theorems for nth_error and 
+       map and seq and trying to transform things that way. Until I 
+       ran into the p issue. *)
+      (* assert (ultimate_slh_prog (a :: p) = (<{{ "b" := ("callee" = (aeval st e)) ? "b" : 1; (ultimate_slh a) }}>) :: ultimate_slh_prog p).
+    { unfold ultimate_slh_prog, add_index. simpl. apply nth_error_split in H.
+         destruct H as [l1 H]. destruct H as [l2 H]. *)
+      
+      Search cons.
 Admitted.
+  
+Search seq.
+
+(* 
+nth_error_S:
+  forall [A : Type] (l : list A) (n : nat),
+  nth_error l (S n) = nth_error (tl l) n
+
+map_nth_error:
+  forall [A B : Type] (f : A -> B) (n : nat) (l : list A) [d : A],
+  nth_error l n = Some d -> nth_error (map f l) n = Some (f d)
+
+
+   cons_seq:
+  forall len start : nat, start :: seq (S start) len = seq start (S len)
+
+   map_cons:
+  forall [A B : Type] (f : A -> B) (x : A) (l : list A),
+  map f (x :: l) = f x :: map f l
+
+   nth_error_split:
+  forall [A : Type] (l : list A) (n : nat) [a : A],
+  nth_error l n = Some a ->
+  exists l1 l2 : list A, l = l1 ++ a :: l2 /\ Datatypes.length l1 = n
+nth_error_ext:
+  forall [A : Type] (l l' : list A),
+  (forall n : nat, nth_error l n = nth_error l' n) -> l = l'
+ 
+ *)
+  
   
 Lemma uslh_prog_to_uslh_com' : 
   forall p c e st,
@@ -1165,8 +1219,14 @@ Lemma uslh_prog_to_uslh_com' :
   nth_error p e = Some c.
 Proof.
   induction p; intros.
-  { admit. }
-  simpl in *. unfold ultimate_slh_prog in H.
+  - (* destruct e; try discriminate.*) admit.
+  - (* rewrite nth_error_cons_succ in *. apply IHp with (st:=st). *) Admitted.
+     (* now I need to prove things about uslh_prog (a :: p) vs p ?? *)
+
+(* nth_error_cons_succ:
+  forall [A : Type] (x : A) (l : list A) (n : nat),
+  nth_error (x :: l) (S n) = nth_error l n
+ *)
  (* induction e; induction p; try discriminate. *)
  (* - injection H. intros. destruct a; destruct c; try discriminate; auto. *)
  (*   + injection H0. intros. rewrite H1, H2; reflexivity. *)
@@ -1239,7 +1299,8 @@ Proof.
                   rewrite t_update_shadow. 
                   rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
-                  rewrite t_update_permute; [|strs_neq].
+                  rewrite t_update_permute; [|strs_neq]. 
+                  
                   (* actually I'm not sure if uslh c' would be correct.
                      because the hardening of the program belongs to 
                      the speculative execution, not the ideal semantics. 
