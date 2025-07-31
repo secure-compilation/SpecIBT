@@ -1122,16 +1122,36 @@ Proof.
   rewrite length_seq. rewrite min_id. reflexivity.
 Qed.
 
-Lemma uslh_prog_to_uslh_com : 
-  forall p c n,
-  nth_error (ultimate_slh_prog p) n = Some c ->
-  nth_error p n = Some (ultimate_slh c).
+Lemma uslh_seq :
+  forall a1 a2 c1 c2, 
+  ultimate_slh <{{ a1; a2 }}> = ultimate_slh <{{ c1; c2 }}> ->
+  ultimate_slh a1 = ultimate_slh c1 /\ ultimate_slh a2 = ultimate_slh c2.
 Proof.
-  intros. induction n; destruct p; simpl in *; try discriminate; auto.
-  - induction c; simpl in *; try discriminate; auto. 
-    admit.
-  - admit.
-Admitted.
+  intros. inv H. rewrite H1, H2; auto.
+Qed.
+
+Lemma uslh_injective :
+  forall c1 c2,
+  ultimate_slh c1 = ultimate_slh c2 ->
+  c1 = c2.
+Proof. 
+  intros. induction c1; induction c2; auto; try discriminate.
+  - inv H. Admitted.
+
+Lemma uslh_prog_to_uslh_com : 
+  forall p c e st (b:bool),
+  nth_error (ultimate_slh_prog p) e = Some (<{{("b" := ("callee" = (aeval st e)) ? "b" : 1); 
+                     (ultimate_slh c) }}>) ->
+  nth_error p e = Some c.
+Proof.
+ intros.  
+ induction e; induction p; try discriminate.
+ - injection H. intros. destruct a; destruct c; try discriminate; auto.
+   + injection H0. intros. rewrite H1, H2; reflexivity.
+   + injection H0. intros. apply uslh_seq in H0. destruct H0. simpl in *. 
+Admitted. 
+    
+
 
 (* YH: Do we need to check that "callee" is also not used in the program?  
    JLB: added premises checking this. *)
@@ -1193,29 +1213,49 @@ Proof.
                 inv H0. (* inverting multi produces refl and trans cases.
                            refl: ds2/os2 instantiated as [] 
                            trans: ds2/os2 instantiated as ds1++ds0/os1++os0 *)
-                (* reflexive : [] *)
+                (* reflexive : []. 0 steps take place after call step. *)
                 * rewrite t_update_neq; [|strs_neq]. 
                   rewrite t_update_permute; [|strs_neq].
                   rewrite t_update_shadow. 
                   rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
-                  rewrite t_update_permute; [|strs_neq]. 
-                  exists (ultimate_slh c'). split; try split; [|rewrite H|]; auto.
+                  rewrite t_update_permute; [|strs_neq].
+                  (* actually I'm not sure if uslh c' would be correct.
+                     because the hardening of the program belongs to 
+                     the speculative execution, not the ideal semantics. 
+                     What can I say about where the program steps to in 
+                     the ideal semantics from call? it appears to 
+                     be c' (ISM_Call). *)
+                  (* exists (ultimate_slh c').
+                  split; try split; [|rewrite H|]; auto.
                   do 2 rewrite t_update_same. apply multi_ideal_trans with 
                   (c':=(ultimate_slh c')) (st':=st) (ast':=ast') (b':=b'); 
+
                   [|apply multi_ideal_refl]. apply ISM_Call.
                   -- rewrite Hf. auto.
                   -- admit. (* started lemma for this one *)
-                  (* trans *)
+                     (* trans *) *) Print ISM_Call.
+                  exists c'. 
+                  split; try split; auto.
+                  do 2 rewrite t_update_same. apply multi_ideal_trans with
+                    (c':=c') (st':=st) (ast':=ast') (b':=b'); 
+                    [|apply multi_ideal_refl]. apply ISM_Call; [rewrite Hf; auto|].
+                    (* back to the problem of uslh c' ≠ c' *) 
+
+                (* transitive: ds1++ds0 *)
                 * rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
+                  (* here again the problem of uslh c ≠ c 
+
+                     exists c'. split; try split; auto.
+                  -- eapply multi_ideal_trans.
+                     ++ eapply ISM_Call; [rewrite Hf; eauto|]. *)
                   assert (exists c'', c'0 = <{{ "b" := ("callee" = (aeval st f)) ? "b" : 1; 
                      (ultimate_slh c'') }}>).
                   { admit. (* H3 *) }
                   destruct H0 as [c'' COM].
-                  subst. inv H. inv H1. 
-                  -- admit.
-                  -- admit.
+                  subst.
+
               + (* DForceCall *) admit.
           }
       (* no optimization *)
@@ -1284,50 +1324,6 @@ Proof.
           admit. }
       (* DForceCall/OForceCall *)
       * simpl in *. admit. }
-
-
-
-(* This was a bad idea I had for rearranging the structure of the 
-   Call case, but I won't delete it just yet. It starts just before 
-   the existing proof destructs on whether the optimization applies.
-
-             Opaque unused.
-          inv H1; remember ((if is_empty (vars_aexp f) then f else <{{ ("b" = 1) ? 0 : f }}>))
-          as index.
-          + (* multi_spec_refl *) simpl in *. exists <{{ call f }}>. split; [|intros; inv H].
-            rewrite t_update_permute; [|strs_neq]. rewrite t_update_shadow.
-            do 2 rewrite t_update_same. constructor. 
-          + (* multi_spec_trans *) inv H; 
-            remember ((if is_empty (vars_aexp f) then f else <{{ ("b" = 1) ? 0 : f }}>)) as index.
-            * (* DStep *) simpl in *. 
-               destruct (is_empty (vars_aexp f)).
-               -- rewrite Heqindex in *. Transparent unused. 
-                  simpl in unused_c_callee. rewrite aeval_unused_update; auto.
-                  rewrite aeval_unused_update in H3; auto.
-                  assert (U : unused "callee" <{{ call f }}> = a_unused "callee" f).
-                  { simpl; reflexivity. }
-                  destruct b'0.
-                  ++ (* true: already speculating *)
-                     (* I don't understand why sometimes IH is such that 
-                       measure works and sometimes not. I don't understand when 
-                       the strategy should be to apply it and when not. *)
-                     admit.
-                  ++ (* false: not speculating *) admit.
-                     
-                     
-
-               -- admit.
-            * (* DForceCall *) Opaque unused. simpl in *.
-               inv H0. 
-              -- remember ((if is_empty (vars_aexp f) then f else <{{ ("b" = 1) ? 0 : f }}>)) as index.
-                 rewrite t_update_permute; [|strs_neq]. rewrite t_update_shadow.
-                 rewrite t_update_permute; [|strs_neq]. 
-                 rewrite t_update_neq; [|strs_neq].
-                 destruct b'1.
-                               ++ (* b'1 true (already speculating) *) *)
-
-
-
   - (* Asgn *)
     invert H0; [|now inversion H].
     eexists. split; [eapply multi_ideal_trans|split; [tauto|] ].
