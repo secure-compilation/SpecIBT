@@ -1153,6 +1153,16 @@ Proof.
   - unfold ultimate_slh_prog in H.
 Admitted.
 
+Lemma combine_app_comm :
+  forall {X : Type} (x : X) (l : list X),
+  combine (seq 0 (Datatypes.length ([x] ++ l))) ([x] ++ l) = 
+  (combine (seq 0 (Datatypes.length [x])) [x]) ++
+  (combine (seq 1 (Datatypes.length l)) l).
+Proof.
+  intros. reflexivity.
+Qed.
+
+
 Lemma ultimate_slh_prog_contents:
   forall p cmd e st,
   nth_error (ultimate_slh_prog p) e = Some cmd ->
@@ -1161,7 +1171,24 @@ Proof.
   induction p; intros.
   - simpl. unfold ultimate_slh_prog in H. unfold add_index in H. simpl in H.
     induction e; discriminate.
-  - apply IHp. destruct e.
+  - assert (ultimate_slh_prog (a :: p) = (<{{ "b" := ("callee" = 
+    (aeval st e)) ? "b" : 1; (ultimate_slh a) }}>) :: ultimate_slh_prog p).
+    { assert (a :: p = [a] ++ p). { simpl; reflexivity. }
+      rewrite H0. unfold ultimate_slh_prog. unfold add_index.
+      
+      rewrite combine_app_comm. 
+      rewrite map_app. simpl. 
+      rewrite H0 in H. unfold ultimate_slh_prog in H.
+      (* remember (fun '(i, c) => <{{ "b" := ("callee" = i) ? "b" : 1; (ultimate_slh c) }}>) as f.
+         rewrite <- Heqf in H. why doesn't it see the subterm? *) admit.
+    } 
+      
+          
+    
+
+        (* in-progress attempt : 
+       unfold ultimate_slh_prog, add_index. simpl. 
+    apply IHp. destruct e.
     (* very annoying! for some reason with respect to the 
        application of uslh_prog to p inside the IH, it doesn't 
        remember that we're in the case where p is nonempty,
@@ -1177,14 +1204,13 @@ Proof.
        ran into the p issue. *)
       (* assert (ultimate_slh_prog (a :: p) = (<{{ "b" := ("callee" = (aeval st e)) ? "b" : 1; (ultimate_slh a) }}>) :: ultimate_slh_prog p).
     { unfold ultimate_slh_prog, add_index. simpl. apply nth_error_split in H.
-         destruct H as [l1 H]. destruct H as [l2 H]. *)
+       destruct H as [l1 H]. destruct H as [l2 H]. *) *)
       
-      Search cons.
 Admitted.
   
-Search seq.
 
-(* 
+(* POTENTIALLY USEFUL THEOREMS
+
 nth_error_S:
   forall [A : Type] (l : list A) (n : nat),
   nth_error l (S n) = nth_error (tl l) n
@@ -1193,18 +1219,22 @@ map_nth_error:
   forall [A B : Type] (f : A -> B) (n : nat) (l : list A) [d : A],
   nth_error l n = Some d -> nth_error (map f l) n = Some (f d)
 
+map_app:
+  forall [A B : Type] (f : A -> B) (l l' : list A),
+  map f (l ++ l') = map f l ++ map f l'
 
-   cons_seq:
+  cons_seq:
   forall len start : nat, start :: seq (S start) len = seq start (S len)
 
-   map_cons:
+  map_cons:
   forall [A B : Type] (f : A -> B) (x : A) (l : list A),
   map f (x :: l) = f x :: map f l
 
-   nth_error_split:
+  nth_error_split:
   forall [A : Type] (l : list A) (n : nat) [a : A],
   nth_error l n = Some a ->
   exists l1 l2 : list A, l = l1 ++ a :: l2 /\ Datatypes.length l1 = n
+
 nth_error_ext:
   forall [A : Type] (l l' : list A),
   (forall n : nat, nth_error l n = nth_error l' n) -> l = l'
