@@ -417,6 +417,19 @@ Definition ultimate_slh_prog (p:prog) :=
     <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}>
   ) (add_index p).
 
+(* Generalization of ultimate_slh_prog *)
+
+(* Definition add_index_nth {a:Type} (xs:list a) (start: nat) : list (nat * a) := *)
+(*   combine (seq start (length xs)) xs. *)
+
+(* Definition ultimate_slh_prog_aux (p:prog) (start: nat) := *)
+(*   map (fun p => *)
+(*     let '(i,c) := p in *)
+(*     <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}> *)
+(*   ) (add_index_nth p start). *)
+
+(* Definition ultimate_slh_prog_alt (p: prog) := ultimate_slh_prog_aux p 0. *)
+
 (** The masking USLH does for indices requires that our arrays are nonempty. *)
 
 Definition nonempty_arrs (ast : astate) :Prop :=
@@ -1171,32 +1184,38 @@ Proof.
   induction p; intros.
   - simpl. unfold ultimate_slh_prog in H. unfold add_index in H. simpl in H.
     induction e; discriminate.
-  - assert (ultimate_slh_prog (a :: p) = (<{{ "b" := ("callee" = 
-    (aeval st e)) ? "b" : 1; (ultimate_slh a) }}>) :: ultimate_slh_prog p).
-    { assert (a :: p = [a] ++ p). { simpl; reflexivity. }
-      rewrite H0. unfold ultimate_slh_prog. unfold add_index.
+  (* - unfold ultimate_slh_prog in H. *)
+  (*   unfold add_index in H. *)
+    
+  (*   assert (ultimate_slh_prog (a :: p) = (<{{ "b" := ("callee" =  *)
+  (*   (aeval st e)) ? "b" : 1; (ultimate_slh a) }}>) :: ultimate_slh_prog p). *)
+  (*   { assert (a :: p = [a] ++ p). { simpl; reflexivity. } *)
+  (*     rewrite H0. unfold ultimate_slh_prog. unfold add_index. *)
       
-      rewrite combine_app_comm. 
-      rewrite map_app. simpl. 
-      rewrite H0 in H. unfold ultimate_slh_prog in H.
-      (* remember (fun '(i, c) => <{{ "b" := ("callee" = i) ? "b" : 1; (ultimate_slh c) }}>) as f.
-         rewrite <- Heqf in H. why doesn't it see the subterm? *) admit.
-    } 
+  (*     rewrite combine_app_comm.  *)
+  (*     rewrite map_app. simpl.  *)
+  (*     rewrite H0 in H. unfold ultimate_slh_prog in H. *)
+  (*     (* remember (fun '(i, c) => <{{ "b" := ("callee" = i) ? "b" : 1; (ultimate_slh c) }}>) as f. *)
+  (*        rewrite <- Heqf in H. why doesn't it see the subterm? *) admit. *)
+  (*   }  *)
       
           
     
 
-        (* in-progress attempt : 
-       unfold ultimate_slh_prog, add_index. simpl. 
-    apply IHp. destruct e.
+        (* in-progress attempt :  *)
+    (* unfold ultimate_slh_prog, add_index. simpl.  *)
+  - destruct e.
     (* very annoying! for some reason with respect to the 
        application of uslh_prog to p inside the IH, it doesn't 
        remember that we're in the case where p is nonempty,
        and this is crucial to these cases succeeding. I don't know 
        how to get it to know that p <> []. *)
     + simpl in H. unfold ultimate_slh_prog. injection H. intros.
-      rewrite <- H0. admit.
-    + rewrite nth_error_S in H. simpl in H. rewrite nth_error_S.
+      subst. simpl. exists a. reflexivity.
+      (* rewrite <- H0. admit. *)
+    + simpl in H.
+      apply IHp.
+      rewrite nth_error_S in H. simpl in H. rewrite nth_error_S.
       unfold tl. 
     (* I'll come back to this assert, but for the moment it seemed easier to 
        prove this by searching up relevant theorems for nth_error and 
@@ -1261,7 +1280,6 @@ Proof.
  (* - injection H. intros. destruct a; destruct c; try discriminate; auto. *)
  (*   + injection H0. intros. rewrite H1, H2; reflexivity. *)
  (*   + injection H0. intros. apply uslh_seq in H0. destruct H0. simpl in *. *)
-Admitted.
 
 (* YH: Do we need to check that "callee" is also not used in the program?  
    JLB: added premises checking this. *)
