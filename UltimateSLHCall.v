@@ -374,36 +374,35 @@ with vars_bexp (a:bexp) : list string :=
   | <{ b1 && b2 }> => vars_bexp b1 ++ vars_bexp b2
   end.
 
-(*  *)
 Fixpoint ultimate_slh (c:com) :=
   (match c with
-   | <{{skip}}> => <{{(*"from_call" := 0;*) skip}}>
-   | <{{x := e}}> => <{{(*"from_call" := 0;*) x := e}}>
-   | <{{c1; c2}}> => <{{ (*"from_call" := 0;*) ultimate_slh c1; ultimate_slh c2}}>
+   | <{{skip}}> => <{{skip}}>
+   | <{{x := e}}> => <{{x := e}}>
+   | <{{c1; c2}}> => <{{ultimate_slh c1; ultimate_slh c2}}>
   | <{{if be then c1 else c2 end}}> =>
       let be' := if is_empty (vars_bexp be) then be (* optimized *)
                                             else <{{"b" = 0 && be}}> in
         <{{if be' then "b" := be' ? "b" : 1; ultimate_slh c1
-          else "b" := be' ? 1 : "b"; (*"from_call" := 0;*) ultimate_slh c2 end}}>
+          else "b" := be' ? 1 : "b"; ultimate_slh c2 end}}>
   | <{{while be do c end}}> =>
       let be' := if is_empty (vars_bexp be) then be (* optimized *)
                                             else <{{"b" = 0 && be}}> in
-        <{{while be' do "b" := be' ? "b" : 1; (*"from_call" := 0;*) ultimate_slh c end;
+        <{{while be' do "b" := be' ? "b" : 1; ultimate_slh c end;
            "b" := be' ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
       let i' := if is_empty (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
                                           else <{{("b" = 1) ? 0 : i}}> in
-        <{{(*"from_call" := 0;*) x <- a[[i']]}}>
+        <{{ x <- a[[i']]}}>
   | <{{a[i] <- e}}> =>
       let i' := if is_empty (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
                                           else <{{("b" = 1) ? 0 : i}}> in
-        <{{(* "from_call" := 0;*) a[i'] <- e}}> (* <- Doing nothing here in the is_empty (vars_aexp i) case okay for Spectre v1,
+        <{{ a[i'] <- e}}> (* <- Doing nothing here in the is_empty (vars_aexp i) case okay for Spectre v1,
                    but problematic for return address or code pointer overwrites *)
 
   | <{{call e}}> =>
       let e' := if is_empty (vars_aexp e) then e 
                                           else <{{("b" = 1) ? 0 : e}}> in
-        <{{"callee" := e'; (*"from_call" := 1;*) call e'}}>
+        <{{"callee" := e'; call e'}}>
 
   end)%string.
 
@@ -413,38 +412,8 @@ Definition add_index {a:Type} (xs:list a) : list (nat * a) :=
 Definition ultimate_slh_prog (p:prog) :=
   map (fun p =>
     let '(i,c) := p in
-    (* <{{ "b" := ("from_call" = 1 && "callee" <> ANum i) ? 1 : "b"; ultimate_slh c }}>)
-       (add_index p).*)
-    <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}>
+        <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}>
        ) (add_index p).
-
-Compute (add_index [<{{call 1}}>;<{{X:=40}}>;<{{Y:=2}}>;<{{Z:=X+Y}}>]).
-(* = [
-      (0, <{{ call 1 }}>); 
-      (1, <{{ "X" := 40 }}>); 
-      (2, <{{ "Y" := 2 }}>);
-      (3, <{{ "Z" := "X" + "Y" }}>)
-     ] : list (nat * com) *)
-
-Compute (ultimate_slh_prog [<{{call 1}}>;<{{X:=40}}>;<{{Y:=2}}>;<{{Z:=X+Y}}>]).
-(*  
-   [<{{ "b" := ("callee" = 0) ? "b" : 1; "callee" := 1; call 1 }}>; <-- fine if "callee" initialized to 0
-   <{{ "b" := ("callee" = 1) ? "b" : 1; "X" := 40 }}>; <-- fine because "callee" would have been set to 1 
-                                                           as the first part of <{{ call 1 }}> sequence
-   <{{ "b" := ("callee" = 2) ? "b" : 1; "Y" := 2 }}>; <-- not fine because "callee" will still be 1 but 
-                                                          now we're checking whether it's 2. The spec flag 
-                                                          will be set incorrectly.
-   <{{ "b" := ("callee" = 3) ? "b" : 1; "Z" := "X" + "Y" }}>] 
-
-This program would have had false positives for speculation, and the ending condition for bcc where 
-"b" must match b would not have been met. The least invasive solution I could come up with for now 
-was to add a "from_call" variable that gets set to 1 when current command is call and 0 otherwise.
-Then before each command, there's now a check where if the previous command was a call AND the 
-call wasn't going to the correct index, we set the spec flag accordingly. Otherwise we leave it alone 
-(this way we avoid having to add updates to "callee" so that it matches the next sequential index 
-when there's no call command involved).
-
-*)
 
 (* Generalization of ultimate_slh_prog *)
 
@@ -1109,18 +1078,12 @@ Proof.
   set (f := fun cds => P (fst cds) (snd cds)).
   replace (P c ds) with (f (c, ds)) by auto.
   eapply well_founded_ind.
-  { instantiate (1:= lex_ord). unfold lex_ord. admit. }
-  intros. subst f. eapply H. intros.
-  - intros x. instantiate (1:= (fun cds1 cds2 => lex_nat_nat (measure (fst  ds') (measure c ds
-    
-  
-  { instantiate (1:= f).  }
-(*   unfold lex_ord. subst f. intros. *)
-(*   destruct x; simpl in *. *)
-(*   eapply H. intros. *)
-(*   specialize (H0 (c', ds')). simpl in H0. auto. *)
-  (* Qed. *)
-Admitted.
+  - instantiate (1:=lex_ord). unfold lex_ord. 
+    apply wf_inverse_image. apply lex_nat_nat_wf.
+  - unfold lex_ord. intros. subst f. simpl in *. eapply H.
+    intros. specialize (H0 (c', ds')). simpl in H0. 
+    apply H0. apply H1.
+Qed.
 
 Section EXAMPLE.
 
@@ -1265,7 +1228,7 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c
       exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
 Proof.
-  intros c ds. apply lex_ind with (c:=c) (ds:=ds). clear.
+  intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
   intros c ds IH. intros until os. 
   intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'.
   (* st_st' is target multistep *)
@@ -1326,6 +1289,7 @@ Proof.
                 (* transitive: ds1++ds0 *)
                 * rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
+                  
                   
                   (* here again the problem of uslh c ≠ c 
 
