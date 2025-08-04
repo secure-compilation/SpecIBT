@@ -1047,10 +1047,6 @@ Ltac com_step :=
   | |- _ => now constructor
   end).
 
-Require Import Coq.Arith.Wf_nat.
-Require Import Coq.Relations.Relation_Operators.
-Require Import Coq.Wellfounded.Lexicographic_Product.
-Require Import Coq.Wellfounded.Inverse_Image.
 
 Definition measure (c : com) (ds : dirs) : nat * nat :=
   (length ds, com_size c).
@@ -1058,15 +1054,8 @@ Definition measure (c : com) (ds : dirs) : nat * nat :=
 Definition lex_ord (cds1 cds2: com * dirs) : Prop :=
   lex_nat_nat (measure (fst cds1) (snd cds1)) (measure (fst cds2) (snd cds2)).
 
-(* Lemma lex_ord_wf: *)
-(*   well_founded lex_ord. *)
-(* Proof. *)
-  
-(*   revert H. intros. inv H. econstructor. intros. *)
-(*   Print well_founded_induction_type. *)
-(* Admitted.  *)
-(* lex_nat_nat_wf: well_founded lex_nat_nat
- *)
+Require Import Coq.Wellfounded.Inverse_Image.
+
 (* matches syntactic form of prog_size_ind; easier to apply *)
 Lemma lex_ind2 : forall P : com -> dirs -> Prop,
     (forall c ds,
@@ -1097,13 +1086,6 @@ Proof.
   specialize H0 with (x:=c). apply H0 in H; auto.
 Qed.
 
-(* Lemma unused_prog_unused :
-  forall c, In c p -> unused_prog "b" p -> unused "b" c.
-Proof.
-  intros. unfold unused_prog in H0. rewrite Forall_forall in H0. 
-  specialize H0 with (x:=c). apply H0 in H; auto.
-   Qed.*)
-
 Definition Property (c:com) (ds: dirs) := forall st ast (b b':bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused_prog "b" p ->
@@ -1130,7 +1112,7 @@ Abort.
 
 End EXAMPLE.
 
-Ltac measure1 := unfold measure, lex_nat_nat_spec; simpl; try (rewrite !app_length); simpl; lia.
+Ltac measure1 := rewrite lex_nat_nat_equiv; unfold measure, lex_nat_nat_spec; simpl; try (rewrite !app_length); simpl; lia.
 Ltac strs_neq := unfold not; intros; discriminate.
 
 (* exploring how to get from uslh_prog p in premise to p in conclusion
@@ -1212,10 +1194,6 @@ Proof.
      (* now I need to prove things about uslh_prog (a :: p) vs p ?? *)
    Admitted.*)
 
-(* If I'm right about uslh_prog issue, add unused for "from_call".
-   Also try removing uslh_prog p and add the actual 
-   annotation / sequence command on c in speculative premise (maybe unfolding it in advance 
-   will make it easier to see where I'm stuck, or easier to push it through) *)
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused_prog "b" p ->
@@ -1223,7 +1201,6 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c
   unused_prog "callee" p ->
   unused "callee" c ->
   st "b" = (if b then 1 else 0) ->
-  (* isn't uslh_prog already applying uslh to each command c? is having both here correct? *)
   (ultimate_slh_prog p) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
       exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
@@ -1280,30 +1257,53 @@ Proof.
                   rewrite t_update_permute; [|strs_neq]. 
                   exists c'. split; try split; auto.
                   do 2 rewrite t_update_same. apply multi_ideal_trans with
-                    (c':=c') (st':=st) (ast':=ast') (b':=b');
+                  (c':=c') (st':=st) (ast':=ast') (b':=b');
                     [|apply multi_ideal_refl].
                   apply ISM_Call; [rewrite Hf; auto|].
+                  rewrite <- H3. f_equal.
                   (* uslh_prog p ≠ p. *)
                   admit.
 
                 (* transitive: ds1++ds0 *)
                 * rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
-                  
-                  
-                  (* here again the problem of uslh c ≠ c 
-
-                     exists c'. split; try split; auto.
+                  exists c'. split; try split; auto.
                   -- eapply multi_ideal_trans.
-                     ++ eapply ISM_Call; [rewrite Hf; eauto|]. *)
-                  (* assert (exists c'', c'0 = <{{ "b" := ("callee" = (aeval st f)) ? "b" : 1; 
-                     (ultimate_slh c'') }}>).
-                  { admit. (* H3 *) }
-                  destruct H0 as [c'' COM].
-                     subst.*)
+                     ++ apply ISM_Call; [rewrite Hf; eauto|].
+                        assert (exists c'', c'0 = <{{ "b" := ("callee" = (aeval st f)) ? "b" : 1; 
+                        (ultimate_slh c'') }}>).
+                        ** admit.
+                        ** destruct H0 as [c'' H0]. admit.
+                     ++ admit.
+                  -- admit.
+              + (* DForceCall *) 
+                inv H0. (* inverting multi produces refl and trans cases.
+                           refl: ds2/os2 instantiated as [] 
+                           trans: ds2/os2 instantiated as ds1++ds0/os1++os0 *)
+                (* reflexive : []. 0 steps take place after call step. *)
+                * rewrite t_update_neq; [|strs_neq]. 
+                  rewrite t_update_permute; [|strs_neq].
+                  rewrite t_update_shadow. 
+                  rewrite t_update_permute; [|strs_neq].
+                  eexists. split; try split; auto.
+                  -- do 2 rewrite t_update_same. eapply multi_ideal_trans.
+                     ++ apply ISM_Call_F with (i:=(aeval ("callee" !-> aeval st f; st) f)); auto.
+                        ** rewrite Hf. simpl. rewrite aeval_unused_update with (n:=(aeval st f)); auto.
+                        ** admit. (* same stuff as in DStep *)
+                     ++ eapply multi_ideal_refl.
+                  -- rewrite st_b. (* oops, maybe need to remember extra information to prove this *) 
+                     admit.
+                (* transitive: ds1++ds0 *)
+                * rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
+                  exists c'. split; try split; auto.
+                  -- eapply multi_ideal_trans.
+                     ++ apply ISM_Call_F with (i:=(aeval st f)); auto.
+                        ** rewrite Hf. simpl; auto.
+                        ** admit. (* this again *)
+                     ++ admit.
+                  -- admit. (* need more information in ctx *)
 
-              + (* DForceCall *) admit.
-          }
+      }
       (* no optimization *)
       inv H1.
       (* refl case *)
@@ -1344,7 +1344,7 @@ Proof.
           { inv H12. }
           simpl in *. rewrite t_update_neq in H0; try discriminate.
           eapply IH in H0; auto; cycle 1.
-          { measure1. }
+          {  measure1. }
           { inv unused_p. auto. }
           { inv unused_p_callee. auto. }
           { destruct H0 as [c'' A]. destruct A as [STEPS SKIP].
