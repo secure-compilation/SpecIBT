@@ -1087,35 +1087,40 @@ Definition measure (c : com) (ds : dirs) : nat * nat :=
   (length ds, com_size c).
 
 Definition lex_ord (cds1 cds2: com * dirs) : Prop :=
-  lex_nat_nat_spec (measure (fst cds1) (snd cds1)) (measure (fst cds2) (snd cds2)).
+  lex_nat_nat (measure (fst cds1) (snd cds1)) (measure (fst cds2) (snd cds2)).
 
-Lemma lex_ord_wf:
-  well_founded lex_ord.
-Proof.
-  unfold lex_ord. apply wf_inverse_image.
-  unfold well_founded. intros. 
-  apply Acc_intro. intros. rewrite <- lex_nat_nat_equiv in H. apply lex_nat_nat_wf in H.
-  revert H. Print well_founded_induction_type.
-Admitted. 
+(* Lemma lex_ord_wf: *)
+(*   well_founded lex_ord. *)
+(* Proof. *)
+  
+(*   revert H. intros. inv H. econstructor. intros. *)
+(*   Print well_founded_induction_type. *)
+(* Admitted.  *)
 (* lex_nat_nat_wf: well_founded lex_nat_nat
  *)
 (* matches syntactic form of prog_size_ind; easier to apply *)
 Lemma lex_ind2 : forall P : com -> dirs -> Prop,
     (forall c ds,
         (forall c' ds',
-            lex_nat_nat_spec (measure c' ds') (measure c ds) -> P c' ds') ->
+            lex_nat_nat (measure c' ds') (measure c ds) -> P c' ds') ->
         P c ds) -> forall c ds, P c ds.
 Proof.
   intros.
   set (f := fun cds => P (fst cds) (snd cds)).
   replace (P c ds) with (f (c, ds)) by auto.
   eapply well_founded_ind.
-  { eapply lex_ord_wf. }
-  unfold lex_ord. subst f. intros.
-  destruct x; simpl in *.
-  eapply H. intros.
-  specialize (H0 (c', ds')). simpl in H0. auto.
-Qed.
+  { instantiate (1:= lex_ord). unfold lex_ord. admit. }
+  intros. subst f. eapply H. intros.
+  - intros x. instantiate (1:= (fun cds1 cds2 => lex_nat_nat (measure (fst  ds') (measure c ds
+    
+  
+  { instantiate (1:= f).  }
+(*   unfold lex_ord. subst f. intros. *)
+(*   destruct x; simpl in *. *)
+(*   eapply H. intros. *)
+(*   specialize (H0 (c', ds')). simpl in H0. auto. *)
+  (* Qed. *)
+Admitted.
 
 Section EXAMPLE.
 
@@ -1260,7 +1265,7 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c
       exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
 Proof.
-  intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
+  intros c ds. apply lex_ind with (c:=c) (ds:=ds). clear.
   intros c ds IH. intros until os. 
   intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'.
   (* st_st' is target multistep *)
