@@ -374,37 +374,36 @@ with vars_bexp (a:bexp) : list string :=
   | <{ b1 && b2 }> => vars_bexp b1 ++ vars_bexp b2
   end.
 
-
-
+(*  *)
 Fixpoint ultimate_slh (c:com) :=
   (match c with
-  | <{{skip}}> => <{{skip}}>
-  | <{{x := e}}> => <{{x := e}}>
-  | <{{c1; c2}}> => <{{ ultimate_slh c1; ultimate_slh c2}}>
+   | <{{skip}}> => <{{(*"from_call" := 0;*) skip}}>
+   | <{{x := e}}> => <{{(*"from_call" := 0;*) x := e}}>
+   | <{{c1; c2}}> => <{{ (*"from_call" := 0;*) ultimate_slh c1; ultimate_slh c2}}>
   | <{{if be then c1 else c2 end}}> =>
       let be' := if is_empty (vars_bexp be) then be (* optimized *)
                                             else <{{"b" = 0 && be}}> in
         <{{if be' then "b" := be' ? "b" : 1; ultimate_slh c1
-                  else "b" := be' ? 1 : "b"; ultimate_slh c2 end}}>
+          else "b" := be' ? 1 : "b"; (*"from_call" := 0;*) ultimate_slh c2 end}}>
   | <{{while be do c end}}> =>
       let be' := if is_empty (vars_bexp be) then be (* optimized *)
                                             else <{{"b" = 0 && be}}> in
-        <{{while be' do "b" := be' ? "b" : 1; ultimate_slh c end;
+        <{{while be' do "b" := be' ? "b" : 1; (*"from_call" := 0;*) ultimate_slh c end;
            "b" := be' ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
       let i' := if is_empty (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
                                           else <{{("b" = 1) ? 0 : i}}> in
-        <{{x <- a[[i']]}}>
+        <{{(*"from_call" := 0;*) x <- a[[i']]}}>
   | <{{a[i] <- e}}> =>
       let i' := if is_empty (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
                                           else <{{("b" = 1) ? 0 : i}}> in
-        <{{a[i'] <- e}}> (* <- Doing nothing here in the is_empty (vars_aexp i) case okay for Spectre v1,
+        <{{(* "from_call" := 0;*) a[i'] <- e}}> (* <- Doing nothing here in the is_empty (vars_aexp i) case okay for Spectre v1,
                    but problematic for return address or code pointer overwrites *)
 
   | <{{call e}}> =>
-      let e' := if is_empty (vars_aexp e) then e
+      let e' := if is_empty (vars_aexp e) then e 
                                           else <{{("b" = 1) ? 0 : e}}> in
-        <{{"callee" := e'; call e'}}>
+        <{{"callee" := e'; (*"from_call" := 1;*) call e'}}>
 
   end)%string.
 
@@ -414,21 +413,53 @@ Definition add_index {a:Type} (xs:list a) : list (nat * a) :=
 Definition ultimate_slh_prog (p:prog) :=
   map (fun p =>
     let '(i,c) := p in
+    (* <{{ "b" := ("from_call" = 1 && "callee" <> ANum i) ? 1 : "b"; ultimate_slh c }}>)
+       (add_index p).*)
     <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}>
-  ) (add_index p).
+       ) (add_index p).
+
+Compute (add_index [<{{call 1}}>;<{{X:=40}}>;<{{Y:=2}}>;<{{Z:=X+Y}}>]).
+(* = [
+      (0, <{{ call 1 }}>); 
+      (1, <{{ "X" := 40 }}>); 
+      (2, <{{ "Y" := 2 }}>);
+      (3, <{{ "Z" := "X" + "Y" }}>)
+     ] : list (nat * com) *)
+
+Compute (ultimate_slh_prog [<{{call 1}}>;<{{X:=40}}>;<{{Y:=2}}>;<{{Z:=X+Y}}>]).
+(*  
+   [<{{ "b" := ("callee" = 0) ? "b" : 1; "callee" := 1; call 1 }}>; <-- fine if "callee" initialized to 0
+   <{{ "b" := ("callee" = 1) ? "b" : 1; "X" := 40 }}>; <-- fine because "callee" would have been set to 1 
+                                                           as the first part of <{{ call 1 }}> sequence
+   <{{ "b" := ("callee" = 2) ? "b" : 1; "Y" := 2 }}>; <-- not fine because "callee" will still be 1 but 
+                                                          now we're checking whether it's 2. The spec flag 
+                                                          will be set incorrectly.
+   <{{ "b" := ("callee" = 3) ? "b" : 1; "Z" := "X" + "Y" }}>] 
+
+This program would have had false positives for speculation, and the ending condition for bcc where 
+"b" must match b would not have been met. The least invasive solution I could come up with for now 
+was to add a "from_call" variable that gets set to 1 when current command is call and 0 otherwise.
+Then before each command, there's now a check where if the previous command was a call AND the 
+call wasn't going to the correct index, we set the spec flag accordingly. Otherwise we leave it alone 
+(this way we avoid having to add updates to "callee" so that it matches the next sequential index 
+when there's no call command involved).
+
+*)
 
 (* Generalization of ultimate_slh_prog *)
 
-(* Definition add_index_nth {a:Type} (xs:list a) (start: nat) : list (nat * a) := *)
-(*   combine (seq start (length xs)) xs. *)
+(* start from any index, not just 0 (this will help us prove things about uslh_prog on p vs a::p) *)
+Definition add_index_gen {a:Type} (xs:list a) (start: nat) : list (nat * a) :=
+  combine (seq start (length xs)) xs.
 
-(* Definition ultimate_slh_prog_aux (p:prog) (start: nat) := *)
-(*   map (fun p => *)
-(*     let '(i,c) := p in *)
-(*     <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}> *)
-(*   ) (add_index_nth p start). *)
+(* this is uslh_prog except with the use of add_index_nth and adding an extra start parameter accordingly *)
+Definition ultimate_slh_prog_gen (p:prog) (start: nat) :=
+  map (fun p =>
+    let '(i,c) := p in
+    <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}>) (add_index_gen p start).
 
-(* Definition ultimate_slh_prog_alt (p: prog) := ultimate_slh_prog_aux p 0. *)
+(* this is the special case that was ultimate_slh_prog previously *)
+Definition ultimate_slh_prog_zero (p: prog) := ultimate_slh_prog_gen p 0.
 
 (** The masking USLH does for indices requires that our arrays are nonempty. *)
 
@@ -1047,6 +1078,11 @@ Ltac com_step :=
   | |- _ => now constructor
   end).
 
+Require Import Coq.Arith.Wf_nat.
+Require Import Coq.Relations.Relation_Operators.
+Require Import Coq.Wellfounded.Lexicographic_Product.
+Require Import Coq.Wellfounded.Inverse_Image.
+
 Definition measure (c : com) (ds : dirs) : nat * nat :=
   (length ds, com_size c).
 
@@ -1056,9 +1092,13 @@ Definition lex_ord (cds1 cds2: com * dirs) : Prop :=
 Lemma lex_ord_wf:
   well_founded lex_ord.
 Proof.
-  unfold lex_ord, well_founded. intros. Search Acc. apply Acc_intro. intros. 
-  Admitted.
-  
+  unfold lex_ord. apply wf_inverse_image.
+  unfold well_founded. intros. 
+  apply Acc_intro. intros. rewrite <- lex_nat_nat_equiv in H. apply lex_nat_nat_wf in H.
+  revert H. Print well_founded_induction_type.
+Admitted. 
+(* lex_nat_nat_wf: well_founded lex_nat_nat
+ *)
 (* matches syntactic form of prog_size_ind; easier to apply *)
 Lemma lex_ind2 : forall P : com -> dirs -> Prop,
     (forall c ds,
@@ -1125,8 +1165,11 @@ End EXAMPLE.
 Ltac measure1 := unfold measure, lex_nat_nat_spec; simpl; try (rewrite !app_length); simpl; lia.
 Ltac strs_neq := unfold not; intros; discriminate.
 
-Lemma ultimate_slh_prog_length :
-  forall p, length (ultimate_slh_prog p) = length p.
+(* exploring how to get from uslh_prog p in premise to p in conclusion
+   (commented out so I can look at the initial conditions motivating it again)*)
+
+(* Lemma ultimate_slh_prog_length :
+  forall p, length (ultimate_slh_prog_aux p) = length p.
 Proof.
   intros. unfold ultimate_slh_prog.
 (*   rewrite length_map. *)
@@ -1134,57 +1177,39 @@ Proof.
 (*   rewrite length_combine. *)
 (*   rewrite length_seq. rewrite min_id. reflexivity. *)
 (* Qed. *)
-Admitted.
+    *)
 
-Lemma uslh_seq :
-  forall a1 a2 c1 c2, 
-  ultimate_slh <{{ a1; a2 }}> = ultimate_slh <{{ c1; c2 }}> ->
-  ultimate_slh a1 = ultimate_slh c1 /\ ultimate_slh a2 = ultimate_slh c2.
-Proof.
-  intros. inv H. rewrite H1, H2; auto.
-Qed.
-
-Lemma uslh_injective :
-  forall c1 c2,
-  ultimate_slh c1 = ultimate_slh c2 ->
-  c1 = c2.
-Proof. 
-  intros. induction c1; destruct c2; auto; try discriminate.
-  - inv H.
-Abort.
-
-Lemma uslh_prog_to_uslh_com : 
-  forall p c e st,
-  nth_error (ultimate_slh_prog p) e = Some c ->
-  exists c', nth_error p e = Some c'
-     /\ c = (<{{("b" := ("callee" = (aeval st e)) ? "b" : 1); (ultimate_slh c') }}>).
-Proof.
-  induction p; intros.
-  (* nil case *)
-  - destruct e; simpl in *; discriminate.
-  (* cons case *)
-  - unfold ultimate_slh_prog in H.
-Admitted.
-
-Lemma combine_app_comm :
+(* Lemma combine_app_comm :
   forall {X : Type} (x : X) (l : list X),
   combine (seq 0 (Datatypes.length ([x] ++ l))) ([x] ++ l) = 
   (combine (seq 0 (Datatypes.length [x])) [x]) ++
   (combine (seq 1 (Datatypes.length l)) l).
 Proof.
   intros. reflexivity.
-Qed.
+   Qed. *)
 
-
-Lemma ultimate_slh_prog_contents:
+(* Lemma ultimate_slh_prog_contents:
   forall p cmd e st,
   nth_error (ultimate_slh_prog p) e = Some cmd ->
   exists c', cmd = (<{{("b" := ("callee" = (aeval st e)) ? "b" : 1); (ultimate_slh c') }}>).
 Proof.
   induction p; intros.
-  - simpl. unfold ultimate_slh_prog in H. unfold add_index in H. simpl in H.
+  - simpl. unfold ultimate_slh_prog in H. 
+    unfold add_index in H. simpl in H.
     induction e; discriminate.
-  (* - unfold ultimate_slh_prog in H. *)
+  
+  - destruct e.
+    + simpl in H. injection H. intros.
+      subst. simpl. exists a. reflexivity.
+      (* rewrite <- H0. admit. *)
+    + unfold ultimate_slh_prog in *. simpl.
+      unfold add_index in *. simpl in H.
+      apply IHp with (st:=st).           
+   Admitted. *)
+
+(* - previous attempts
+
+unfold ultimate_slh_prog in H. *)
   (*   unfold add_index in H. *)
     
   (*   assert (ultimate_slh_prog (a :: p) = (<{{ "b" := ("callee" =  *)
@@ -1197,92 +1222,32 @@ Proof.
   (*     rewrite H0 in H. unfold ultimate_slh_prog in H. *)
   (*     (* remember (fun '(i, c) => <{{ "b" := ("callee" = i) ? "b" : 1; (ultimate_slh c) }}>) as f. *)
   (*        rewrite <- Heqf in H. why doesn't it see the subterm? *) admit. *)
-  (*   }  *)
-      
-          
-    
 
-        (* in-progress attempt :  *)
-    (* unfold ultimate_slh_prog, add_index. simpl.  *)
-  - destruct e.
-    (* very annoying! for some reason with respect to the 
-       application of uslh_prog to p inside the IH, it doesn't 
-       remember that we're in the case where p is nonempty,
-       and this is crucial to these cases succeeding. I don't know 
-       how to get it to know that p <> []. *)
-    + simpl in H. unfold ultimate_slh_prog. injection H. intros.
-      subst. simpl. exists a. reflexivity.
-      (* rewrite <- H0. admit. *)
-    + simpl in H.
-      apply IHp.
-      rewrite nth_error_S in H. simpl in H. rewrite nth_error_S.
-      unfold tl. 
-    (* I'll come back to this assert, but for the moment it seemed easier to 
+(* I'll come back to this assert, but for the moment it seemed easier to 
        prove this by searching up relevant theorems for nth_error and 
        map and seq and trying to transform things that way. Until I 
        ran into the p issue. *)
       (* assert (ultimate_slh_prog (a :: p) = (<{{ "b" := ("callee" = (aeval st e)) ? "b" : 1; (ultimate_slh a) }}>) :: ultimate_slh_prog p).
     { unfold ultimate_slh_prog, add_index. simpl. apply nth_error_split in H.
-       destruct H as [l1 H]. destruct H as [l2 H]. *) *)
-      
-Admitted.
-  
+       destruct H as [l1 H]. destruct H as [l2 H]. } *)
 
-(* POTENTIALLY USEFUL THEOREMS
-
-nth_error_S:
-  forall [A : Type] (l : list A) (n : nat),
-  nth_error l (S n) = nth_error (tl l) n
-
-map_nth_error:
-  forall [A B : Type] (f : A -> B) (n : nat) (l : list A) [d : A],
-  nth_error l n = Some d -> nth_error (map f l) n = Some (f d)
-
-map_app:
-  forall [A B : Type] (f : A -> B) (l l' : list A),
-  map f (l ++ l') = map f l ++ map f l'
-
-  cons_seq:
-  forall len start : nat, start :: seq (S start) len = seq start (S len)
-
-  map_cons:
-  forall [A B : Type] (f : A -> B) (x : A) (l : list A),
-  map f (x :: l) = f x :: map f l
-
-  nth_error_split:
-  forall [A : Type] (l : list A) (n : nat) [a : A],
-  nth_error l n = Some a ->
-  exists l1 l2 : list A, l = l1 ++ a :: l2 /\ Datatypes.length l1 = n
-
-nth_error_ext:
-  forall [A : Type] (l l' : list A),
-  (forall n : nat, nth_error l n = nth_error l' n) -> l = l'
- 
- *)
-  
-  
-Lemma uslh_prog_to_uslh_com' : 
+(* Lemma uslh_prog_to_uslh_com' : 
   forall p c e st,
   nth_error (ultimate_slh_prog p) e = Some (<{{("b" := ("callee" = (aeval st e)) ? "b" : 1); 
                      (ultimate_slh c) }}>) ->
   nth_error p e = Some c.
 Proof.
   induction p; intros.
-  - (* destruct e; try discriminate.*) admit.
-  - (* rewrite nth_error_cons_succ in *. apply IHp with (st:=st). *) Admitted.
+  - destruct e; try discriminate.
+  - destruct e.
+    + simpl in *. 
      (* now I need to prove things about uslh_prog (a :: p) vs p ?? *)
+   Admitted.*)
 
-(* nth_error_cons_succ:
-  forall [A : Type] (x : A) (l : list A) (n : nat),
-  nth_error (x :: l) (S n) = nth_error l n
- *)
- (* induction e; induction p; try discriminate. *)
- (* - injection H. intros. destruct a; destruct c; try discriminate; auto. *)
- (*   + injection H0. intros. rewrite H1, H2; reflexivity. *)
- (*   + injection H0. intros. apply uslh_seq in H0. destruct H0. simpl in *. *)
-
-(* YH: Do we need to check that "callee" is also not used in the program?  
-   JLB: added premises checking this. *)
+(* If I'm right about uslh_prog issue, add unused for "from_call".
+   Also try removing uslh_prog p and add the actual 
+   annotation / sequence command on c in speculative premise (maybe unfolding it in advance 
+   will make it easier to see where I'm stuck, or easier to push it through) *)
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused_prog "b" p ->
@@ -1290,6 +1255,7 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c
   unused_prog "callee" p ->
   unused "callee" c ->
   st "b" = (if b then 1 else 0) ->
+  (* isn't uslh_prog already applying uslh to each command c? is having both here correct? *)
   (ultimate_slh_prog p) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
       exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
@@ -1304,11 +1270,7 @@ Proof.
     split; [|tauto]. now destruct c. }
   (* multi_spec_trans *)
   (* case analysis on commands, then invert single target step *)
-  (* the inversion produces extra cases corresponding to commands 
-     that have the option of attacker directives (although not Call.
-     I think because it's in the form of a sequence so further 
-     unwrapping is needed to access those two cases) *)
-
+  
   destruct c; (*simpl in *;*) invert H.
   11 : { (* Call *)
         (* hypotheses: single and multi spec, hardened prog 
@@ -1348,43 +1310,28 @@ Proof.
                   rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
                   rewrite t_update_permute; [|strs_neq]. 
-                  
-                  (* actually I'm not sure if uslh c' would be correct.
-                     because the hardening of the program belongs to 
-                     the speculative execution, not the ideal semantics. 
-                     What can I say about where the program steps to in 
-                     the ideal semantics from call? it appears to 
-                     be c' (ISM_Call). *)
-                  (* exists (ultimate_slh c').
-                  split; try split; [|rewrite H|]; auto.
-                  do 2 rewrite t_update_same. apply multi_ideal_trans with 
-                  (c':=(ultimate_slh c')) (st':=st) (ast':=ast') (b':=b'); 
-
-                  [|apply multi_ideal_refl]. apply ISM_Call.
-                  -- rewrite Hf. auto.
-                  -- admit. (* started lemma for this one *)
-                     (* trans *) *) Print ISM_Call.
-
-                  exists c'.
-                  split; try split; auto.
+                  exists c'. split; try split; auto.
                   do 2 rewrite t_update_same. apply multi_ideal_trans with
-                    (c':=c') (st':=st) (ast':=ast') (b':=b'); 
-                    [|apply multi_ideal_refl]. apply ISM_Call; [rewrite Hf; auto|].
-                    (* back to the problem of uslh c' ≠ c' *) 
+                    (c':=c') (st':=st) (ast':=ast') (b':=b');
+                    [|apply multi_ideal_refl].
+                  apply ISM_Call; [rewrite Hf; auto|].
+                  (* uslh_prog p ≠ p. *)
+                  admit.
 
                 (* transitive: ds1++ds0 *)
                 * rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
+                  
                   (* here again the problem of uslh c ≠ c 
 
                      exists c'. split; try split; auto.
                   -- eapply multi_ideal_trans.
                      ++ eapply ISM_Call; [rewrite Hf; eauto|]. *)
-                  assert (exists c'', c'0 = <{{ "b" := ("callee" = (aeval st f)) ? "b" : 1; 
+                  (* assert (exists c'', c'0 = <{{ "b" := ("callee" = (aeval st f)) ? "b" : 1; 
                      (ultimate_slh c'') }}>).
                   { admit. (* H3 *) }
                   destruct H0 as [c'' COM].
-                  subst.
+                     subst.*)
 
               + (* DForceCall *) admit.
           }
