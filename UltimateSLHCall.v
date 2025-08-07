@@ -42,14 +42,15 @@ Reserved Notation
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive seq_eval_small_step (p:prog) :
+(* YH: To avoid complex errors from fixing the notation,
+       I changed program to a tuple with its starting point. *)
+Inductive seq_eval_small_step (p:prog * nat) :
     com -> state -> astate ->
     com -> state -> astate -> obs -> Prop :=
   | SSM_Asgn  : forall st ast e n x,
       aeval st e = n ->
       p |- <((x := e, st, ast))> -->^[] <((skip, x !-> n; st, ast))>
   | SSM_Seq : forall c1 st ast os c1t stt astt c2,
-
       p |- <((c1, st, ast))>  -->^os <((c1t, stt, astt))>  ->
       p |- <(((c1;c2), st, ast))>  -->^os <(((c1t;c2), stt, astt))>
   | SSM_Seq_Skip : forall st ast c2,
@@ -61,12 +62,12 @@ Inductive seq_eval_small_step (p:prog) :
              | false => cf end, st, ast))>
   | SSM_While : forall be c st ast,
       p |- <((while be do c end, st, ast))> -->^[]
-           <((if be then c; while be do c end else skip end, st, ast))>
+          <((if be then c; while be do c end else skip end, st, ast))>
   | SSM_ARead : forall x a ie st ast i,
       aeval st ie = i ->
-  i < length (ast a) ->
-  p |- <((x <- a[[ie]], st, ast))> -->^[OARead a i]
-           <((skip, x !-> nth i (ast a) 0; st, ast))>
+      i < length (ast a) ->
+      p |- <((x <- a[[ie]], st, ast))> -->^[OARead a i]
+          <((skip, x !-> nth i (ast a) 0; st, ast))>
   | SSM_Write : forall a ie e st ast i n,
       aeval st e = n ->
       aeval st ie = i ->
@@ -74,9 +75,9 @@ Inductive seq_eval_small_step (p:prog) :
       p |- <((a[ie] <- e, st, ast))> -->^[OAWrite a i]
            <((skip, st, a !-> upd i (ast a) n; ast))>
   | SSM_Call : forall e i c st ast,
-   aeval st e = i ->
-      nth_error p i = Some c ->
-      p |- <((call e, st, ast))> -->^[OCall i] <((c, st, ast))>
+      aeval st e = i + (snd p) ->
+      nth_error (fst p) i = Some c ->
+      p |- <((call e, st, ast))> -->^[OCall (i + snd p)] <((c, st, ast))>
 
   where "p |- <(( c , st , ast ))> -->^ os  <(( ct ,  stt , astt ))>" :=
     (seq_eval_small_step p c st ast ct stt astt os).
@@ -86,7 +87,7 @@ Reserved Notation
    (at level 40, c custom com at level 99, ct custom com at level 99,
     st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive multi_seq (p:prog) (c:com) (st:state) (ast:astate) :
+Inductive multi_seq (p:prog * nat) (c:com) (st:state) (ast:astate) :
     com -> state -> astate -> obs -> Prop :=
   | multi_seq_refl : p |- <((c, st, ast))> -->*^[] <((c, st, ast))>
   | multi_seq_trans (c':com) (st':state) (ast':astate)
@@ -150,7 +151,9 @@ Reserved Notation
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive spec_eval_small_step (p:prog) :
+(* YH: To avoid complex errors from fixing the notation,
+       I changed program to a tuple with its starting point. *)
+Inductive spec_eval_small_step (p:prog * nat) :
     com -> state -> astate -> bool ->
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
   | SpecSM_Asgn  : forall st ast b e n x,
@@ -197,14 +200,14 @@ Inductive spec_eval_small_step (p:prog) :
       p |- <((a[ie] <- e, st, ast, true))> -->_[DStore a' i']^^[OAWrite a i]
            <((skip, st, a' !-> upd i' (ast a') n; ast, true))>
   | SpecSM_Call : forall e i c st ast b,
-      aeval st e = i ->
-      nth_error p i = Some c ->
-      p |- <((call e, st, ast, b))> -->_[DStep]^^[OCall i] <((c, st, ast, b))>
+      aeval st e = i + (snd p) ->
+      nth_error (fst p) i = Some c ->
+      p |- <((call e, st, ast, b))> -->_[DStep]^^[OCall (i + snd p)] <((c, st, ast, b))>
   | SpecSM_Call_F : forall e i j c st ast b,
-      aeval st e = i ->
+      aeval st e = i + (snd p) ->
       i <> j ->
-      nth_error p j = Some c ->
-      p |- <((call e, st, ast, b))> -->_[DForceCall j]^^[OForceCall] <((c, st, ast, true))>
+      nth_error (fst p) j = Some c ->
+      p |- <((call e, st, ast, b))> -->_[DForceCall (j + snd p)]^^[OForceCall] <((c, st, ast, true))>
 
   where "p |- <(( c , st , ast , b ))> -->_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (spec_eval_small_step p c st ast b ct stt astt bt ds os).
@@ -214,7 +217,7 @@ Reserved Notation
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive multi_spec (p:prog) (c:com) (st:state) (ast:astate) (b:bool) :
+Inductive multi_spec (p:prog * nat) (c:com) (st:state) (ast:astate) (b:bool) :
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
   | multi_spec_refl : p |- <((c, st, ast, b))> -->*_[]^^[] <((c, st, ast, b))>
   | multi_spec_trans (c':com) (st':state) (ast':astate) (b':bool)
@@ -339,7 +342,7 @@ Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop :=
     p |- <((c, st2, ast2, false))> -->*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
     os1 = os2. 
 
-Definition relative_secure (p:prog) (trans : com -> com)
+Definition relative_secure (p:prog * nat) (trans : com -> com)
     (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop :=
   seq_same_obs p c st1 st2 ast1 ast2 ->
   spec_same_obs p (trans c) st1 st2 ast1 ast2.
@@ -379,31 +382,29 @@ Fixpoint ultimate_slh (c:com) :=
    | <{{skip}}> => <{{skip}}>
    | <{{x := e}}> => <{{x := e}}>
    | <{{c1; c2}}> => <{{ultimate_slh c1; ultimate_slh c2}}>
-  | <{{if be then c1 else c2 end}}> =>
-      let be' := if is_empty (vars_bexp be) then be (* optimized *)
-                                            else <{{"b" = 0 && be}}> in
-        <{{if be' then "b" := be' ? "b" : 1; ultimate_slh c1
+   | <{{if be then c1 else c2 end}}> =>
+       let be' := if is_empty (vars_bexp be) then be (* optimized *)
+                                             else <{{"b" = 0 && be}}> in
+         <{{if be' then "b" := be' ? "b" : 1; ultimate_slh c1
           else "b" := be' ? 1 : "b"; ultimate_slh c2 end}}>
-  | <{{while be do c end}}> =>
-      let be' := if is_empty (vars_bexp be) then be (* optimized *)
-                                            else <{{"b" = 0 && be}}> in
-        <{{while be' do "b" := be' ? "b" : 1; ultimate_slh c end;
+   | <{{while be do c end}}> =>
+       let be' := if is_empty (vars_bexp be) then be (* optimized *)
+                                             else <{{"b" = 0 && be}}> in
+         <{{while be' do "b" := be' ? "b" : 1; ultimate_slh c end;
            "b" := be' ? 1 : "b"}}>
-  | <{{x <- a[[i]]}}> =>
-      let i' := if is_empty (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
-                                          else <{{("b" = 1) ? 0 : i}}> in
-        <{{ x <- a[[i']]}}>
-  | <{{a[i] <- e}}> =>
-      let i' := if is_empty (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
-                                          else <{{("b" = 1) ? 0 : i}}> in
+   | <{{x <- a[[i]]}}> =>
+       let i' := if is_empty (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
+                                           else <{{("b" = 1) ? 0 : i}}> in
+         <{{ x <- a[[i']]}}>
+   | <{{a[i] <- e}}> =>
+       let i' := if is_empty (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
+                                           else <{{("b" = 1) ? 0 : i}}> in
         <{{ a[i'] <- e}}> (* <- Doing nothing here in the is_empty (vars_aexp i) case okay for Spectre v1,
                    but problematic for return address or code pointer overwrites *)
-
-  | <{{call e}}> =>
-      let e' := if is_empty (vars_aexp e) then e 
-                                          else <{{("b" = 1) ? 0 : e}}> in
+   | <{{call e}}> =>
+       let e' := if is_empty (vars_aexp e) then e 
+                                           else <{{("b" = 1) ? 0 : e}}> in
         <{{"callee" := e'; call e'}}>
-
   end)%string.
 
 Definition add_index {a:Type} (xs:list a) : list (nat * a) :=
@@ -442,7 +443,7 @@ Reserved Notation
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive ideal_eval_small_step (p:prog):
+Inductive ideal_eval_small_step (p:prog * nat):
     com -> state -> astate -> bool ->
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
   | ISM_Asgn  : forall st ast b e n x,
@@ -491,14 +492,14 @@ Inductive ideal_eval_small_step (p:prog):
       p |- <((a[ie] <- e, st, ast, true))> -->i_[DStore a' i']^^[OAWrite a i]
            <((skip, st, a' !-> upd i' (ast a') n; ast, true))>
   | ISM_Call : forall e i c st ast b,
-      (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
-      nth_error p i = Some c ->
-      p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall i] <((c, st, ast, b))>
+      (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i + (snd p) ->
+      nth_error (fst p) i = Some c ->
+      p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall (i + snd p)] <((c, st, ast, b))>
   | ISM_Call_F : forall e i j c st ast b,
-      (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i ->
-      i <> j -> 
-      nth_error p j = Some c ->     
-      p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^[OForceCall] <((c, st, ast, true))>
+      (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i + (snd p) ->
+      i <> j ->
+      nth_error (fst p) j = Some c ->
+      p |- <((call e, st, ast, b))> -->i_[DForceCall (j + snd p)]^^[OForceCall] <((c, st, ast, true))>
 
     where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (ideal_eval_small_step p c st ast b ct stt astt bt ds os).
@@ -512,7 +513,7 @@ Reserved Notation
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive multi_ideal (p:prog) (c:com) (st:state) (ast:astate) (b:bool) :
+Inductive multi_ideal (p:prog * nat) (c:com) (st:state) (ast:astate) (b:bool) :
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
   | multi_ideal_refl : p |- <((c, st, ast, b))> -->i*_[]^^[] <((c, st, ast, b))>
   | multi_ideal_trans (c':com) (st':state) (ast':astate) (b':bool)
@@ -623,7 +624,7 @@ Proof.
   intros p c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl in *; try discriminate;
-  try (right; exists j); auto.
+  try (right; exists (j + (snd p))); auto.
 Qed.
 
 Lemma multi_ideal_spec_needs_force : forall p c st ast ds ct stt astt os,
@@ -718,7 +719,7 @@ Proof.
   + specialize (Hds DForce). discriminate Hds. now left.
   + specialize (Hds (DLoad a' i')). discriminate Hds. now left.
   + specialize (Hds (DStore a' i')). discriminate Hds. now left.
-  + specialize (Hds (DForceCall j)). discriminate Hds. now left.
+  + specialize (Hds (DForceCall (j + snd p))). discriminate Hds. now left.
 Qed.
 
 Lemma multi_ideal_no_spec : forall p c st ast ds ct stt astt bt os,
@@ -776,7 +777,7 @@ Proof.
   apply multi_seq_refl.
 Qed.
 
-Lemma seq_same_obs_com_if (p:prog) : forall be ct cf st1 st2 ast1 ast2,
+Lemma seq_same_obs_com_if (p:prog * nat) : forall be ct cf st1 st2 ast1 ast2,
   seq_same_obs p <{{ if be then ct else cf end }}> st1 st2 ast1 ast2 ->
   beval st1 be = beval st2 be.
 Proof.
@@ -812,7 +813,7 @@ Proof.
     + apply IHHev.
 Qed.
 
-Lemma seq_same_obs_com_seq (p:prog) : forall c1 c2 st1 st2 ast1 ast2,
+Lemma seq_same_obs_com_seq (p:prog * nat) : forall c1 c2 st1 st2 ast1 ast2,
   seq_same_obs p <{{ c1; c2 }}> st1 st2 ast1 ast2 ->
   seq_same_obs p c1 st1 st2 ast1 ast2.
 Proof.
@@ -821,7 +822,7 @@ Proof.
   eapply multi_seq_add_snd_com in Hev1, Hev2. eapply Hsec in Hev2; eauto.
 Qed.
 
-Lemma ideal_one_step_force_obs (p:prog) :
+Lemma ideal_one_step_force_obs (p:prog * nat) :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs p c st1 st2 ast1 ast2 ->
     p |- <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
@@ -840,7 +841,7 @@ Proof.
   - apply seq_same_obs_com_if in Hobs. rewrite Hobs. reflexivity.
 Qed.
 
-Lemma ideal_one_step_forcecall_obs (p:prog) :
+Lemma ideal_one_step_forcecall_obs (p:prog * nat) :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 j,
   seq_same_obs p c st1 st2 ast1 ast2 ->
     p |- <((c, st1, ast1, false))> -->i_[(DForceCall j)]^^os1 <((ct, stt1, astt1, true))> ->
@@ -866,13 +867,13 @@ Qed.
     relating the speculative semantics of the hardened program with the ideal
     semantics, by means of a backwards compiler correctness (BCC) result. *)
 
-Lemma ideal_unused_overwrite_one_step (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
-  unused_prog X p ->
+Lemma ideal_unused_overwrite_one_step (p:prog * nat) : forall st ast b ds c c' st' ast' b' os X n,
+  unused_prog X (fst p) ->
   unused X c ->
   p |- <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
   p |- <((c, X !-> n; st, ast, b))> -->i_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
 Proof.
-  intros. remember (unused_prog X p) as unused_p. induction H1.
+  intros. remember (unused_prog X (fst p)) as unused_p. induction H1.
   - invert H0. repeat econstructor. rewrite t_update_permute; [constructor|assumption].
     now apply aeval_unused_update.
   - invert H0. eapply IHideal_eval_small_step in H2. destruct H2.
@@ -899,8 +900,8 @@ Proof.
       rewrite Forall_forall in H. apply H with (x:=c). apply nth_error_In in H3; auto.
 Qed.
   
-Lemma ideal_unused_overwrite (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
-  unused_prog X p ->
+Lemma ideal_unused_overwrite (p:prog * nat) : forall st ast b ds c c' st' ast' b' os X n,
+  unused_prog X (fst p) ->
   unused X c ->
   p |- <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
   p |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))>.
@@ -910,8 +911,8 @@ Proof.
   econstructor; [eassumption|tauto].
 Qed.
 
-Lemma ideal_unused_update (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
-  unused_prog X p ->
+Lemma ideal_unused_update (p:prog * nat) : forall st ast b ds c c' st' ast' b' os X n,
+  unused_prog X (fst p) ->
   unused X c ->
   p |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))> ->
   p |- <((c, st, ast, b))> -->i*_ds^^os <((c', X !-> st X; st', ast', b'))>.
@@ -921,13 +922,13 @@ Proof.
   now rewrite !t_update_shadow in H1.
 Qed.
 
-Lemma spec_unused_overwrite_one_step (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
-  unused_prog X p ->
+Lemma spec_unused_overwrite_one_step (p:prog * nat) : forall st ast b ds c c' st' ast' b' os X n,
+  unused_prog X (fst p) ->
   unused X c ->
   p |- <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
   p |- <((c, X !-> n; st, ast, b))> -->_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
 Proof.
-  intros. remember (unused_prog X p) as unused_p. induction H1.
+  intros. remember (unused_prog X (fst p)) as unused_p. induction H1.
   - invert H0. repeat econstructor. rewrite t_update_permute; [constructor|assumption].
     now apply aeval_unused_update.
   - invert H0. eapply IHspec_eval_small_step in H2. destruct H2.
@@ -954,9 +955,9 @@ Proof.
       rewrite Forall_forall in H. apply H with (x:=c). apply nth_error_In in H3; auto.
 Qed.
 
-Lemma spec_unused_overwrite (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
+Lemma spec_unused_overwrite (p:prog * nat) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
-  unused_prog X p ->
+  unused_prog X (fst p) ->
   p |- <((c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
   p |- <((c, X !-> n; st, ast, b))> -->*_ds^^os <((c', X !-> n; st', ast', b'))>.
 Proof.
@@ -965,9 +966,9 @@ Proof.
   econstructor; [eassumption|tauto].
 Qed.
 
-Lemma spec_unused_update (p:prog) : forall st ast b ds c c' st' ast' b' os X n,
+Lemma spec_unused_update (p:prog * nat) : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
-  unused_prog X p ->
+  unused_prog X (fst p) ->
   p |- <((c, X !-> n; st, ast, b))> -->*_ds^^os <((c', X !-> n; st', ast', b'))> ->
   p |- <((c, st, ast, b))> -->*_ds^^os <((c', X !-> st X; st', ast', b'))>.
 Proof.
@@ -983,7 +984,7 @@ Proof.
   intros. simpl. now f_equal.
 Qed.
 
-Lemma spec_eval_preserves_nonempty_arrs (p:prog) : forall c c' st ast b ds st' ast' b' os,
+Lemma spec_eval_preserves_nonempty_arrs (p:prog * nat) : forall c c' st ast b ds st' ast' b' os,
   nonempty_arrs ast ->
   p |- <((c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
   nonempty_arrs ast'.
@@ -998,7 +999,7 @@ Proof.
   all: now apply String.eqb_eq in Heq; subst; rewrite t_update_eq, upd_length.
 Qed.
 
-Lemma ideal_eval_preserves_nonempty_arrs (p:prog) : forall c c' st ast b ds st' ast' b' os,
+Lemma ideal_eval_preserves_nonempty_arrs (p:prog * nat) : forall c c' st ast b ds st' ast' b' os,
   nonempty_arrs ast ->
   p |- <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
   nonempty_arrs ast'.
@@ -1077,7 +1078,7 @@ Qed.
 Section EXAMPLE.
 
 Variable p: prog.
-
+Variable n: nat.
 Lemma unused_prog_unused :
   forall (p : prog) (c : com) (X : string), 
     In c p -> unused_prog X p -> unused X c.
@@ -1091,9 +1092,9 @@ Definition Property (c:com) (ds: dirs) := forall st ast (b b':bool) c' st' ast' 
   unused_prog "b" p ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
-  p |- <(( (ultimate_slh c), st, ast, b ))> -->*_ ds ^^ os <(( c', st', ast', b' ))> ->
+  (p, n) |- <(( (ultimate_slh c), st, ast, b ))> -->*_ ds ^^ os <(( c', st', ast', b' ))> ->
   exists c'' : com,
-    p |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c'', "b" !-> st "b"; st', ast', b' ))> /\
+    (p, n) |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c'', "b" !-> st "b"; st', ast', b' ))> /\
     (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)).
 
 Lemma induction_example : forall c ds, Property c ds.
@@ -1263,8 +1264,8 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c
   unused_prog "callee" p ->
   unused "callee" c ->
   st "b" = (if b then 1 else 0) ->
-  (ultimate_slh_prog_gen p n) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
+  ((ultimate_slh_prog_gen p n), n) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+      exists c'', (p, n) |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
 Proof.
   intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
@@ -1306,19 +1307,18 @@ Proof.
                 inv H0.                 
                 (* reflexive : []. 0 steps take place after call step. *)
                 * rewrite t_update_neq; [|strs_neq].
-                 rewrite t_update_permute; [|strs_neq].
-                 rewrite t_update_shadow.
-                 rewrite aeval_unused_update; auto.
-                 rewrite t_update_permute; [|strs_neq].
-                 rewrite aeval_unused_update in H3; eauto.
-                 specialize (ultimate_slh_prog_contents p n c' (aeval st f) st H3).
-                 intros (c'' & A).
-                 subst. eapply uslh_prog_to_uslh_com' in H3.
-                 exists c''. split.
-                 2:{ intros. inv H. }
-                 econstructor 2.
-                 { econstructor; eauto. rewrite Hf. simpl. reflexivity. }
-                 do 2 rewrite t_update_same. econstructor.
+                  rewrite t_update_permute; [|strs_neq].
+                  rewrite t_update_shadow.
+                  rewrite aeval_unused_update in H2; auto.
+                  rewrite t_update_permute; [|strs_neq].
+                  specialize (ultimate_slh_prog_contents p n c' i st H3).
+                  intros (c'' & A).
+                  subst. eapply uslh_prog_to_uslh_com' in H3.
+                  exists c''. split.
+                  2:{ intros. inv H. }
+                  econstructor 2.
+                  { simpl in *. econstructor; eauto. rewrite Hf. simpl. eauto. }
+                  do 2 rewrite t_update_same. econstructor.
                 (* transitive: ds1++ds0 *)
                 * rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
