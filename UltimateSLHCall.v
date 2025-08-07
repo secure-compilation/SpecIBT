@@ -64,7 +64,7 @@ Inductive seq_eval_small_step (p:prog) :
            <((if be then c; while be do c end else skip end, st, ast))>
   | SSM_ARead : forall x a ie st ast i,
       aeval st ie = i ->
-      i < length (ast a) ->
+  i < length (ast a) ->
   p |- <((x <- a[[ie]], st, ast))> -->^[OARead a i]
            <((skip, x !-> nth i (ast a) 0; st, ast))>
   | SSM_Write : forall a ie e st ast i n,
@@ -74,7 +74,7 @@ Inductive seq_eval_small_step (p:prog) :
       p |- <((a[ie] <- e, st, ast))> -->^[OAWrite a i]
            <((skip, st, a !-> upd i (ast a) n; ast))>
   | SSM_Call : forall e i c st ast,
-      aeval st e = i ->
+   aeval st e = i ->
       nth_error p i = Some c ->
       p |- <((call e, st, ast))> -->^[OCall i] <((c, st, ast))>
 
@@ -1162,11 +1162,6 @@ unfold ultimate_slh_prog in H. *)
     { unfold ultimate_slh_prog, add_index. simpl. apply nth_error_split in H.
        destruct H as [l1 H]. destruct H as [l2 H]. } *)
 
-Lemma uslh_prog_cons: forall c p n,
-    ultimate_slh_prog_gen (c :: p) n = (<{{ "b" := ("callee" = n) ? "b" : 1; (ultimate_slh c) }}>) :: (ultimate_slh_prog_gen p (S n)).
-Proof.
-  intros. unfold ultimate_slh_prog_gen. simpl. auto.
-Qed.
 
 Lemma ultimate_slh_inj: forall c1 c2,
     ultimate_slh c1 = ultimate_slh c2 ->
@@ -1223,13 +1218,35 @@ Proof.
     subst. auto.
 Qed.
 
+Lemma uslh_prog_cons: forall c p n,
+    ultimate_slh_prog_gen (c :: p) n = (<{{ "b" := ("callee" = n) ? "b" : 1; (ultimate_slh c) }}>) :: (ultimate_slh_prog_gen p (S n)).
+Proof.
+  intros. unfold ultimate_slh_prog_gen. simpl. auto.
+Qed.
+
 Lemma ultimate_slh_prog_contents:
   forall p n cmd e st,
   nth_error (ultimate_slh_prog_gen p n) e = Some cmd ->
   exists c', cmd = (<{{("b" := ("callee" = (aeval st (n + e))) ? "b" : 1); (ultimate_slh c') }}>).
 Proof.
-Admitted.
+  induction p; simpl.
+  - intros. destruct e; try discriminate.
+  - (*
 
+
+
+    intros. rewrite uslh_prog_cons in H. simpl in IHp.
+    apply IHp; auto. rewrite <- H. destruct e.
+    + simpl in H. injection H; intros.
+
+
+
+    destruct e; intros; simpl in *.
+    + rewrite add_0_r. exists a. injection H; intros; auto.
+       + *) Admitted.
+
+
+    
 Lemma uslh_prog_to_uslh_com' :
   forall p n c e st,
     nth_error (ultimate_slh_prog_gen p n) e =
@@ -1239,9 +1256,7 @@ Lemma uslh_prog_to_uslh_com' :
 Proof.
 Admitted.
 
-(* YH: This is an example of how I used the lemmas above.
-       You can delete it after reading. *)
-Lemma ultimate_slh_bcc_generalized_more (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os n,
+Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os n,
   nonempty_arrs ast ->
   unused_prog "b" p ->
   unused "b" c ->
@@ -1253,195 +1268,23 @@ Lemma ultimate_slh_bcc_generalized_more (p:prog) : forall c ds st ast (b b' : bo
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
 Proof.
   intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
-  intros c ds IH. intros until os. intro n. 
+  intros c ds IH. intros until n. 
   intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'.
   (* st_st' is target multistep *)
   invert st_st'.
   (* multi_spec_refl *)
   { repeat rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
-    split; [|tauto]. now destruct c. }
+    split; [|tauto]. now destruct c. 
+  }
   (* multi_spec_trans *)
   (* case analysis on commands, then invert single target step *)
-  destruct c; (*simpl in *;*) invert H.
-  (* call *)
-  11:{ inv H12. inv H0.
-       (* reflexive *)
-       - eexists. split; try discriminate.
-         simpl. rewrite t_update_permute; [|strs_neq].
-         rewrite t_update_shadow. repeat rewrite t_update_same. econstructor.
-
-       (* transitive *)
-       - inv H.
-         { inv H12. }
-         rename p0 into f.
-         destruct (is_empty (vars_aexp f)) eqn: Hf.
-         (* no variable in function expression *)
-         { simpl. inv H1. (* H1 is tgt multistep call f *)
-           (* refl *)
-           - exists <{{ call f }}>. split; [|intros; inv H].
-             rewrite t_update_permute; [|strs_neq].
-             rewrite t_update_shadow. do 2 rewrite t_update_same.
-             constructor.
-           (* transitive *)
-           - inv H.
-             (* we just invert call case of target program *)
-             + (* DStep *)
-               inv H0.
-               (*** YH: HERE. *)
-               * rewrite t_update_neq; [|strs_neq].
-                 rewrite t_update_permute; [|strs_neq].
-                 rewrite t_update_shadow.
-                 rewrite aeval_unused_update; auto.
-                 rewrite t_update_permute; [|strs_neq].
-                 rewrite aeval_unused_update in H3; eauto.
-                 specialize (ultimate_slh_prog_contents p n c' (aeval st f) st H3).
-                 intros (c'' & A).
-                 subst. eapply uslh_prog_to_uslh_com' in H3.
-                 exists c''. split.
-                 2:{ intros. inv H. }
-                 econstructor 2.
-                 { econstructor; eauto. rewrite Hf. simpl. reflexivity. }
-                 do 2 rewrite t_update_same. econstructor.
-               (* transitive: ds1++ds0 *)
-               * rewrite aeval_unused_update with (n:=(aeval st f)); auto.
-
-                 exists c'. split; try split; auto.
-                 -- eapply multi_ideal_trans.
-                    ++ apply ISM_Call; [rewrite Hf; eauto|].
-                       assert (exists c'', c'0 = <{{ "b" := ("callee" = (aeval st f)) ? "b" : 1;
-                                                (ultimate_slh c'') }}>).
-                       ** admit.
-                       ** destruct H0 as [c'' H0]. admit.
-                    ++ admit.
-                 -- admit.
-             + (* DForceCall *)
-               inv H0. (* inverting multi produces refl and trans cases.
-                           refl: ds2/os2 instantiated as []
-                           trans: ds2/os2 instantiated as ds1++ds0/os1++os0 *)
-               (* reflexive : []. 0 steps take place after call step. *)
-               * rewrite t_update_neq; [|strs_neq].
-                 rewrite t_update_permute; [|strs_neq].
-                 rewrite t_update_shadow.
-                 rewrite t_update_permute; [|strs_neq].
-                 eexists. split; try split; auto.
-                 -- do 2 rewrite t_update_same. eapply multi_ideal_trans.
-                    ++ apply ISM_Call_F with (i:=(aeval ("callee" !-> aeval st f; st) f)); auto.
-                       ** rewrite Hf. simpl. rewrite aeval_unused_update with (n:=(aeval st f)); auto.
-                       ** admit. (* same stuff as in DStep *)
-                    ++ eapply multi_ideal_refl.
-                 -- rewrite st_b. (* oops, maybe need to remember extra information to prove this *)
-                    admit.
-               (* transitive: ds1++ds0 *)
-               * rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
-                 exists c'. split; try split; auto.
-                 -- eapply multi_ideal_trans.
-                    ++ apply ISM_Call_F with (i:=(aeval st f)); auto.
-                       ** rewrite Hf. simpl; auto.
-                       ** admit. (* this again *)
-                    ++ admit.
-                 -- admit. (* need more information in ctx *)
-
-         }
-         (* no optimization *)
-         inv H1.
-         (* refl case *)
-         { exists <{{ call f }}>. simpl. split.
-           2:{ intros. inv H. }
-           rewrite t_update_permute; [|unfold not; intros; discriminate].
-           rewrite t_update_shadow. do 2 rewrite t_update_same. constructor. }
-         (* transitive *)
-         inv H; simpl.
-         (* DStep/OCall *)
-         * (* simpl in *. *) Opaque unused. simpl in *.
-           destruct b'0 eqn:Hmsf; rewrite st_b in *.
-           (* already misspeculating *)
-           { rewrite Nat.eqb_refl in *.
-             rewrite t_update_neq in *; try discriminate.
-             rewrite st_b in *. rewrite Nat.eqb_refl in *.
-             destruct p; simpl in *.
-             (* program is empty list *)
-             { inv H3.  }
-             (* program is nonempty list *)
-             inv H3. inv H0.
-             { rewrite t_update_permute; try (unfold not; intros; discriminate).
-               rewrite t_update_shadow. rewrite t_update_permute; try (unfold not; intros; discriminate).
-               rewrite <- st_b. rewrite t_update_same. rewrite t_update_same.
-               rewrite st_b. unfold unused_prog in unused_p_callee.
-               admit. }
-             inv H. inv H12. inv H1.
-             { simpl. rewrite t_update_neq; [|strs_neq]. eapply IH in ast_arrs; eauto.
-               - destruct ast_arrs as [c'' A]. destruct A as [STEPS SKIP].
-                 exists c''. split; auto; [|intros; discriminate].
-                 rewrite <- st_b. rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
-                 rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq]. eapply STEPS.
-               - admit. (* uh oh *)
-               - auto.
-               - simpl. rewrite Hf. admit.
-             }
-             inv H.
-             { inv H12. }
-             simpl in *. rewrite t_update_neq in H0; try discriminate.
-             eapply IH in H0; auto; cycle 1.
-             {  measure1. }
-             { inv unused_p. auto. }
-             { inv unused_p_callee. auto. }
-             { destruct H0 as [c'' A]. destruct A as [STEPS SKIP].
-               exists c''. split; auto. fold_cons. econstructor 2.
-               { econstructor.
-                 - rewrite Hf. simpl. auto.
-                 - simpl. auto. }
-               rewrite t_update_eq in *; try discriminate.
-               rewrite t_update_neq in *; try discriminate.
-               rewrite t_update_eq in *; try discriminate.
-               rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
-               eapply ideal_unused_update in STEPS; eauto.
-               2:{ apply unused_prog_unused with (p:=(c :: p)); auto.
-                   unfold In. left; reflexivity. }
-               rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
-               rewrite t_update_neq in *; try discriminate.
-               rewrite t_update_permute; [|unfold not; intros; discriminate].
-               rewrite t_update_same in STEPS. rewrite st_b in STEPS. auto.
-             }
-           }
-           (* not yet misspeculated *)
-           { simpl. simpl in H0, H3.
-             admit. }
-         (* DForceCall/OForceCall *)
-         * simpl in *. admit. }
-
-Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
-  nonempty_arrs ast ->
-  unused_prog "b" p ->
-  unused "b" c ->
-  unused_prog "callee" p ->
-  unused "callee" c ->
-  st "b" = (if b then 1 else 0) ->
-  (ultimate_slh_prog p) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
-  /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
-Proof.
-  intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
-  intros c ds IH. intros until os. 
-  intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'.
-  (* st_st' is target multistep *)
-  invert st_st'.
-  (* multi_spec_refl *)
-  { repeat rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
-    split; [|tauto]. now destruct c. }
-  (* multi_spec_trans *)
-  (* case analysis on commands, then invert single target step *)
-  
-  destruct c; (*simpl in *;*) invert H.
+  destruct c; invert H.
   11 : { (* Call *)
-        (* hypotheses: single and multi spec, hardened prog 
-          h12: single, invert first. h0: multi. *)
         invert H12. invert H0. (* inverting multistep produces refl & trans cases *)
-
         (* reflexive *)
         - eexists. split; try discriminate.
           simpl. rewrite t_update_permute; [|strs_neq].
           rewrite t_update_shadow. repeat rewrite t_update_same. econstructor.
-
         (* transitive *)
         - inv H.
           (* now H12 single: skip->c1t / H1 multi: c1t;call->c' *)
@@ -1456,135 +1299,117 @@ Proof.
               rewrite t_update_shadow. do 2 rewrite t_update_same.
               constructor.
             (* trans: we now have H: tgt single step call f --> c'0
-               and H0: tgt multi, ds os not concat, c'0 --> c'  *)
+               and H0: tgt multi, ds os, c'0 --> c'  *)
             - inv H. (* produces 2 cases: DStep++ds2, OCall++os2, call f --> c''
                                       and DForceCall++ds2, OForceCall++os2, call f --> c'' *)
               + (* DStep *)
-                inv H0. (* inverting multi produces refl and trans cases.
-                           refl: ds2/os2 instantiated as [] 
-                           trans: ds2/os2 instantiated as ds1++ds0/os1++os0 *)
+                inv H0.                 
                 (* reflexive : []. 0 steps take place after call step. *)
-                * rewrite t_update_neq; [|strs_neq]. 
-                  rewrite t_update_permute; [|strs_neq].
-                  rewrite t_update_shadow. 
-                  rewrite aeval_unused_update with (n:=(aeval st f)); auto.
-                  rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
-                  rewrite t_update_permute; [|strs_neq]. 
-                  exists c'. split; try split; auto.
-                  do 2 rewrite t_update_same. apply multi_ideal_trans with
-                  (c':=c') (st':=st) (ast':=ast') (b':=b');
-                    [|apply multi_ideal_refl].
-                  apply ISM_Call; [rewrite Hf; auto|].
-                  rewrite <- H3. f_equal.
-                  (* uslh_prog p ≠ p. *)
-                  admit.
-
+                * rewrite t_update_neq; [|strs_neq].
+                 rewrite t_update_permute; [|strs_neq].
+                 rewrite t_update_shadow.
+                 rewrite aeval_unused_update; auto.
+                 rewrite t_update_permute; [|strs_neq].
+                 rewrite aeval_unused_update in H3; eauto.
+                 specialize (ultimate_slh_prog_contents p n c' (aeval st f) st H3).
+                 intros (c'' & A).
+                 subst. eapply uslh_prog_to_uslh_com' in H3.
+                 exists c''. split.
+                 2:{ intros. inv H. }
+                 econstructor 2.
+                 { econstructor; eauto. rewrite Hf. simpl. reflexivity. }
+                 do 2 rewrite t_update_same. econstructor.
                 (* transitive: ds1++ds0 *)
                 * rewrite aeval_unused_update with (n:=(aeval st f)); auto.
                   rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
-                  exists c'. split; try split; auto.
-                  -- eapply multi_ideal_trans.
-                     ++ apply ISM_Call; [rewrite Hf; eauto|].
-                        assert (exists c'', c'0 = <{{ "b" := ("callee" = (aeval st f)) ? "b" : 1; 
-                        (ultimate_slh c'') }}>).
-                        ** admit.
-                        ** destruct H0 as [c'' H0]. admit.
-                     ++ admit.
-                  -- admit.
+                  admit.
               + (* DForceCall *) 
-                inv H0. (* inverting multi produces refl and trans cases.
-                           refl: ds2/os2 instantiated as [] 
-                           trans: ds2/os2 instantiated as ds1++ds0/os1++os0 *)
+                inv H0. 
                 (* reflexive : []. 0 steps take place after call step. *)
                 * rewrite t_update_neq; [|strs_neq]. 
                   rewrite t_update_permute; [|strs_neq].
                   rewrite t_update_shadow. 
                   rewrite t_update_permute; [|strs_neq].
-                  eexists. split; try split; auto.
-                  -- do 2 rewrite t_update_same. eapply multi_ideal_trans.
-                     ++ apply ISM_Call_F with (i:=(aeval ("callee" !-> aeval st f; st) f)); auto.
-                        ** rewrite Hf. simpl. rewrite aeval_unused_update with (n:=(aeval st f)); auto.
-                        ** admit. (* same stuff as in DStep *)
-                     ++ eapply multi_ideal_refl.
-                  -- rewrite st_b. (* oops, maybe need to remember extra information to prove this *) 
-                     admit.
+                  rewrite aeval_unused_update in H3; eauto.
+                  specialize (ultimate_slh_prog_contents p n c' j st H4).
+                  intros (c'' & A).
+                  subst. eapply uslh_prog_to_uslh_com' in H4.
+                  exists c''. split.
+                  -- econstructor 2.
+                     { econstructor; eauto. rewrite Hf. simpl. tauto. }
+                     do 2 rewrite t_update_same. econstructor.
+                  -- intros. inv H.
                 (* transitive: ds1++ds0 *)
-                * rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
-                  exists c'. split; try split; auto.
-                  -- eapply multi_ideal_trans.
-                     ++ apply ISM_Call_F with (i:=(aeval st f)); auto.
-                        ** rewrite Hf. simpl; auto.
-                        ** admit. (* this again *)
-                     ++ admit.
-                  -- admit. (* need more information in ctx *)
-
-      }
-      (* no optimization *)
-      inv H1.
-      (* refl case *)
-      { exists <{{ call f }}>. simpl. split.
-        2:{ intros. inv H. }
-        rewrite t_update_permute; [|unfold not; intros; discriminate].
-        rewrite t_update_shadow. do 2 rewrite t_update_same. constructor. }
-      (* transitive *)
-      inv H; simpl.
-      (* DStep/OCall *)
-      * (* simpl in *. *) Opaque unused. simpl in *.
-        destruct b'0 eqn:Hmsf; rewrite st_b in *.
-        (* already misspeculating *) 
-        { rewrite Nat.eqb_refl in *.
-          rewrite t_update_neq in *; try discriminate.
-          rewrite st_b in *. rewrite Nat.eqb_refl in *.
-          destruct p; simpl in *.
-          (* program is empty list *)
-          { inv H3.  }
-          (* program is nonempty list *)
-          inv H3. inv H0.
-          { rewrite t_update_permute; try (unfold not; intros; discriminate).
-            rewrite t_update_shadow. rewrite t_update_permute; try (unfold not; intros; discriminate).
-            rewrite <- st_b. rewrite t_update_same. rewrite t_update_same.
-            rewrite st_b. unfold unused_prog in unused_p_callee.
-            admit. }
-          inv H. inv H12. inv H1.
-          { simpl. rewrite t_update_neq; [|strs_neq]. eapply IH in ast_arrs; eauto.
-            - destruct ast_arrs as [c'' A]. destruct A as [STEPS SKIP].
-              exists c''. split; auto; [|intros; discriminate]. 
-              rewrite <- st_b. rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
-              rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq]. eapply STEPS.
-            - admit. (* uh oh *)
-            - auto.
-            - simpl. rewrite Hf. admit.
+                * rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto. admit.
           }
-          inv H.
-          { inv H12. }
-          simpl in *. rewrite t_update_neq in H0; try discriminate.
-          eapply IH in H0; auto; cycle 1.
-          {  measure1. }
-          { inv unused_p. auto. }
-          { inv unused_p_callee. auto. }
-          { destruct H0 as [c'' A]. destruct A as [STEPS SKIP].
-            exists c''. split; auto. fold_cons. econstructor 2.
-            { econstructor.
-              - rewrite Hf. simpl. auto.
-              - simpl. auto. }
-            rewrite t_update_eq in *; try discriminate.
-            rewrite t_update_neq in *; try discriminate.
-            rewrite t_update_eq in *; try discriminate.
-            rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
-            eapply ideal_unused_update in STEPS; eauto.
-            2:{ apply unused_prog_unused with (p:=(c :: p)); auto.
-                unfold In. left; reflexivity. }
-            rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
-            rewrite t_update_neq in *; try discriminate.
+          (* no optimization *)
+          inv H1.
+          (* refl case *)
+          { exists <{{ call f }}>. simpl. split.
+            2:{ intros. inv H. }
             rewrite t_update_permute; [|unfold not; intros; discriminate].
-            rewrite t_update_same in STEPS. rewrite st_b in STEPS. auto.
+            rewrite t_update_shadow. do 2 rewrite t_update_same. constructor. 
           }
-        }
-        (* not yet misspeculated *)
-        { simpl. simpl in H0, H3. 
-          admit. }
-      (* DForceCall/OForceCall *)
-      * simpl in *. admit. }
+          (* transitive *)
+          inv H; simpl.
+          (* DStep/OCall *)
+          * (* simpl in *. *) Opaque unused. simpl in *.
+            destruct b'0 eqn:Hmsf; rewrite st_b in *.
+            (* already misspeculating *) 
+            { rewrite Nat.eqb_refl in *.
+              rewrite t_update_neq in *; try discriminate.
+              rewrite st_b in *. rewrite Nat.eqb_refl in *.
+              destruct p; simpl in *.
+              (* program is empty list *)
+              { inv H3. }
+              (* program is nonempty list *)
+              inv H3. inv H0.
+              { rewrite t_update_permute; try (unfold not; intros; discriminate).
+                rewrite t_update_shadow. rewrite t_update_permute; try (unfold not; intros; discriminate).
+                rewrite <- st_b. rewrite t_update_same. rewrite t_update_same.
+                rewrite st_b. unfold unused_prog in unused_p_callee.
+                admit. }
+              inv H. inv H12. inv H1.
+              { simpl. rewrite t_update_neq; [|strs_neq]. eapply IH in ast_arrs; eauto.
+                - destruct ast_arrs as [c'' A]. destruct A as [STEPS SKIP].
+                  exists c''. split; auto; [|intros; discriminate]. 
+                  rewrite <- st_b. rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
+                  rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq]. eapply STEPS.
+                - admit. (* uh oh *)
+                - auto.
+                - simpl. rewrite Hf. admit.
+              }
+              inv H.
+              { inv H12. }
+              simpl in *. rewrite t_update_neq in H0; try discriminate.
+              eapply IH in H0; auto; cycle 1.
+              {  measure1. }
+              { inv unused_p. auto. }
+              { inv unused_p_callee. auto. }
+              { destruct H0 as [c'' A]. destruct A as [STEPS SKIP].
+                exists c''. split; auto. fold_cons. econstructor 2.
+                { econstructor.
+                  - rewrite Hf. simpl. auto.
+                  - simpl. auto. }
+                rewrite t_update_eq in *; try discriminate.
+                rewrite t_update_neq in *; try discriminate.
+                rewrite t_update_eq in *; try discriminate.
+                rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
+                eapply ideal_unused_update in STEPS; eauto.
+                2:{ apply unused_prog_unused with (p:=(c :: p)); auto.
+                    unfold In. left; reflexivity. }
+                rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
+                rewrite t_update_neq in *; try discriminate.
+                rewrite t_update_permute; [|unfold not; intros; discriminate].
+                rewrite t_update_same in STEPS. rewrite st_b in STEPS. auto.
+              }
+            }
+            (* not yet misspeculated *)
+            { simpl. simpl in H0, H3. 
+              admit. }
+          (* DForceCall/OForceCall *)
+          * simpl in *. admit.
+      }
   - (* Asgn *)
     invert H0; [|now inversion H].
     eexists. split; [eapply multi_ideal_trans|split; [tauto|] ].
