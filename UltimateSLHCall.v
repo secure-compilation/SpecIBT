@@ -1075,10 +1075,6 @@ Proof.
     apply H0. apply H1.
 Qed.
 
-Section EXAMPLE.
-
-Variable p: prog.
-Variable n: nat.
 Lemma unused_prog_unused :
   forall (p : prog) (c : com) (X : string), 
     In c p -> unused_prog X p -> unused X c.
@@ -1087,82 +1083,8 @@ Proof.
   specialize H0 with (x:=c). apply H0 in H; auto.
 Qed.
 
-Definition Property (c:com) (ds: dirs) := forall st ast (b b':bool) c' st' ast' os,
-  nonempty_arrs ast ->
-  unused_prog "b" p ->
-  unused "b" c ->
-  st "b" = (if b then 1 else 0) ->
-  (p, n) |- <(( (ultimate_slh c), st, ast, b ))> -->*_ ds ^^ os <(( c', st', ast', b' ))> ->
-  exists c'' : com,
-    (p, n) |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c'', "b" !-> st "b"; st', ast', b' ))> /\
-    (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)).
-
-Lemma induction_example : forall c ds, Property c ds.
-Proof.
-  intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
-  intros c ds IH.
-  destruct c; simpl in *.
-  8:{
-    red. intros. invert H3.
-    { admit. (* star refl *) }
-    simpl in H4.
-    invert H4. simpl in *.
-    unfold Property in IH.
-    admit. }
-Abort.
-
-End EXAMPLE.
-
 Ltac measure1 := rewrite lex_nat_nat_equiv; unfold measure, lex_nat_nat_spec; simpl; try (rewrite !app_length); simpl; lia.
 Ltac strs_neq := unfold not; intros; discriminate.
-
-(* exploring how to get from uslh_prog p in premise to p in conclusion
-   (commented out so I can look at the initial conditions motivating it again)*)
-
-(* Lemma ultimate_slh_prog_length :
-  forall p, length (ultimate_slh_prog_aux p) = length p.
-Proof.
-  intros. unfold ultimate_slh_prog.
-(*   rewrite length_map. *)
-(*   unfold add_index. *)
-(*   rewrite length_combine. *)
-(*   rewrite length_seq. rewrite min_id. reflexivity. *)
-(* Qed. *)
-    *)
-
-(* Lemma combine_app_comm :
-  forall {X : Type} (x : X) (l : list X),
-  combine (seq 0 (Datatypes.length ([x] ++ l))) ([x] ++ l) = 
-  (combine (seq 0 (Datatypes.length [x])) [x]) ++
-  (combine (seq 1 (Datatypes.length l)) l).
-Proof.
-  intros. reflexivity.
-   Qed. *)
-
-(* - previous attempts
-
-unfold ultimate_slh_prog in H. *)
-  (*   unfold add_index in H. *)
-    
-  (*   assert (ultimate_slh_prog (a :: p) = (<{{ "b" := ("callee" =  *)
-  (*   (aeval st e)) ? "b" : 1; (ultimate_slh a) }}>) :: ultimate_slh_prog p). *)
-  (*   { assert (a :: p = [a] ++ p). { simpl; reflexivity. } *)
-  (*     rewrite H0. unfold ultimate_slh_prog. unfold add_index. *)
-      
-  (*     rewrite combine_app_comm.  *)
-  (*     rewrite map_app. simpl.  *)
-  (*     rewrite H0 in H. unfold ultimate_slh_prog in H. *)
-  (*     (* remember (fun '(i, c) => <{{ "b" := ("callee" = i) ? "b" : 1; (ultimate_slh c) }}>) as f. *)
-  (*        rewrite <- Heqf in H. why doesn't it see the subterm? *) admit. *)
-
-(* I'll come back to this assert, but for the moment it seemed easier to 
-       prove this by searching up relevant theorems for nth_error and 
-       map and seq and trying to transform things that way. Until I 
-       ran into the p issue. *)
-      (* assert (ultimate_slh_prog (a :: p) = (<{{ "b" := ("callee" = (aeval st e)) ? "b" : 1; (ultimate_slh a) }}>) :: ultimate_slh_prog p).
-    { unfold ultimate_slh_prog, add_index. simpl. apply nth_error_split in H.
-       destruct H as [l1 H]. destruct H as [l2 H]. } *)
-
 
 Lemma ultimate_slh_inj: forall c1 c2,
     ultimate_slh c1 = ultimate_slh c2 ->
@@ -1230,24 +1152,11 @@ Lemma ultimate_slh_prog_contents:
   nth_error (ultimate_slh_prog_gen p n) e = Some cmd ->
   exists c', cmd = (<{{("b" := ("callee" = (aeval st (n + e))) ? "b" : 1); (ultimate_slh c') }}>).
 Proof.
-  induction p; simpl.
-  - intros. destruct e; try discriminate.
-  - (*
+  induction p; [intros; destruct e; discriminate|].
+  intros. simpl in IHp. simpl. rewrite uslh_prog_cons in H. 
+  apply IHp; auto. 
+Admitted.
 
-
-
-    intros. rewrite uslh_prog_cons in H. simpl in IHp.
-    apply IHp; auto. rewrite <- H. destruct e.
-    + simpl in H. injection H; intros.
-
-
-
-    destruct e; intros; simpl in *.
-    + rewrite add_0_r. exists a. injection H; intros; auto.
-       + *) Admitted.
-
-
-    
 Lemma uslh_prog_to_uslh_com' :
   forall p n c e st,
     nth_error (ultimate_slh_prog_gen p n) e =
@@ -1299,18 +1208,17 @@ Proof.
               rewrite t_update_permute; [|strs_neq].
               rewrite t_update_shadow. do 2 rewrite t_update_same.
               constructor.
-            (* trans: we now have H: tgt single step call f --> c'0
-               and H0: tgt multi, ds os, c'0 --> c'  *)
+            (* trans *)
             - inv H. (* produces 2 cases: DStep++ds2, OCall++os2, call f --> c''
                                       and DForceCall++ds2, OForceCall++os2, call f --> c'' *)
-              + (* DStep *)
-                inv H0.                 
+              +(* DStep *)
+                inv H0.                
                 (* reflexive : []. 0 steps take place after call step. *)
                 * rewrite t_update_neq; [|strs_neq].
                   rewrite t_update_permute; [|strs_neq].
                   rewrite t_update_shadow.
                   rewrite aeval_unused_update in H2; auto.
-                  rewrite t_update_permute; [|strs_neq].
+                  rewrite t_update_permute; [|strs_neq].                   
                   specialize (ultimate_slh_prog_contents p n c' i st H3).
                   intros (c'' & A).
                   subst. eapply uslh_prog_to_uslh_com' in H3.
@@ -1320,9 +1228,33 @@ Proof.
                   { simpl in *. econstructor; eauto. rewrite Hf. simpl. eauto. }
                   do 2 rewrite t_update_same. econstructor.
                 (* transitive: ds1++ds0 *)
-                * rewrite aeval_unused_update with (n:=(aeval st f)); auto.
-                  rewrite aeval_unused_update with (n:=(aeval st f)) in H3; auto.
-                  admit.
+                * rewrite aeval_unused_update with (n:=(aeval st f)) in H2; auto.
+                  simpl in H2, H3. rewrite H2 in *. simpl in *.
+                  eapply ultimate_slh_prog_contents with (p:=p) (n:=n) (e:=i) (st:=st) in H3.
+                  destruct H3 as [c'_src A].
+                  
+                                    
+
+                 
+
+
+                  (* ultimate_slh_prog_contents :
+                    forall (p : prog) (n : nat) (cmd : com) (e : nat) (st : state),
+                    nth_error (ultimate_slh_prog_gen p n) e = Some cmd ->
+                    exists c' : com,
+                    cmd =
+                    <{{ "b" := ("callee" = (aeval st (n + e))) ? "b" : 1; 
+                      (ultimate_slh c') }}> 
+
+                    uslh_prog_to_uslh_com' :
+                    forall (p : prog) (n : nat) (c : com) (e : nat) (st : state),
+                    nth_error (ultimate_slh_prog_gen p n) e =
+                    Some <{{ "b" := ("callee" = (aeval st (n + e))) ? "b" : 1; 
+                     (ultimate_slh c) }}> ->
+                    nth_error p e = Some c
+
+                  *)
+                  
               + (* DForceCall *) 
                 inv H0. 
                 (* reflexive : []. 0 steps take place after call step. *)
