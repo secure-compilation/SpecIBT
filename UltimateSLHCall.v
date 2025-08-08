@@ -51,7 +51,7 @@ Inductive seq_eval_small_step (p:prog * nat) :
       aeval st e = n ->
       p |- <((x := e, st, ast))> -->^[] <((skip, x !-> n; st, ast))>
   | SSM_Seq : forall c1 st ast os c1t stt astt c2,
-      p |- <((c1, st, ast))>  -->^os <((c1t, stt, astt))>  ->
+  p |- <((c1, st, ast))>  -->^os <((c1t, stt, astt))>  ->
       p |- <(((c1;c2), st, ast))>  -->^os <(((c1t;c2), stt, astt))>
   | SSM_Seq_Skip : forall st ast c2,
       p |- <(((skip;c2), st, ast))>  -->^[] <((c2, st, ast))>
@@ -61,7 +61,7 @@ Inductive seq_eval_small_step (p:prog * nat) :
              | true => ct
              | false => cf end, st, ast))>
   | SSM_While : forall be c st ast,
-      p |- <((while be do c end, st, ast))> -->^[]
+  p |- <((while be do c end, st, ast))> -->^[]
           <((if be then c; while be do c end else skip end, st, ast))>
   | SSM_ARead : forall x a ie st ast i,
       aeval st ie = i ->
@@ -1235,32 +1235,32 @@ Proof.
                   do 2 rewrite t_update_same. econstructor.
                 (* transitive: ds1++ds0 *)
                 * rewrite aeval_unused_update with (n:=(aeval st f)) in H2; auto.
-                  simpl in H2, H3. rewrite H2 in *. simpl in *.
-                  eapply ultimate_slh_prog_contents with (p:=p) (n:=n) (e:=i) (st:=st) in H3.
-                  destruct H3 as [c'_src A].
-                  
-                                    
-
-                 
-
-
-                  (* ultimate_slh_prog_contents :
-                    forall (p : prog) (n : nat) (cmd : com) (e : nat) (st : state),
-                    nth_error (ultimate_slh_prog_gen p n) e = Some cmd ->
-                    exists c' : com,
-                    cmd =
-                    <{{ "b" := ("callee" = (aeval st (n + e))) ? "b" : 1; 
-                      (ultimate_slh c') }}> 
-
-                    uslh_prog_to_uslh_com' :
-                    forall (p : prog) (n : nat) (c : com) (e : nat) (st : state),
-                    nth_error (ultimate_slh_prog_gen p n) e =
-                    Some <{{ "b" := ("callee" = (aeval st (n + e))) ? "b" : 1; 
-                     (ultimate_slh c) }}> ->
-                    nth_error p e = Some c
-
-                  *)
-                  admit.
+                  simpl in H2, H3. rewrite H2 in *.
+                  specialize (ultimate_slh_prog_contents p n c'0 i st H3) as (c'2 & A).
+                  subst. apply uslh_prog_to_uslh_com' in H3. inv H. inv H14. inv H1.
+                  -- simpl. rewrite t_update_shadow.
+                     rewrite t_update_permute; [|strs_neq].
+                     rewrite t_update_shadow.
+                     (* do 2 rewrite t_update_same. *)
+                     simpl in *. do 2 rewrite t_update_eq. 
+                     rewrite add_comm. rewrite Nat.eqb_refl.
+                     rewrite t_update_permute; [|strs_neq].
+                     rewrite add_comm. rewrite <- H2. 
+                     rewrite t_update_neq; [|strs_neq].
+                     exists c'2. split; try split; auto; try discriminate.
+                     do 2 (eapply ideal_unused_update; eauto; 
+                     eapply ideal_unused_overwrite; eauto). 
+                     eapply multi_ideal_trans_nil_r; try econstructor.
+                     rewrite H2. apply ISM_Call; auto. 
+                     rewrite Hf. simpl. auto.
+                  -- inv H.
+                     { inv H14. }
+                     simpl in H0. rewrite add_comm in H0.
+                     rewrite add_comm in H2. simpl.
+                     rewrite t_update_eq in H0. rewrite Nat.eqb_refl in H0. 
+                     rewrite t_update_same in H0.
+                     rewrite <- H2 in H0.
+                     admit.
               + (* DForceCall *) 
                 inv H0. 
                 (* reflexive : []. 0 steps take place after call step. *)
