@@ -867,13 +867,13 @@ Qed.
     relating the speculative semantics of the hardened program with the ideal
     semantics, by means of a backwards compiler correctness (BCC) result. *)
 
-Lemma ideal_unused_overwrite_one_step (p:prog * nat) : forall st ast b ds c c' st' ast' b' os X n,
-  unused_prog X (fst p) ->
+Lemma ideal_unused_overwrite_one_step (p:prog) (s: nat) : forall st ast b ds c c' st' ast' b' os X n,
+  unused_prog X p ->
   unused X c ->
-  p |- <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
-  p |- <((c, X !-> n; st, ast, b))> -->i_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
+  (p, s) |- <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
+  (p, s) |- <((c, X !-> n; st, ast, b))> -->i_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
 Proof.
-  intros. remember (unused_prog X (fst p)) as unused_p. induction H1.
+  intros. remember (unused_prog X p) as unused_p. induction H1.
   - invert H0. repeat econstructor. rewrite t_update_permute; [constructor|assumption].
     now apply aeval_unused_update.
   - invert H0. eapply IHideal_eval_small_step in H2. destruct H2.
@@ -900,22 +900,22 @@ Proof.
       rewrite Forall_forall in H. apply H with (x:=c). apply nth_error_In in H3; auto.
 Qed.
   
-Lemma ideal_unused_overwrite (p:prog * nat) : forall st ast b ds c c' st' ast' b' os X n,
-  unused_prog X (fst p) ->
+Lemma ideal_unused_overwrite (p:prog) (s: nat) : forall st ast b ds c c' st' ast' b' os X n,
+  unused_prog X p ->
   unused X c ->
-  p |- <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
-  p |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))>.
+  (p, s) |- <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
+  (p, s) |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))>.
 Proof.
   intros. induction H1; [constructor|].
   eapply ideal_unused_overwrite_one_step in H1; [|eassumption|eassumption]. destruct H1.
   econstructor; [eassumption|tauto].
 Qed.
 
-Lemma ideal_unused_update (p:prog * nat) : forall st ast b ds c c' st' ast' b' os X n,
-  unused_prog X (fst p) ->
+Lemma ideal_unused_update (p:prog) (s: nat) : forall st ast b ds c c' st' ast' b' os X n,
+  unused_prog X p ->
   unused X c ->
-  p |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))> ->
-  p |- <((c, st, ast, b))> -->i*_ds^^os <((c', X !-> st X; st', ast', b'))>.
+  (p, s) |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))> ->
+  (p, s) |- <((c, st, ast, b))> -->i*_ds^^os <((c', X !-> st X; st', ast', b'))>.
 Proof.
   intros. rewrite <- (t_update_same _ st X) at 1.
   eapply ideal_unused_overwrite with (X:=X) (n:=(st X)) in H1; [ |assumption|assumption].
@@ -1166,6 +1166,12 @@ Lemma uslh_prog_to_uslh_com' :
 Proof.
 Admitted.
 
+Lemma uslh_prog_preserve_length: forall p n,
+    length p = length (ultimate_slh_prog_gen p n).
+Proof.
+  induction p.
+Admitted.
+
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os n,
   nonempty_arrs ast ->
   unused_prog "b" p ->
@@ -1211,8 +1217,8 @@ Proof.
             (* trans *)
             - inv H. (* produces 2 cases: DStep++ds2, OCall++os2, call f --> c''
                                       and DForceCall++ds2, OForceCall++os2, call f --> c'' *)
-              +(* DStep *)
-                inv H0.                
+              + (* DStep *)
+                inv H0.
                 (* reflexive : []. 0 steps take place after call step. *)
                 * rewrite t_update_neq; [|strs_neq].
                   rewrite t_update_permute; [|strs_neq].
@@ -1254,7 +1260,7 @@ Proof.
                     nth_error p e = Some c
 
                   *)
-                  
+                  admit.
               + (* DForceCall *) 
                 inv H0. 
                 (* reflexive : []. 0 steps take place after call step. *)
