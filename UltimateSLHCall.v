@@ -1238,10 +1238,10 @@ Proof.
                   simpl in H2, H3. rewrite H2 in *.
                   specialize (ultimate_slh_prog_contents p n c'0 i st H3) as (c'2 & A).
                   subst. apply uslh_prog_to_uslh_com' in H3. inv H. inv H14. inv H1.
-                  -- simpl. rewrite t_update_shadow.
+                  -- (* refl *)
+                     simpl. rewrite t_update_shadow.
                      rewrite t_update_permute; [|strs_neq].
                      rewrite t_update_shadow.
-                     (* do 2 rewrite t_update_same. *)
                      simpl in *. do 2 rewrite t_update_eq. 
                      rewrite add_comm. rewrite Nat.eqb_refl.
                      rewrite t_update_permute; [|strs_neq].
@@ -1253,28 +1253,44 @@ Proof.
                      eapply multi_ideal_trans_nil_r; try econstructor.
                      rewrite H2. apply ISM_Call; auto. 
                      rewrite Hf. simpl. auto.
-                  -- inv H.
+                -- (* trans *)
+                     inv H.
                      { inv H14. }
                      simpl in H0. rewrite add_comm in H0.
                      rewrite add_comm in H2. simpl.
                      rewrite t_update_eq in H0. rewrite Nat.eqb_refl in H0. 
                      rewrite t_update_same in H0.
-                     rewrite <- H2 in H0.
-                     admit.
-              + (* DForceCall *) 
+                     rewrite <- H2 in H0. 
+                     eapply IH in H0; try measure1; auto.
+                     (* not cleaning up state all the way causes 
+                        admit below. *)
+                     ++ rewrite t_update_neq in H0; [|strs_neq].
+                        rewrite t_update_eq in H0. admit.
+                     ++ unfold unused_prog in unused_p. 
+                        rewrite Forall_forall in unused_p. 
+                        specialize (nth_error_In p i H3).
+                        intros. apply unused_p in H; auto.
+                     ++ unfold unused_prog in unused_p_callee. 
+                        rewrite Forall_forall in unused_p_callee. 
+                        specialize (nth_error_In p i H3).
+                        intros. apply unused_p_callee in H; auto.
+                + (* DForceCall *) 
                 inv H0. 
                 (* reflexive : []. 0 steps take place after call step. *)
                 * rewrite t_update_neq; [|strs_neq]. 
                   rewrite t_update_permute; [|strs_neq].
                   rewrite t_update_shadow. 
                   rewrite t_update_permute; [|strs_neq].
-                  rewrite aeval_unused_update in H3; eauto.
+                  rewrite aeval_unused_update in H2; eauto.
+                  simpl in H2, H4.
                   specialize (ultimate_slh_prog_contents p n c' j st H4).
                   intros (c'' & A).
                   subst. eapply uslh_prog_to_uslh_com' in H4.
                   exists c''. split.
                   -- econstructor 2.
-                     { econstructor; eauto. rewrite Hf. simpl. tauto. }
+                     ++ simpl. 
+                     (* broken 
+                        { econstructor; eauto. rewrite Hf. simpl. tauto. } *)
                      do 2 rewrite t_update_same. econstructor.
                   -- intros. inv H.
                 (* transitive: ds1++ds0 *)
