@@ -59,12 +59,12 @@ Inductive seq_eval_small_step (p:prog * nat) :
       p |- <((if be then ct else cf end, st, ast))> -->^[OBranch (beval st be)]
            <((match beval st be with
              | true => ct
-             | false => cf end, st, ast))>
+         | false => cf end, st, ast))>
   | SSM_While : forall be c st ast,
   p |- <((while be do c end, st, ast))> -->^[]
           <((if be then c; while be do c end else skip end, st, ast))>
   | SSM_ARead : forall x a ie st ast i,
-      aeval st ie = i ->
+   aeval st ie = i ->
       i < length (ast a) ->
       p |- <((x <- a[[ie]], st, ast))> -->^[OARead a i]
           <((skip, x !-> nth i (ast a) 0; st, ast))>
@@ -1172,6 +1172,13 @@ Proof.
   induction p.
 Admitted.
 
+Definition cadmit (excuse: String.string) {T: Type} : T.  Admitted.
+Tactic Notation "cadmit" constr(excuse) := idtac excuse; exact (cadmit excuse).
+
+(* How to use: cadmit "comment". *)
+
+Search unused.
+
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os n,
   nonempty_arrs ast ->
   unused_prog "b" p ->
@@ -1262,10 +1269,56 @@ Proof.
                      rewrite t_update_same in H0.
                      rewrite <- H2 in H0. 
                      eapply IH in H0; try measure1; auto.
-                     (* not cleaning up state all the way causes 
-                        admit below. *)
+                     (* there's lots of repeated code here.
+                        the stuff I did to show c'2 is unused might 
+                        want to be a tactic if we keep this section. *)
                      ++ rewrite t_update_neq in H0; [|strs_neq].
-                        rewrite t_update_eq in H0. admit.
+                        rewrite t_update_eq in H0. 
+                        destruct H0 as [c'' H0].
+                        specialize (ideal_unused_update p n st ast'0 b'0 ds2 c'2 c'' st' ast' 
+                        b' os2 "callee" (aeval st f) unused_p_callee). intros.
+                        unfold unused_prog in unused_p_callee. 
+                        rewrite Forall_forall in unused_p_callee. 
+                        specialize (nth_error_In p i H3).
+                        intros. apply unused_p_callee in H1. apply H in H1.
+                        ** cadmit "goal...".
+                        ** destruct H0.
+                           apply ideal_unused_overwrite with (X:="b") (n:=(st "b")) in H0; 
+                           auto.
+                           2 : { unfold unused_prog in unused_p. 
+                                 rewrite Forall_forall in unused_p.
+                                 specialize (nth_error_In p i H3). intros.
+                                 apply unused_p in H5; auto. }
+                           apply ideal_unused_overwrite; auto.
+                           { unfold unused_prog. rewrite Forall_forall. auto. }
+                           apply multi_ideal_trans_nil_r with (c':=c'') (st':=st') 
+                           (ast':=ast') (b':=b'); try constructor.
+                           cadmit "Goal might be dead end".
+                        (* ideal_unused_overwrite
+                        : forall (p : prog) (s : nat) (st : state) (ast : astate) 
+                            (b : bool) (ds : dirs) (c c' : com) (st' : state) 
+                            (ast' : astate) (b' : bool) (os : obs) (X : string) 
+                            (n : nat),
+                          unused_prog X p ->
+                          unused X c ->
+                          (p, s) |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c', st', ast', b'
+                          ))> ->
+                          (p, s) |- <(( c, X !-> n; st, ast, b ))> -->i*_ ds ^^ os <(( c',
+                          X !-> n; st', ast', b' ))>
+
+                          ideal_unused_update
+                          : forall (p : prog) (s : nat) (st : total_map nat) 
+                              (ast : astate) (b : bool) (ds : dirs) (c c' : com)
+                              (st' : total_map nat) (ast' : astate) (b' : bool) 
+                              (os : obs) (X : string) (n : nat),
+                            unused_prog X p ->
+                            unused X c ->
+                            (p, s) |- <(( c, X !-> n; st, ast, b ))> -->i*_ ds ^^ os <(( c',
+                            X !-> n; st', ast', b' ))> ->
+                            (p, s) |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c',
+                            X !-> st X; st', ast', b' ))>
+                          *)
+
                      ++ unfold unused_prog in unused_p. 
                         rewrite Forall_forall in unused_p. 
                         specialize (nth_error_In p i H3).
