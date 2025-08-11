@@ -62,7 +62,7 @@ aeval st e = n ->
          | false => cf end, st, ast))>
   | SSM_While : forall be c st ast,
   p |- <((while be do c end, st, ast))> -->^[]
-          <((if be then c; while be do c end else skip end, st, ast))>
+<((if be then c; while be do c end else skip end, st, ast))>
   | SSM_ARead : forall x a ie st ast i,
    aeval st ie = i ->
       i < length (ast a) ->
@@ -1283,11 +1283,16 @@ Proof.
                      rewrite t_update_same in H0.
                      rewrite <- H2 in H0. 
                      eapply IH in H0; try measure1; auto; cycle 1.
-                     { admit "". }
-                     { admit "". }
-                     (* there's lots of repeated code here.
-                        the stuff I did to show c'2 is unused might 
-                        want to be a tactic if we keep this section. *)
+                     { unfold unused_prog in unused_p.
+                       rewrite Forall_forall in unused_p.
+                       specialize (nth_error_In p i H3).
+                       intros. apply unused_p in H; auto.
+                     }
+                     { unfold unused_prog in unused_p_callee. 
+                       rewrite Forall_forall in unused_p_callee. 
+                       specialize (nth_error_In p i H3).
+                       intros. apply unused_p_callee in H; auto. 
+                     }
                      rewrite t_update_neq in H0; [|strs_neq].
                      rewrite t_update_eq in H0. 
                      destruct H0 as [c'' H0].
@@ -1295,43 +1300,16 @@ Proof.
                      eapply ideal_unused_update in H; cycle 1.
                      { unfold unused_prog in unused_p. 
                        rewrite Forall_forall in unused_p. eauto. }
-                     { admit "already proven". }
-                        split; auto.
+                     { unfold unused_prog in unused_p_callee. 
+                       rewrite Forall_forall in unused_p_callee. 
+                       specialize (nth_error_In p i H3).
+                       intros. apply unused_p_callee in H0; auto. 
+                     }
+                     split; auto.
                      rewrite app_cons. rewrite app_cons with (l:=os2).
                      econstructor 2; eauto.
                      eapply ISM_Call; simpl; auto. rewrite Hf. simpl. lia.
-                     (* ++ unfold unused_prog in unused_p_callee.  *)
-                     (*    rewrite Forall_forall in unused_p_callee.  *)
-                     (*    specialize (nth_error_In p i H3). *)
-                     (*    intros. apply unused_p_callee in H; auto. *)
-                     (*    specialize (ideal_unused_update p n st ast'0 b'0 ds2 c'2 c'' st' ast'  *)
-                     (*    b' os2 "callee" (aeval st f) unused_p_callee). intros. *)
-                     (*    unfold unused_prog in unused_p_callee.  *)
-                     (*    rewrite Forall_forall in unused_p_callee.  *)
-                     (*    specialize (nth_error_In p i H3). *)
-                     (*    intros. apply unused_p_callee in H1. apply H in H1. *)
-                     (*    ** admit "goal...". *)
-                     (*    ** destruct H0. *)
-                     (*       apply ideal_unused_overwrite with (X:="b") (n:=(st "b")) in H0;  *)
-                     (*       auto. *)
-                     (*       2 : { unfold unused_prog in unused_p.  *)
-                     (*             rewrite Forall_forall in unused_p. *)
-                     (*             specialize (nth_error_In p i H3). intros. *)
-                     (*             apply unused_p in H5; auto. } *)
-                     (*       apply ideal_unused_overwrite; auto. *)
-                     (*       { unfold unused_prog. rewrite Forall_forall. auto. } *)
-                     (*       apply multi_ideal_trans_nil_r with (c':=c'') (st':=st')  *)
-                     (*       (ast':=ast') (b':=b'); try constructor. *)
-                     (*       admit "Goal might be dead end". *)
-                     (* ++ unfold unused_prog in unused_p.  *)
-                     (*    rewrite Forall_forall in unused_p.  *)
-                     (*    specialize (nth_error_In p i H3). *)
-                     (*    intros. apply unused_p in H; auto. *)
-                     (* ++ unfold unused_prog in unused_p_callee.  *)
-                     (*    rewrite Forall_forall in unused_p_callee.  *)
-                     (*    specialize (nth_error_In p i H3). *)
-                     (*    intros. apply unused_p_callee in H; auto. *)
-                + (* DForceCall *) 
+              + (* DForceCall *) 
                 inv H0. 
                 (* reflexive : []. 0 steps take place after call step. *)
                 * rewrite t_update_neq; [|strs_neq]. 
@@ -1372,7 +1350,24 @@ Proof.
                      apply IH in H0; try measure1; auto.
                      ** simpl. rewrite t_update_eq in H0. rewrite t_update_neq in H0; [|strs_neq].
                         rewrite t_update_eq in H0. rewrite t_update_permute in H0; [|strs_neq].
-                        admit "not sure where to go from here.".
+                        destruct H0 as [c''0 H0]. inv H0.
+                        exists c''0. split; auto. rewrite app_cons. rewrite app_cons with (l:=os2).
+                        econstructor 2. 
+                        { eapply ISM_Call_F; simpl; eauto. rewrite Hf. simpl. lia. }
+                        { eapply ideal_unused_update in H; eauto.
+                          - rewrite t_update_neq in H; [|strs_neq].
+                            rewrite t_update_permute in H; [|strs_neq].
+                            apply ideal_unused_update in H; auto.
+                            + rewrite t_update_permute in H; [|strs_neq]. auto.
+                            + unfold unused_prog in unused_p.
+                              rewrite Forall_forall in unused_p.
+                              specialize (nth_error_In p j H4).
+                              intros. apply unused_p in H0; auto.
+                          - unfold unused_prog in unused_p_callee.
+                            rewrite Forall_forall in unused_p_callee.
+                            specialize (nth_error_In p j H4).
+                            intros. apply unused_p_callee in H0; auto.
+                        }
                      ** unfold unused_prog in unused_p. 
                         rewrite Forall_forall in unused_p. 
                         specialize (nth_error_In p j H4).
@@ -1418,55 +1413,81 @@ Proof.
                 destruct H. rewrite H, H0. simpl. rewrite t_update_neq; [|strs_neq]. 
                 rewrite H in H1. simpl in H1. injection H1. intros. rewrite <- H3.
                 exists c. split; try split; [|discriminate|auto].
-                eapply multi_ideal_trans_nil_r; [|econstructor]. 
-                Fail apply ISM_Call. admit "see Fail message".
+                eapply multi_ideal_trans_nil_r; [|econstructor].
+                replace (OCall 0) with (OCall (0 + 0)) by auto.
+                apply ISM_Call; auto. rewrite Hf. simpl. auto.
               }
               (* trans *)
               rewrite <- H2. symmetry in H2. specialize (plus_eq_0 i n H2). intros.
               destruct H0. rewrite H0, H4 in H1. simpl in H1. rewrite H4 in H.
               rewrite H4. rewrite <- st_b. injection H1. intros. rewrite H4 in H3.
-              admit "tired, stopping".
-
-              (* previous trans case, no longer works
-                 (inv H produces 12 subgoals)
-              - inv H. inv H12. inv H1.
-              { simpl. rewrite t_update_neq; [|strs_neq]. eapply IH in ast_arrs; eauto.
-                - destruct ast_arrs as [c'' A]. destruct A as [STEPS SKIP].
-                  exists c''. split; auto; [|intros; discriminate]. 
-                  rewrite <- st_b. rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
-                  rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq]. eapply STEPS.
-                - admit. (* uh oh *)
-                - auto.
-                - simpl. rewrite Hf. admit.
+              exists c'. split; try split; auto.
+              { rewrite app_cons with (l:=(ds1 ++ ds0)). 
+                rewrite app_cons with (l:=(os1 ++ os0)).
+                econstructor 2.
+                - replace (OCall 0) with (OCall (0 + (snd (c :: p, 0)))) by auto.
+                  apply ISM_Call; eauto.
+                  + rewrite Hf. auto.
+                  + simpl. eauto.
+                - apply ideal_unused_update with (n:=(st "callee")); auto.
+                  + unfold unused_prog in unused_p_callee. 
+                    rewrite Forall_forall in unused_p_callee. 
+                    specialize unused_p_callee with (x:=c).
+                    simpl in unused_p_callee. apply unused_p_callee. 
+                    left. auto.
+                  + apply ideal_unused_overwrite; auto.
+                    * unfold unused_prog in unused_p_callee. 
+                      rewrite Forall_forall in unused_p_callee.
+                      specialize unused_p_callee with (x:=c).
+                      simpl in unused_p_callee. 
+                      apply unused_p_callee. left. auto.
+                    * apply ideal_unused_update with (n:=(st "b")); auto.
+                      -- unfold unused_prog in unused_p. 
+                         rewrite Forall_forall in unused_p. 
+                         specialize unused_p with (x:=c).
+                         simpl in unused_p. apply unused_p. 
+                         left. auto.
+                      -- apply ideal_unused_overwrite; auto.
+                         ++ unfold unused_prog in unused_p. 
+                            rewrite Forall_forall in unused_p.
+                            specialize unused_p with (x:=c).
+                            simpl in unused_p. 
+                            apply unused_p. left. auto.
+                         ++ eapply multi_ideal_trans.
+                            ** admit "".
+                            ** admit "".             
               }
-              inv H.
-              { inv H12. }
-              simpl in *. rewrite t_update_neq in H0; try discriminate.
-              eapply IH in H0; auto; cycle 1.
-              {  measure1. }
-              { inv unused_p. auto. }
-              { inv unused_p_callee. auto. }
-              { destruct H0 as [c'' A]. destruct A as [STEPS SKIP].
-                exists c''. split; auto. fold_cons. econstructor 2.
-                { econstructor.
-                  - rewrite Hf. simpl. auto.
-                  - simpl. auto. }
-                rewrite t_update_eq in *; try discriminate.
-                rewrite t_update_neq in *; try discriminate.
-                rewrite t_update_eq in *; try discriminate.
-                rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
-                eapply ideal_unused_update in STEPS; eauto.
-                2:{ apply unused_prog_unused with (p:=(c :: p)); auto.
-                    unfold In. left; reflexivity. }
-                rewrite t_update_permute in STEPS; [|unfold not; intros; discriminate].
-                rewrite t_update_neq in *; try discriminate.
-                rewrite t_update_permute; [|unfold not; intros; discriminate].
-                rewrite t_update_same in STEPS. rewrite st_b in STEPS. auto.
-                 } *)
-            } 
+              rewrite st_b. admit "".
+           } 
             (* not yet misspeculated *)
-            { simpl. simpl in H0, H3. 
-              admit "". }
+              simpl in H0, H2. rewrite aeval_unused_update in H2; auto.
+              rewrite t_update_neq in H2; [|strs_neq]. rewrite st_b in H2.
+              simpl in H2. destruct p; simpl in *.
+              (* p is empty *)
+              { inv H0; unfold ultimate_slh_prog_gen, add_index_gen in H3; simpl in H3;
+                  rewrite nth_error_nil in H3; discriminate. }
+              (* p is nonempty *)
+              inv H3. inv H0.
+              (* refl *)
+              { rewrite t_update_permute; [|strs_neq]. rewrite t_update_shadow.
+                rewrite <- st_b. do 2 rewrite t_update_same. rewrite st_b.
+                rewrite t_update_neq; [|strs_neq]. 
+                specialize (ultimate_slh_prog_contents (c :: p) n c' i st H1). intros.
+                destruct H as [c'0 H]. subst. eapply uslh_prog_to_uslh_com' in H1.
+                simpl. exists c'0. split; try split; auto; try discriminate.
+                eapply multi_ideal_trans_nil_r; econstructor; simpl; auto.
+                rewrite Hf. simpl. auto.
+              }
+              (* trans *)
+              { rewrite <- st_b.
+                rewrite app_cons with (l:=(ds1 ++ ds0)).
+                rewrite app_cons with (l:=(os1 ++ os0)).
+                specialize (ultimate_slh_prog_contents (c :: p) n c'0 i st H1).
+                intros. destruct H0 as [c'' H0]. subst.
+                eapply uslh_prog_to_uslh_com' in H1. simpl in H. rewrite <- H2.
+                rewrite add_comm in H2. rewrite H2 in *. admit "".
+              }
+            }
           (* DForceCall/OForceCall *)
           * simpl in *. admit "".
       }
