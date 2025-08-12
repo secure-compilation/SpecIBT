@@ -1547,8 +1547,6 @@ Proof.
                     rewrite t_update_permute; [|strs_neq]. 
                     rewrite t_update_neq; [|strs_neq]. 
                     rewrite t_update_eq. simpl.
-                    (* these are probably existing theorems but when a quick 
-                       scroll through Search results found neither, I got lazy. *)
                     specialize (j_not_zero j H3). intros. rewrite j_not_zero; auto.
                     exists c_src. split; try split; auto; try discriminate.
                     eapply multi_ideal_trans_nil_r; try econstructor.
@@ -1593,6 +1591,47 @@ Proof.
               }
             }
             (* not yet misspeculating *)
+            simpl in H2. rewrite t_update_neq in H2; [|strs_neq].
+            rewrite st_b in H2. simpl in H2. 
+            rewrite aeval_unused_update in H2; auto.
+            simpl in H0. rewrite H2 in H0. rewrite app_cons with (l:=ds2).
+            rewrite app_cons with (l:=os2). destruct p.
+            (* p is empty *)
+            { unfold ultimate_slh_prog_gen, add_index_gen in H4. simpl in H4.
+              rewrite nth_error_nil in H4. discriminate.
+            }
+            (* p is nonempty *)
+            { inv H4. (*inv H0.*)
+              unfold unused_prog in unused_p_callee.
+              specialize (ultimate_slh_prog_contents (c :: p) n c'0 j st H1). intros.
+              destruct H as [c_src H]. subst. eapply uslh_prog_to_uslh_com' in H1.
+              simpl. rewrite <- st_b. simpl in H0. rewrite app_cons with (l:=ds2).
+              rewrite app_cons with (l:=os2). 
+
+
+              (* refl *)
+              { rewrite t_update_permute; try (unfold not; intros; discriminate).
+                rewrite t_update_shadow. rewrite t_update_permute; 
+                try (unfold not; intros; discriminate).
+                rewrite <- st_b. do 2 rewrite t_update_same.
+                unfold unused_prog in unused_p_callee.
+                specialize (ultimate_slh_prog_contents (c :: p) n c' j st H1). intros.
+                destruct H as [c'0 H]. subst. eapply uslh_prog_to_uslh_com' in H1.
+                simpl. rewrite <- H2. simpl. 
+                rewrite t_update_neq; [|strs_neq].
+                (* spec flag will be set to 1 and index will be masked to 0 *)
+                exists c'0. split; try split; [|discriminate|].
+                2 : { admit "lemma needed, connecting the fact that 
+                              we've gone from not spec to spec so 
+                              st b ≠ st' b".
+
+                    }
+                eapply multi_ideal_trans_nil_r; [|econstructor].
+                replace (DForceCall (j + n)) with (DForceCall (j + (snd ((c :: p), n)))) by auto.
+                eapply ISM_Call_F; eauto. rewrite Hf. simpl. auto.
+
+              }
+            }
 
       }
   - (* Asgn *)
