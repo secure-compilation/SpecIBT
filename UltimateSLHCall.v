@@ -1141,6 +1141,10 @@ Proof.
     subst. auto.
 Qed.
 
+Lemma app_cons : forall {A} (x : A) (l : list A), 
+  x :: l = [x] ++ l.
+Proof. simpl. auto. Qed.
+
 Lemma uslh_prog_cons: forall c p n,
     ultimate_slh_prog_gen (c :: p) n = (<{{ "b" := ("callee" = n) ? "b" : 1; (ultimate_slh c) }}>) :: (ultimate_slh_prog_gen p (S n)).
 Proof.
@@ -1152,10 +1156,13 @@ Lemma ultimate_slh_prog_contents:
   nth_error (ultimate_slh_prog_gen p n) e = Some cmd ->
   exists c', cmd = (<{{("b" := ("callee" = (aeval st (n + e))) ? "b" : 1); (ultimate_slh c') }}>).
 Proof.
-  induction p; [intros; destruct e; discriminate|].
-  intros. simpl in IHp. simpl. rewrite uslh_prog_cons in H. 
-  apply IHp; auto. 
 Admitted.
+
+Lemma minus_zero : forall (n : nat),
+  n - 0 = n.
+Proof.
+  induction n; auto.
+Qed.
 
 Lemma uslh_prog_to_uslh_com' :
   forall p n c e st,
@@ -1164,13 +1171,29 @@ Lemma uslh_prog_to_uslh_com' :
                 (ultimate_slh c) }}>) ->
   nth_error p e = Some c.
 Proof.
-Admitted.
-
-Lemma uslh_prog_preserve_length: forall p n,
+  induction p.
+  - intros. unfold ultimate_slh_prog_gen in H. simpl in H.
+    rewrite nth_error_nil in H; discriminate.
+  - intros. rewrite app_cons. rewrite nth_error_app. simpl.
+    destruct e; simpl.
+    + rewrite app_cons in H. simpl in H. rewrite add_0_r in H.
+      injection H. intros. apply ultimate_slh_inj in H0. f_equal. auto.
+    + rewrite minus_zero. apply IHp with (n:=(S n)) (st:=st).
+      rewrite app_cons in H. unfold ultimate_slh_prog_gen, add_index_gen. 
+      simpl in *. assert (E: add n (S e) = S (n + e)). { auto. } 
+      rewrite E in H. apply H.
+Qed.
+    
+Lemma uslh_prog_preserves_length: forall p n,
     length p = length (ultimate_slh_prog_gen p n).
 Proof.
-  induction p.
-Admitted.
+  induction p; auto. intros.
+  rewrite app_cons. rewrite length_app.
+  rewrite IHp with (n:=(S n)). simpl. 
+  unfold ultimate_slh_prog_gen. do 2 rewrite length_map.
+  unfold add_index_gen.
+  simpl. auto.
+Qed.
 
 Definition admit (excuse: String.string) {T: Type} : T.  Admitted.
 Tactic Notation "admit" constr(excuse) := idtac excuse; exact (admit excuse).
@@ -1189,9 +1212,6 @@ Proof.
   induction n; intros; try (simpl in H; rewrite H; tauto); discriminate.
 Qed.
 
-Lemma app_cons : forall {A} (x : A) (l : list A), 
-  x :: l = [x] ++ l.
-Proof. simpl. auto. Qed.
 
 Lemma nat_True: forall (n : nat), 
   (n = n) <-> True.
@@ -1208,6 +1228,8 @@ Proof.
   induction j; intros;
   [unfold not in H; rewrite nat_True in H; contradiction|auto].
 Qed.
+
+Require Import Coq.Setoids.Setoid.
 
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os n,
   nonempty_arrs ast ->
@@ -1432,15 +1454,15 @@ Proof.
               rewrite <- H2. symmetry in H2. specialize (plus_eq_0 i n H2). intros.
               destruct H0. rewrite H0, H4 in H1. simpl in H1. rewrite H4 in H.
               rewrite H4. rewrite <- st_b. injection H1. intros. rewrite H4 in H3.
-              exists c'. split; try split; auto.
+              (* I think the below may have been the wrong direction. *)
+              exists c'. 
+              split; try split; auto.
               { rewrite app_cons with (l:=(ds1 ++ ds0)). 
                 rewrite app_cons with (l:=(os1 ++ os0)).
                 econstructor 2.
                 - replace (OCall 0) with (OCall (0 + (snd (c :: p, 0)))) by auto.
                   apply ISM_Call; [rewrite Hf|simpl]; eauto.
-                - 
-
-                  apply ideal_unused_update with (n:=(st "callee")); auto.
+                - apply ideal_unused_update with (n:=(st "callee")); auto.
                   + unfold unused_prog in unused_p_callee. 
                     rewrite Forall_forall in unused_p_callee. 
                     specialize unused_p_callee with (x:=c).
@@ -1466,12 +1488,10 @@ Proof.
                             apply unused_p. left. auto.
                          ++ apply multi_ideal_trans with (c':=c'1) (st':=st'0)
                                (ast':=ast'1) (b':=b'0).
-                               ** Search multi_spec.
-                               admit "".
+                            ** admit "".
                             ** admit "".             
               }
               rewrite st_b. admit "".
-
             } 
             (* not yet misspeculated *)
             {
@@ -1601,14 +1621,7 @@ Proof.
               rewrite nth_error_nil in H4. discriminate.
             }
             (* p is nonempty *)
-            { inv H4. (*inv H0.*)
-              unfold unused_prog in unused_p_callee.
-              specialize (ultimate_slh_prog_contents (c :: p) n c'0 j st H1). intros.
-              destruct H as [c_src H]. subst. eapply uslh_prog_to_uslh_com' in H1.
-              simpl. rewrite <- st_b. simpl in H0. rewrite app_cons with (l:=ds2).
-              rewrite app_cons with (l:=os2). 
-
-
+            { inv H4. inv H0.
               (* refl *)
               { rewrite t_update_permute; try (unfold not; intros; discriminate).
                 rewrite t_update_shadow. rewrite t_update_permute; 
@@ -1619,17 +1632,13 @@ Proof.
                 destruct H as [c'0 H]. subst. eapply uslh_prog_to_uslh_com' in H1.
                 simpl. rewrite <- H2. simpl. 
                 rewrite t_update_neq; [|strs_neq].
-                (* spec flag will be set to 1 and index will be masked to 0 *)
                 exists c'0. split; try split; [|discriminate|].
                 2 : { admit "lemma needed, connecting the fact that 
                               we've gone from not spec to spec so 
-                              st b ≠ st' b".
-
-                    }
+                              st b ≠ st' b". }
                 eapply multi_ideal_trans_nil_r; [|econstructor].
                 replace (DForceCall (j + n)) with (DForceCall (j + (snd ((c :: p), n)))) by auto.
                 eapply ISM_Call_F; eauto. rewrite Hf. simpl. auto.
-
               }
             }
 
