@@ -1232,6 +1232,12 @@ Proof.
   [unfold not in H; rewrite nat_True in H; contradiction|auto].
 Qed.
 
+(* Lemma spec_callee_zero : forall (st : state),
+  st "b" = 1 -> st "callee" = 0.
+Proof.
+   intros. *)
+
+
 Require Import Coq.Setoids.Setoid.
 
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os n,
@@ -1557,13 +1563,14 @@ Proof.
                        ++ eapply ISM_Call.
                           ** simpl. rewrite Hf. simpl. auto. 
                           ** simpl. eauto.
-                       ++ apply ideal_unused_update with (n:=(st "callee")); auto.
+                       ++ rewrite t_update_same in STEPS.
+                          apply ideal_unused_update with (n:=(st "callee")); auto.
                           ** unfold unused_prog in unused_p_callee.
                              rewrite Forall_forall in unused_p_callee.
                              specialize unused_p_callee with (x:=c).
                              simpl in unused_p_callee. apply unused_p_callee.
                              left. auto. 
-                          ** rewrite t_update_same in STEPS. Fail apply STEPS.
+                          ** admit "".
                     -- unfold unused_prog in unused_p.
                        rewrite Forall_forall in unused_p.
                        specialize unused_p with (x:=c). 
