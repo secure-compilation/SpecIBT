@@ -1547,17 +1547,23 @@ Proof.
                        exists c''0. split; auto.
                        replace (OCall 0) with (OCall (0 + (snd (c :: p, 0)))) by auto.
                        setoid_rewrite <- st_b at 1. 
-                       apply ideal_unused_update with (n:=(st "callee")); auto.
+                       (* apply ideal_unused_update with (n:=(st "callee")); auto.
                        apply ideal_unused_overwrite; auto. 
                        apply ideal_unused_update with (n:=(st "b")); auto.
-                       apply ideal_unused_overwrite; auto. 
+                          apply ideal_unused_overwrite; auto. *)
                        rewrite app_cons with (l:=ds0).
                        rewrite app_cons with (l:=os0).
                        econstructor.
                        ++ eapply ISM_Call.
                           ** simpl. rewrite Hf. simpl. auto. 
                           ** simpl. eauto.
-                       ++ rewrite t_update_same in STEPS. admit "".
+                       ++ apply ideal_unused_update with (n:=(st "callee")); auto.
+                          ** unfold unused_prog in unused_p_callee.
+                             rewrite Forall_forall in unused_p_callee.
+                             specialize unused_p_callee with (x:=c).
+                             simpl in unused_p_callee. apply unused_p_callee.
+                             left. auto. 
+                          ** rewrite t_update_same in STEPS. Fail apply STEPS.
                     -- unfold unused_prog in unused_p.
                        rewrite Forall_forall in unused_p.
                        specialize unused_p with (x:=c). 
