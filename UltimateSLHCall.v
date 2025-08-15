@@ -1159,7 +1159,13 @@ Lemma ultimate_slh_prog_contents:
   nth_error (ultimate_slh_prog_gen p n) e = Some cmd ->
   exists c', cmd = (<{{("b" := ("callee" = (aeval st (n + e))) ? "b" : 1); (ultimate_slh c') }}>).
 Proof.
-Admitted.
+  induction p.
+  - intros. unfold ultimate_slh_prog_gen, add_index_gen in H. simpl in H.
+    rewrite nth_error_nil in H. discriminate.
+  - intros. rewrite uslh_prog_cons in H. rewrite app_cons in H.
+    rewrite nth_error_app in H. simpl in H.
+    destruct (e <? 1)%nat.
+Admitted.            
 
 Lemma minus_zero : forall (n : nat),
   n - 0 = n.
@@ -1231,12 +1237,6 @@ Proof.
   induction j; intros;
   [unfold not in H; rewrite nat_True in H; contradiction|auto].
 Qed.
-
-(* Lemma spec_callee_zero : forall (st : state),
-  st "b" = 1 -> st "callee" = 0.
-Proof.
-   intros. *)
-
 
 Require Import Coq.Setoids.Setoid.
 
@@ -1773,15 +1773,54 @@ Proof.
                 simpl. rewrite <- H2. simpl. 
                 rewrite t_update_neq; [|strs_neq].
                 exists c'0. split; try split; [|discriminate|].
-                2 : { admit "lemma needed, connecting the fact that 
-                              we've gone from not spec to spec so 
-                              st b ≠ st' b". }
+                2 : { discriminate. }
                 eapply multi_ideal_trans_nil_r; [|econstructor].
                 replace (DForceCall (j + n)) with (DForceCall (j + (snd ((c :: p), n)))) by auto.
                 eapply ISM_Call_F; eauto. rewrite Hf. simpl. auto.
               }
               (* trans *)
-              admit "".
+              specialize (ultimate_slh_prog_contents (c :: p) n c'0 j st H1). intros.
+              destruct H0 as [c_src H0]. subst. eapply uslh_prog_to_uslh_com' in H1. 
+              inv H. inv H15. inv H4.
+              - (* refl *) simpl. rewrite t_update_shadow. 
+                rewrite t_update_permute; [|strs_neq].
+                rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
+                rewrite t_update_eq. rewrite t_update_eq. 
+                setoid_rewrite add_comm at 3. rewrite <- eqb_neq in H3.
+                specialize (add_neq i j n H3). intros.
+                setoid_rewrite add_comm at 2. setoid_rewrite add_comm at 3.
+                rewrite H. exists c_src. split; [|intros; discriminate].
+                rewrite <- st_b. do 2 rewrite t_update_same.
+                replace (DForceCall (j + n)) with (DForceCall (j + (snd (c :: p, n)))) by auto.
+                rewrite <- app_nil_r with (l:=[DForceCall (j + snd (c :: p, n))]).
+                rewrite <- app_nil_r with (l:=[OForceCall]).
+                Check multi_ideal_trans.
+                apply multi_ideal_trans with (c':=c_src) (st':=st) (ast':=ast') (b':=true).
+                + apply ISM_Call_F with (i:=i).
+                  * simpl. rewrite Hf. simpl. apply H2.
+                  * rewrite eqb_neq in H3. apply H3.
+                  * simpl. apply H1.
+                + constructor.
+              - inv H; [inv H15|]. simpl. setoid_rewrite app_cons at 2. 
+                setoid_rewrite app_cons at 4. setoid_rewrite <- st_b at 1.
+                simpl in H0. rewrite t_update_eq in H0. rewrite t_update_neq in H0; [|strs_neq].
+                setoid_rewrite add_comm at 3 in H0. rewrite <- eqb_neq in H3.
+                specialize (add_neq i j n H3). intros. setoid_rewrite add_comm at 1 in H.
+                setoid_rewrite add_comm at 2 in H. rewrite H in H0.
+                rewrite t_update_permute in H0; [|strs_neq].
+                apply IH in H0; try measure1; auto.
+                + rewrite t_update_neq in H0; [|strs_neq]. 
+                  do 2 rewrite t_update_eq in H0. 
+                  admit "st_b hypothesis is true when we're at call f. But then we misspeculate and it doesn't get updated. Do we need a lemma that fixes that? How would it need to be stated?".
+                + unfold unused_prog in unused_p. rewrite Forall_forall in unused_p.
+                  specialize unused_p with (x:=c_src).
+                  specialize (nth_error_In (c :: p) j H1).
+                  intros. apply unused_p. apply H4.
+                + unfold unused_prog in unused_p_callee. 
+                  rewrite Forall_forall in unused_p_callee.
+                  specialize unused_p_callee with (x:=c_src).
+                  specialize (nth_error_In (c :: p) j H1).
+                  intros. apply unused_p_callee. apply H4.
             }
       }
   - (* Asgn *)
@@ -1943,31 +1982,10 @@ Proof.
               erewrite st_b, <- t_update_shadow with (m:=st'). apply ideal_unused_overwrite; simpl; try tauto.
               eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|]. rewrite t_update_shadow. 
               apply ideal_unused_overwrite; auto. 
-        (* ideal_unused_overwrite:
-        forall (p : prog) (st : state) (ast : astate) (b : bool) 
-          (ds : dirs) (c c' : com) (st' : state) (ast' : astate) 
-          (b' : bool) (os : obs) (X : string) (n : nat),
-        unused_prog X p ->
-        unused X c ->
-        p |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c', st', ast', b' ))> ->
-        p |- <(( c, X !-> n; st, ast, b ))> -->i*_ ds ^^ os <(( c', X !-> n; st', ast', b' ))>
-
-        ideal_unused_update:
-        forall (p : prog) (st : total_map nat) (ast : astate) 
-          (b : bool) (ds : dirs) (c c' : com) (st' : total_map nat) 
-          (ast' : astate) (b' : bool) (os : obs) (X : string) 
-          (n : nat),
-        unused_prog X p ->
-        unused X c ->
-        p |- <(( c, X !-> n; st, ast, b ))> -->i*_ ds ^^ os <(( c', X !-> n; st', ast', b' ))> ->
-        p |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c', X !-> st X; st', ast', b' ))>
+        
 
 
-      *)
-
-
-
-                            Search unused. eapply ideal_unused_overwrite; eauto. eapply ideal_unused_overwrite in H1; eauto. 
+              eapply ideal_unused_overwrite; eauto. eapply ideal_unused_overwrite in H1; eauto. 
               rewrite t_update_shadow in H1. 
            ++ do 2 destruct H. subst. simpl in H0. rewrite Heq, t_update_same in H0. 
               apply IH in H0; auto; [ |measure1|tauto]. 
