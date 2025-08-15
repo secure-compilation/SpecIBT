@@ -1811,18 +1811,44 @@ Proof.
                 apply IH in H0; try measure1; auto.
                 + rewrite t_update_neq in H0; [|strs_neq]. 
                   do 2 rewrite t_update_eq in H0. 
-                  admit "st_b hypothesis is true when we're at call f. But then we misspeculate and it doesn't get updated. Do we need a lemma that fixes that? How would it need to be stated?".
+                  destruct H0 as [c'' H0]. destruct H0 as [STEPS rest].
+                  exists c''. split; auto.
+                  econstructor.
+                  * replace (DForceCall (j + n)) with (DForceCall (j + (snd (c :: p, n)))) by auto.
+                    eapply ISM_Call_F.
+                    -- simpl. rewrite Hf. simpl. eapply H2.
+                    -- rewrite eqb_neq in H3. apply H3.
+                    -- simpl. eapply H1.
+                  * Check ideal_unused_update.
+                    apply ideal_unused_update 
+                    with (p:=(c ::p)) (s:=n) (st:=("b" !-> 1; st)) (ast:=ast'0) (b:=true)
+                    (ds:=ds2) (c:=c_src) (c':=c'') (st':=("b" !-> 1; st')) (ast':=ast')
+                    (b':=b') (os:=os2) (X:="callee") in STEPS.
+                    -- rewrite t_update_neq in STEPS; [|strs_neq].
+                       rewrite t_update_permute in STEPS; [|strs_neq].
+                       apply ideal_unused_update 
+                       with (p:=(c ::p)) (s:=n) (st:=st) (ast:=ast'0) (b:=true)
+                       (ds:=ds2) (c:=c_src) (c':=c'') (st':=("callee" !-> st "callee"; st')) (ast':=ast')
+                      (b':=b') (os:=os2) (X:="b") in STEPS.
+                      ++ rewrite t_update_permute in STEPS; [|strs_neq].
+                         apply STEPS.
+                      ++ auto.
+                      ++ unfold unused_prog in unused_p. rewrite Forall_forall in unused_p.
+                         specialize unused_p with (x:=c_src). apply nth_error_In in H1.
+                         apply unused_p in H1. apply H1.
+                    -- auto.
+                    -- unfold unused_prog in unused_p_callee. 
+                       rewrite Forall_forall in unused_p_callee.
+                       specialize unused_p_callee with (x:=c_src). apply nth_error_In in H1.
+                       apply unused_p_callee in H1. apply H1.
                 + unfold unused_prog in unused_p. rewrite Forall_forall in unused_p.
-                  specialize unused_p with (x:=c_src).
-                  specialize (nth_error_In (c :: p) j H1).
-                  intros. apply unused_p. apply H4.
+                  specialize unused_p with (x:=c_src). apply nth_error_In in H1.
+                  apply unused_p in H1. apply H1.
                 + unfold unused_prog in unused_p_callee. 
                   rewrite Forall_forall in unused_p_callee.
-                  specialize unused_p_callee with (x:=c_src).
-                  specialize (nth_error_In (c :: p) j H1).
-                  intros. apply unused_p_callee. apply H4.
+                  specialize unused_p_callee with (x:=c_src). apply nth_error_In in H1.
+                  apply unused_p_callee in H1. apply H1.
             }
-      }
   - (* Asgn *)
     invert H0; [|now inversion H].
     eexists. split; [eapply multi_ideal_trans|split; [tauto|] ].
