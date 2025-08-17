@@ -1154,25 +1154,6 @@ Proof.
   intros. unfold ultimate_slh_prog_gen. simpl. auto.
 Qed.
 
-Lemma ultimate_slh_prog_contents:
-  forall p n cmd e st,
-  nth_error (ultimate_slh_prog_gen p n) e = Some cmd ->
-  exists c', cmd = (<{{("b" := ("callee" = (aeval st (n + e))) ? "b" : 1); (ultimate_slh c') }}>).
-Proof.
-  induction p.
-  - intros. unfold ultimate_slh_prog_gen, add_index_gen in H. simpl in H.
-    rewrite nth_error_nil in H. discriminate.
-  - intros. rewrite uslh_prog_cons in H. rewrite app_cons in H.
-    rewrite nth_error_app in H. simpl in H.
-    destruct (e <? 1)%nat.
-Admitted.            
-
-Lemma minus_zero : forall (n : nat),
-  n - 0 = n.
-Proof.
-  induction n; auto.
-Qed.
-
 Lemma uslh_prog_to_uslh_com' :
   forall p n c e st,
     nth_error (ultimate_slh_prog_gen p n) e =
@@ -1187,10 +1168,27 @@ Proof.
     destruct e; simpl.
     + rewrite app_cons in H. simpl in H. rewrite add_0_r in H.
       injection H. intros. apply ultimate_slh_inj in H0. f_equal. auto.
-    + rewrite minus_zero. apply IHp with (n:=(S n)) (st:=st).
+    + rewrite sub_0_r. apply IHp with (n:=(S n)) (st:=st).
       rewrite app_cons in H. unfold ultimate_slh_prog_gen, add_index_gen. 
       simpl in *. assert (E: add n (S e) = S (n + e)). { auto. } 
       rewrite E in H. apply H.
+Qed.
+
+Lemma ultimate_slh_prog_contents:
+  forall p n cmd e st,
+  nth_error (ultimate_slh_prog_gen p n) e = Some cmd ->
+  exists c', cmd = (<{{("b" := ("callee" = (aeval st (n + e))) ? "b" : 1); (ultimate_slh c') }}>).
+Proof.
+  induction p. 
+  - intros. unfold ultimate_slh_prog_gen, add_index_gen in H. simpl in H.
+    rewrite nth_error_nil in H. discriminate.
+  - intros. rewrite uslh_prog_cons in H. rewrite app_cons in H.
+    rewrite nth_error_app in H. simpl in H. 
+    destruct e; simpl in *.
+    + rewrite add_0_r. injection H. intros. rewrite <- H0. exists a. auto.
+    + rewrite sub_0_r in H. specialize IHp with (n:=(S n)).
+      apply IHp in H; auto. replace (add n (S e)) with (add (S n) e) by auto.
+      apply H.
 Qed.
     
 Lemma uslh_prog_preserves_length: forall p n,
