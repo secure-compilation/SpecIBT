@@ -11,6 +11,7 @@ From Coq Require Import Arith.EqNat.
 From Coq Require Import Arith.PeanoNat. Import Nat.
 From Coq Require Import Lia.
 From Coq Require Import List. Import ListNotations.
+Require Import Coq.Setoids.Setoid.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
@@ -1236,7 +1237,6 @@ Proof.
   [unfold not in H; rewrite nat_True in H; contradiction|auto].
 Qed.
 
-Require Import Coq.Setoids.Setoid.
 
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os n,
   nonempty_arrs ast ->
@@ -1847,6 +1847,7 @@ Proof.
                   specialize unused_p_callee with (x:=c_src). apply nth_error_In in H1.
                   apply unused_p_callee in H1. apply H1.
             }
+        }
   - (* Asgn *)
     invert H0; [|now inversion H].
     eexists. split; [eapply multi_ideal_trans|split; [tauto|] ].
@@ -1854,8 +1855,9 @@ Proof.
     + rewrite t_update_permute with (x1:="b") (x2:=x);
       try (rewrite t_update_permute with (x1:="callee") (x2:=x)); try tauto;
       try (unfold not; intros).
-      2 : { unfold not. intros. unfold unused in unused_c_callee; 
-        destruct unused_c_callee. contradiction. }
+      2 : { unfold not. intros. Transparent unused.
+            unfold unused in unused_c_callee; 
+            destruct unused_c_callee. contradiction. }
       2 : { unfold not. intros. unfold unused in unused_c.
         destruct unused_c. contradiction. }
       do 2 rewrite t_update_same. constructor.
@@ -1871,8 +1873,9 @@ Proof.
       { destruct H2, H. exists x6. split; [|tauto]. rewrite !app_assoc. com_step.
         erewrite <- t_update_same, <- t_update_shadow in H at 1.
         apply ideal_unused_update in H; try tauto; [|inversion unused_c_callee; auto].
-        rewrite t_update_eq in H. admit.
-      }
+        rewrite t_update_eq in H. 
+      
+        admit "".       }
       { measure1. }
       { eapply ideal_eval_preserves_nonempty_arrs; eassumption. }
       { inversion unused_c; auto. }
