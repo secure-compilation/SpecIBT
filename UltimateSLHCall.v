@@ -2203,33 +2203,23 @@ Unshelve.
 all: exact 0.
 Qed.
 
-(* HIDE: YH:
-         How about a statement like this?
-         This means all commands in the program satisfy backwards compiler correctness of uslh."
-
-Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
-  nonempty_arrs ast ->
-  unused_prog p ->
-  In c p ->
-  st "b" = (if b then 1 else 0) ->
-  p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
-Proof.
- *)
-
 Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused_prog "b" p ->
   unused_prog "callee" p ->
-  unused "b" c ->
-  unused "callee" c ->
   In c p ->
   st "b" = (if b then 1 else 0) ->
   ((ultimate_slh_prog_gen p 0), 0) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-  exists c'', (p, 0) |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>.
+      exists c'', (p, 0) |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>.
 Proof.
-  intros. eapply ultimate_slh_bcc_generalized in H6; eauto.
-  destruct H6 as [c'' A]. destruct A as [STEPS SKIP]. eauto.
+  intros. eapply ultimate_slh_bcc_generalized in H4; eauto.
+  { destruct H4 as (c''&A). destruct A as (STEPS&SKIP). eauto. }
+  { unfold unused_prog in H0. rewrite Forall_forall in H0. specialize H0 with (x:=c).
+    apply H0. apply H2.
+  }
+  { unfold unused_prog in H1. rewrite Forall_forall in H1. specialize H1 with (x:=c).
+    apply H1. apply H2. 
+  }
 Qed.
 
 (** * More prefix lemmas *)
