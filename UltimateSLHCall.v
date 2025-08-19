@@ -2217,7 +2217,7 @@ Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' o
 Proof.
  *)
 
-Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os n,
+Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused_prog "b" p ->
   unused_prog "callee" p ->
@@ -2225,12 +2225,12 @@ Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' o
   unused "callee" c ->
   In c p ->
   st "b" = (if b then 1 else 0) ->
-  ((ultimate_slh_prog_gen p n), n) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-      exists c'', (p, n) |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>.
+  ((ultimate_slh_prog_gen p 0), 0) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  exists c'', (p, 0) |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>.
 Proof.
-  intros. apply ultimate_slh_bcc_generalized in H2; eauto; firstorder.
-  unfold unused_prog.
-Admitted.
+  intros. eapply ultimate_slh_bcc_generalized in H6; eauto.
+  destruct H6 as [c'' A]. destruct A as [STEPS SKIP]. eauto.
+Qed.
 
 (** * More prefix lemmas *)
 
