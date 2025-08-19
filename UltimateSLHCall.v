@@ -1245,7 +1245,6 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c
   unused_prog "callee" p ->
   unused "callee" c ->
   st "b" = (if b then 1 else 0) ->
-  (* would it help to have a similar premise about st "callee"? *)
   ((ultimate_slh_prog_gen p n), n) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
       exists c'', (p, n) |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
@@ -1253,89 +1252,49 @@ Proof.
   intros c ds. apply lex_ind2 with (c:=c) (ds:=ds). clear.
   intros c ds IH. intros until n. 
   intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'.
-  (* st_st' is target multistep *)
   invert st_st'.
   (* multi_spec_refl *)
   { repeat rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
     split; [|tauto]. now destruct c. 
   }
   (* multi_spec_trans *)
-  (* case analysis on commands, then invert single target step *)
   destruct c; invert H.
   11 : { (* Call *)
-        invert H12. invert H0. (* inverting multistep produces refl & trans cases *)
-        (* reflexive *)
+        invert H12. invert H0. 
         - eexists. split; try discriminate.
           simpl. rewrite t_update_permute; [|strs_neq].
           rewrite t_update_shadow. repeat rewrite t_update_same. econstructor.
-        (* transitive *)
         - inv H.
-          (* now H12 single: skip->c1t / H1 multi: c1t;call->c' *)
-          { inv H12. } (* now we have call command exposed in hypothesis *)
+          { inv H12. } 
           rename p0 into f. 
           destruct (is_empty (vars_aexp f)) eqn: Hf.
-          { (* optimization (no variables in expression f) *)
-            simpl. inv H1. (* H1 is tgt multistep call f *)
-            (* refl *)
+          { (* optimization *)
+            simpl. inv H1. 
             - exists <{{ call f }}>. split; [|intros; inv H].
               rewrite t_update_permute; [|strs_neq].
               rewrite t_update_shadow. do 2 rewrite t_update_same.
               constructor.
-            (* trans *)
-            - inv H. (* produces 2 cases: DStep++ds2, OCall++os2, call f --> c''
-                        and DForceCall++ds2, OForceCall++os2, call f --> c'' *)
+            - inv H.               
               + (* DStep *)
                 inv H0.
-                (* reflexive : []. 0 steps take place after call step. *)
-                * (* cleaning up state *)
-                  rewrite t_update_neq; [|strs_neq].
+                * rewrite t_update_neq; [|strs_neq].
                   rewrite t_update_permute; [|strs_neq].
                   rewrite t_update_shadow.
                   rewrite aeval_unused_update in H2; auto.
                   rewrite t_update_permute; [|strs_neq].
-                  (* specify the form of the protected command to 
-                     which target executes. Note that it contains 
-                     the uslh'd source command, so we can know its 
-                     name for later. *)
                   specialize (ultimate_slh_prog_contents p n c' i st H3) as (c'' & A).
-                  (* connect this to the form of the command 
-                     to which source ideally executes *)
                   subst. eapply uslh_prog_to_uslh_com' in H3.
-                  (* then instantiate as destination of src execution *)
                   exists c''. split.
                   2:{ intros. inv H. }
-                  (* separate out the call step from the ones following *)
                   econstructor 2.
-                  (* ISM_Call *)
                   { simpl in *. econstructor; eauto. rewrite Hf. simpl. eauto. }
-                  (* multi_ideal_refl *)
                   do 2 rewrite t_update_same. econstructor.
-                (* transitive: ds1++ds0 *)
-                * (* cleaning up state in premises *)
-                  rewrite aeval_unused_update with (n:=(aeval st f)) in H2; auto.
+                * rewrite aeval_unused_update with (n:=(aeval st f)) in H2; auto.
                   simpl in H2, H3. rewrite H2 in *.
-                  (* specify the form of the protected command to 
-                     which target executes. Note that it contains 
-                     the uslh'd source command, so we can know its 
-                     name for later. *)
                   specialize (ultimate_slh_prog_contents p n c'0 i st H3) as (c_src & A).
-                  (* connect this to the form of the command 
-                     to which source ideally executes. specifically, 
-                     subst will swap the specific command in for c'0, 
-                     which is where the target execution is said to 
-                     begin. This is interesting, because we're beginning with 
-                     not call f but the command it jumps to. That's the situation 
-                     I couldn't make work further below, so why does it work 
-                     now and not then? *)
                   subst. apply uslh_prog_to_uslh_com' in H3. 
-                  (* so now we know that our target execution starts from 
-                     the protected command that contains the source command 
-                     that we'd get to from call in the ideal execution. *)
-                  (* We invert all the target execution premises. *)
                   inv H. inv H14. inv H1.
-                  -- (* refl *)
-                     (* clean up state in goal *)
-                     simpl. rewrite t_update_shadow.
+                  -- simpl. rewrite t_update_shadow.
                      rewrite t_update_permute; [|strs_neq].
                      rewrite t_update_shadow.
                      simpl in *. do 2 rewrite t_update_eq. 
@@ -1343,41 +1302,20 @@ Proof.
                      rewrite t_update_permute; [|strs_neq].
                      rewrite add_comm. rewrite <- H2. 
                      rewrite t_update_neq; [|strs_neq].
-                     (* 0 steps means we're still at c_src,
-                        which we previously established is where 
-                        call f steps to *)
                      exists c_src. 
-                     (* take care of side cases *)
                      split; try split; auto; try discriminate.
-                     (* clean up state *)
                      do 2 (eapply ideal_unused_update; eauto; 
                      eapply ideal_unused_overwrite; eauto).
-                     (* separate single step and multisteps from which 
-                        multistep is constructed. Then it's just 
-                        ISM_Call and multi_ideal_refl. *)
                      eapply multi_ideal_trans_nil_r; try econstructor.
                      rewrite H2. apply ISM_Call; auto. 
                      rewrite Hf. simpl. auto.
-                -- (* trans *)
-                     (* get rid of skip in tgt starting cmd *)
-                     inv H.
-                     { inv H14. } (* now tgt uslh c_src - c', multistep *)
-                     (* clean up state in H0 *)
+                  -- inv H. { inv H14. } 
                      simpl in H0. rewrite add_comm in H0.
                      rewrite add_comm in H2. simpl.
                      rewrite t_update_eq in H0. rewrite Nat.eqb_refl in H0. 
                      rewrite t_update_same in H0.
                      rewrite <- H2 in H0. 
-                     (* now H0 matches IH premise enough to apply it.
-                        Note this doesn't mean perfect match: we can have 
-                        dirty state (to a point), and we can have different 
-                        cmd names, but uslh placement needs to match. 
-                        Note that measure premise has c' instantiated as 
-                        c_src, and ds' as ds2. How did that happen? 
-                        It's because in the premise in the IH corresponding to H0, we 
-                        have uslh c', and ds', while in H0 we have uslh c_src, and ds2. *)
                      eapply IH in H0; try measure1; auto; cycle 1.
-                     (* next two are cleanup for unused variable subgoals *)
                      { unfold unused_prog in unused_p.
                        rewrite Forall_forall in unused_p.
                        specialize (nth_error_In p i H3).
@@ -1388,16 +1326,10 @@ Proof.
                        specialize (nth_error_In p i H3).
                        intros. apply unused_p_callee in H; auto. 
                      }
-                     (* now we're ready to look at the ideal multiexecution. *)
-                     (* clean up state in H0 and destruct. *)
                      rewrite t_update_neq in H0; [|strs_neq].
                      rewrite t_update_eq in H0. 
                      destruct H0 as [c'' H0].
-                     (* now instantiate with c'' *)
-                     exists c''.
-                     (* inv H0 just splits off the side conditions  *)
-                     inv H0.
-                     (* clean up H0 state and clean up aftermath of cleaning up *)
+                     exists c''. inv H0.
                      eapply ideal_unused_update in H; cycle 1.
                      { unfold unused_prog in unused_p. 
                        rewrite Forall_forall in unused_p. eauto. }
@@ -1406,18 +1338,10 @@ Proof.
                        specialize (nth_error_In p i H3).
                        intros. apply unused_p_callee in H0; auto. 
                      }
-                     (* solve side conditions *)
-                     split; auto.
-                     (* now we have matching premise for multiexecution,
-                        so it's time to split single and multi in goal *)
-                     rewrite app_cons. rewrite app_cons with (l:=os2).
-                     (* multi: works bc H has correct form *)
-                     econstructor 2; eauto.
-                     (* single *)
-                     eapply ISM_Call; simpl; auto. rewrite Hf. simpl. lia.
+                     split; auto. rewrite app_cons. rewrite app_cons with (l:=os2).
+                     econstructor 2; eauto. eapply ISM_Call; simpl; auto. rewrite Hf. simpl. lia.
               + (* DForceCall *) 
                 inv H0. 
-                (* reflexive : []. 0 steps take place after call step. *)
                 * rewrite t_update_neq; [|strs_neq]. 
                   rewrite t_update_permute; [|strs_neq].
                   rewrite t_update_shadow. 
@@ -1431,12 +1355,10 @@ Proof.
                   econstructor 2.
                   -- simpl. econstructor; [rewrite Hf| | ]; eauto.
                   -- do 2 rewrite t_update_same. econstructor.
-                (* transitive: ds1++ds0 *)
                 * simpl. simpl in H2, H4. rewrite aeval_unused_update in H2; auto.
                   specialize (ultimate_slh_prog_contents p n c'0 j st H4) as (c'' & A).
                   subst. eapply uslh_prog_to_uslh_com' in H4. inv H. inv H15. inv H1.
-                  -- (* refl *)
-                     rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
+                  -- rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
                      rewrite t_update_shadow. do 2 rewrite t_update_same. 
                      rewrite add_comm in H2. rewrite H2. simpl. do 2 rewrite t_update_eq.
                      rewrite <- eqb_neq in H3. specialize (add_neq i j n H3). intros.
@@ -1445,8 +1367,7 @@ Proof.
                      ++ rewrite Hf. simpl. rewrite add_comm in H2. eauto.
                      ++ rewrite eqb_neq in H3. auto.
                      ++ simpl. auto.
-                  -- (* trans *)
-                     simpl in H. rewrite t_update_eq in H. rewrite <- eqb_neq in H3.
+                  -- simpl in H. rewrite t_update_eq in H. rewrite <- eqb_neq in H3.
                      specialize (add_neq i j n H3). intros. rewrite add_comm in H2. 
                      rewrite H2 in H. rewrite H1 in H. rewrite eqb_neq in H3. simpl.
                      inv H.
@@ -1483,42 +1404,27 @@ Proof.
           }
           (* no optimization *)
           inv H1.
-          (* refl case *)
           { exists <{{ call f }}>. simpl. split.
             2:{ intros. inv H. }
             rewrite t_update_permute; [|unfold not; intros; discriminate].
             rewrite t_update_shadow. do 2 rewrite t_update_same. constructor. 
           }
-          (* transitive *)
           inv H; simpl.
           (* DStep/OCall *)
           * Opaque unused. simpl in *.
-            (* we can't optimize argument of call, so the masking 
-               check is now in our state. It depends on the starting msf, which 
-               might be true or false. So we destruct. *)
             destruct b'0 eqn:Hmsf; rewrite st_b in *.
             (* already misspeculating *) 
-            { (* mask callee to 0, generally clean up state *)
-              rewrite Nat.eqb_refl in *.
+            { rewrite Nat.eqb_refl in *.
               rewrite t_update_neq in *; try discriminate.
               rewrite st_b in H2. rewrite Nat.eqb_refl in H2.
-              (* since we'll be jumping to the first command in the program, 
-                 we need to know if the program is empty or not *)
               destruct p; simpl in *.
               (* program is empty list *)
               { rewrite nth_error_nil in H3. discriminate. }
               (* program is nonempty list *)
-              (* we know we'll be jumping to the cmd at index 0 *)
               symmetry in H2. specialize (plus_eq_0 i n H2) as (i_zero & n_zero).
               rewrite i_zero in H3. rewrite n_zero in H0, H3.
               simpl in H3. injection H3; intros C'0.
               rewrite <- C'0 in H0. 
-              (* now we know what that cmd is, but since we protected it, 
-                 we need to peel off the masking so we can just have 
-                 (uslh c) as starting target cmd. *)
-              (* specialize (multi_spec_seq (ultimate_slh_prog_gen (c :: p) 0, 0) <{{"b" := ("callee" = 0) ? "b" : 1}}> 
-              (ultimate_slh c) c' ("callee" !-> 0; st) ast'0 true st' ast' b' ds2 os2 H0).
-                 intros seq_exists. *)
               destruct H0.
               - rewrite <- app_nil_r with (l:=[DStep]).
                 rewrite <- app_nil_r with (l:=[OCall (i + n)]).
@@ -1591,7 +1497,6 @@ Proof.
                 rewrite nth_error_nil in H3; discriminate. }
               (* p is nonempty *)
               inv H3. inv H0.
-              (* refl *)
               { rewrite t_update_permute; [|strs_neq]. rewrite t_update_shadow.
                 rewrite <- st_b. do 2 rewrite t_update_same. rewrite st_b.
                 rewrite t_update_neq; [|strs_neq]. 
@@ -1601,7 +1506,6 @@ Proof.
                 eapply multi_ideal_trans_nil_r; econstructor; simpl; auto.
                 rewrite Hf. simpl. auto.
               }
-              (* trans *)
               { rewrite <- st_b.
                 rewrite app_cons with (l:=(ds1 ++ ds0)).
                 rewrite app_cons with (l:=(os1 ++ os0)).
@@ -1610,7 +1514,7 @@ Proof.
                 eapply uslh_prog_to_uslh_com' in H1. simpl in H. rewrite <- H2.
                 rewrite add_comm in H2. rewrite H2 in *.
                 inv H. inv H14. inv H3.
-                - (* refl *) simpl. rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
+                - simpl. rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
                   rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
                   do 2 rewrite t_update_same. do 2 rewrite t_update_eq.
                   rewrite Nat.eqb_refl. rewrite t_update_neq; [|strs_neq].
@@ -1623,7 +1527,7 @@ Proof.
                   + simpl. rewrite Hf. simpl. rewrite add_comm. apply H2.
                   + simpl. eapply H1.
                   + eapply multi_ideal_refl.
-                - (* trans *) inv H; try inv H14. simpl. 
+                - inv H; try inv H14. simpl. 
                   apply IH in H0; try measure1; auto.
                   + rewrite t_update_eq in H0. rewrite t_update_neq in H0; [|strs_neq].
                     rewrite t_update_eq in H0. simpl in H0. 
@@ -1678,7 +1582,6 @@ Proof.
               }
               (* p is nonempty *)
               { inv H4. inv H0.
-                (* refl *)
                 { rewrite t_update_permute; try (unfold not; intros; discriminate).
                 rewrite t_update_shadow. rewrite t_update_permute; try (unfold not; intros; discriminate).
                 rewrite <- st_b. do 2 rewrite t_update_same.
@@ -1687,19 +1590,16 @@ Proof.
                 destruct H as [c'0 H]. subst. eapply uslh_prog_to_uslh_com' in H6.
                 simpl. rewrite <- H2. simpl. 
                 rewrite t_update_neq; [|strs_neq]. 
-                (* spec flag will be set to 1 and index will be masked to 0 *)
                 exists c'0. split; try split; [|discriminate|auto].
                 eapply multi_ideal_trans_nil_r; [|econstructor].
                 replace (DForceCall j) with (DForceCall (j + 0)) by auto.
                 eapply ISM_Call_F with (i:=0); eauto. rewrite Hf. simpl. auto.
                 }
-                (* trans *)
                 { rewrite <- st_b. 
                   specialize (ultimate_slh_prog_contents (c :: p) 0 c'0 j st H6).
                   intros. destruct H0 as [c_src H0]. subst. 
                   eapply uslh_prog_to_uslh_com' in H6. inv H. inv H15. 
                   inv H1.
-                  (* refl *)
                   { rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq]. 
                     rewrite t_update_shadow. do 2 rewrite t_update_same. 
                     rewrite t_update_permute; [|strs_neq]. 
@@ -1711,7 +1611,6 @@ Proof.
                     replace (DForceCall j) with (DForceCall (j + (snd (c :: p, 0)))) by auto.
                     eapply ISM_Call_F; eauto; rewrite Hf; simpl; auto.
                   }
-                  (* trans *)
                   { inv H; try inv H15. simpl. 
                     rewrite t_update_permute; [|strs_neq].
                     simpl in H0. rewrite j_not_zero in H0; auto.
@@ -1760,7 +1659,6 @@ Proof.
             }
             (* p is nonempty *)
             { inv H4. inv H0.
-              (* refl *)
               { rewrite t_update_permute; try (unfold not; intros; discriminate).
                 rewrite t_update_shadow. rewrite t_update_permute; 
                 try (unfold not; intros; discriminate).
@@ -1776,11 +1674,10 @@ Proof.
                 replace (DForceCall (j + n)) with (DForceCall (j + (snd ((c :: p), n)))) by auto.
                 eapply ISM_Call_F; eauto. rewrite Hf. simpl. auto.
               }
-              (* trans *)
               specialize (ultimate_slh_prog_contents (c :: p) n c'0 j st H1). intros.
               destruct H0 as [c_src H0]. subst. eapply uslh_prog_to_uslh_com' in H1. 
               inv H. inv H15. inv H4.
-              - (* refl *) simpl. rewrite t_update_shadow. 
+              - simpl. rewrite t_update_shadow. 
                 rewrite t_update_permute; [|strs_neq].
                 rewrite t_update_shadow. rewrite t_update_permute; [|strs_neq].
                 rewrite t_update_eq. rewrite t_update_eq. 
@@ -2035,7 +1932,6 @@ Proof.
            invert H. invert H12. invert H11; [inversion H12|]. 
            apply multi_spec_seq_assoc in H1.
            destruct H1 as (?&H&H'). apply multi_spec_seq in H. destruct H.
-           (* two goals bc conclusion of multi_spec_seq is of form P \/ Q *)
            ++ do 8 destruct H. destruct H0, H1. subst. simpl in H1. 
               rewrite Heq, t_update_same in H1.
               apply IH in H1; auto;
@@ -2077,7 +1973,7 @@ Proof.
       (* no optimization *)
       * destruct (beval st'1 be) eqn:Heq.
         (* be true *)
-        -- destruct b'1. (* b'1 is the start state of semantic spec flag in ideal semantics *)
+        -- destruct b'1. 
            (* b'1 true *)
            ++ simpl in H1. rewrite st_b, Heq in H1. simpl in H1. invert H1; [solve_refl|].
               invert H; [inversion H12|]. invert H0; [solve_refl|]. invert H. invert H1; [|inversion H].
@@ -2087,7 +1983,6 @@ Proof.
            (* b'1 false *)
            ++ simpl in H1. rewrite st_b, Heq in H1. simpl in H1. apply multi_spec_seq_assoc in H1.
               destruct H1 as (?&H&H'). apply multi_spec_seq in H. destruct H.
-              (* two goals bc conclusion of multi_spec_seq is of form P \/ Q *)
               ** do 8 destruct H. destruct H0, H1. subst. simpl in H1. invert H1. invert H. invert H13. 
                  invert H0. invert H; [inversion H13|].
                  simpl in H1. rewrite st_b, Heq in H1. simpl in H1. rewrite <- st_b, t_update_same in H1.
@@ -2152,7 +2047,6 @@ Proof.
         -- invert H1; [solve_refl|]. invert H. invert H12. invert H11. invert H12. invert H0; [solve_refl|].
            invert H. invert H12. invert H11; [inversion H12|]. apply multi_spec_seq_assoc in H1.
            destruct H1 as (?&H&H'). apply multi_spec_seq in H. destruct H.
-           (* two goals bc conclusion of multi_spec_seq is of form P \/ Q *)
            ++ do 8 destruct H. destruct H0, H1. subst. simpl in H1. rewrite Heq in H1.
               apply IH in H1; auto; try measure1; try tauto.
               destruct H1 as (c''&H&(->&H'')); [reflexivity|]. rewrite t_update_eq in H.
@@ -2226,7 +2120,7 @@ Proof.
            invert H1; [solve_refl|]. invert H. invert H12. invert H11. invert H12. 
            invert H0; [solve_refl|]. invert H. invert H12.
            invert H11; [inversion H12|]. apply multi_spec_seq_assoc in H1.
-           destruct H1 as (c''&H&H'). (*(?&H&H').*) apply multi_spec_seq in H. destruct H.
+           destruct H1 as (c''&H&H'). apply multi_spec_seq in H. destruct H.
            ++ destruct H as (st'0&ast'0&b''0&ds1&ds2&os1&os2&H).
               destruct H, H0. subst. simpl in H1. rewrite Heq in H1. 
               rewrite andb_false_r in H1. destruct H1.
@@ -2307,7 +2201,6 @@ Proof.
       specialize (ast_arrs a). lia.
 Unshelve.
 all: exact 0.
-
 Qed.
 
 (* HIDE: YH:
