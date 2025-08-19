@@ -2216,12 +2216,17 @@ Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' o
       exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
 Proof.
  *)
-Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
+
+Lemma ultimate_slh_bcc (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os n,
   nonempty_arrs ast ->
+  unused_prog "b" p ->
+  unused_prog "callee" p ->
   unused "b" c ->
+  unused "callee" c ->
+  In c p ->
   st "b" = (if b then 1 else 0) ->
-  p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
+  ((ultimate_slh_prog_gen p n), n) |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+      exists c'', (p, n) |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>.
 Proof.
   intros. apply ultimate_slh_bcc_generalized in H2; eauto; firstorder.
   unfold unused_prog.
