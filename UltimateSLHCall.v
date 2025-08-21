@@ -826,6 +826,66 @@ Proof.
   eapply multi_seq_add_snd_com in Hev1, Hev2. eapply Hsec in Hev2; eauto.
 Qed.
 
+(* this was modeled on seq_small_step_if_total, 
+   but calls aren't total, and the premises required
+   cause problems in the proof below because I 
+   can't derive them when I need them. *)
+Lemma seq_small_step_call : forall p n e i c ct st ast,
+  c = <{{call e}}> ->
+  aeval st e = i + (snd (p, n)) ->
+  nth_error (fst (p, n)) i = Some ct ->
+  exists c' stt astt os,
+  (p, n) |- <((c, st, ast))> -->^os <((c', stt, astt))> /\ os <> [].
+Proof.
+  intros p n e i c ct st ast Heq Hnth. subst.
+  repeat econstructor; subst.
+  - eapply Hnth.
+  - simpl in *. eapply H.
+  - unfold not. intros. inv H0.
+Qed.
+
+(* see above for issue with admits *)
+Lemma seq_same_obs_com_call (p : prog) : 
+  forall (n : nat) (e : aexp) (c' : com) (st1 st2 : state) (ast1 ast2 : astate),
+  seq_same_obs (p, n) <{{ call e }}> st1 st2 ast1 ast2 ->
+  aeval st1 e = aeval st2 e.
+Proof.
+  intros n e c' st1 st2 ast1 ast2 Hsec.
+  remember <{{call e}}> as c eqn:Eqc.
+  assert (L1: exists ct stt astt os, (p, n) |- <((c, st1, ast1))> -->^os <((ct, stt, astt))> /\ os <> []).
+  { eapply seq_small_step_call with (p:=p) (n:=n) 
+    (st:=st1) (ast:=ast1) in Eqc. 
+    - destruct Eqc as (ct&stt&astt&os1&step1).
+      exists ct, stt, astt, os1. auto.
+    - unfold seq_same_obs in Hsec. rewrite Eqc in Hsec.
+      admit.
+    - admit.
+  }   
+  assert (L2: exists c' stt astt os, (p, n) |- <((c, st2, ast2))> -->^os <((c', stt, astt))> /\ os <> []).
+  { eapply seq_small_step_call with (p:=p) (n:=n) 
+    (st:=st2) (ast:=ast2) in Eqc. 
+    - destruct Eqc as (ct&stt&astt&os1&step1).
+      exists ct, stt, astt, os1. auto.
+    - unfold seq_same_obs in Hsec. rewrite Eqc in Hsec.
+      admit. 
+    - admit.
+  }
+  destruct L1 as [c1 [stt1 [astt1 [os1 [Hev1 Hneq1] ] ] ] ].
+  destruct L2 as [c2 [stt2 [astt2 [os2 [Hev2 Hneq2] ] ] ] ].
+  apply seq_small_step_to_multi_seq in Hev1, Hev2.
+  eapply Hsec in Hev2 as Hpre; [| eapply Hev1].
+  inversion Hev1; subst; clear Hev1.
+  - destruct Hneq1; auto.
+  - inversion Hev2; subst; clear Hev2.
+    + destruct Hneq2; auto.
+    + inversion H1; subst; clear H1. inversion H; subst; clear H.
+      destruct Hpre as [Hpre | Hpre]; simpl in Hpre;
+      apply prefix_heads in Hpre; injection Hpre; intros; 
+      rewrite add_comm in H; setoid_rewrite add_comm in H at 2;
+      rewrite add_cancel_l in H; subst; rewrite <- H4 in H3; 
+      auto.
+Admitted.
+
 Lemma ideal_one_step_force_obs (p:prog * nat) :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs p c st1 st2 ast1 ast2 ->
@@ -2351,44 +2411,6 @@ Proof.
   - apply prefix_app_front_eq_length in Hpre; auto.
   - apply prefix_app_front_eq_length in Hpre; auto.
 Qed.
-(*
-(* 
-SSM_Call : forall (e : aexp) (i : nat) (c : com) 
-                 (st : state) (ast : astate),
-               aeval st e = i + snd p ->
-               nth_error (fst p) i = Some c ->
-               p |- <(( call e, st, ast ))> -->^ [OCall (i + snd p)] <(( c, st, ast ))>.
-*)
-
-(*
-ISM_Call : forall (e : aexp) (i : nat) (c : com) 
-                 (st : state) (ast : astate) (b : bool),
-               (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) =
-               i + snd p ->
-               nth_error (fst p) i = Some c ->
-              p |- <(( call e, st, ast, b ))> -->i_ [DStep]^^ [OCall (i + snd p)] <(( c, st, ast, b ))>
-
-*)
-
-(*
-seq_same_obs =
-fun (p : prog * nat) (c : com) (st1 st2 : state) (ast1 ast2 : astate) =>
-forall (stt1 stt2 : state) (astt1 astt2 : astate) 
-  (os1 os2 : obs) (c1 c2 : com),
-p |- <(( c, st1, ast1 ))> -->*^ os1 <(( c1, stt1, astt1 ))> ->
-p |- <(( c, st2, ast2 ))> -->*^ os2 <(( c2, stt2, astt2 ))> ->
-prefix os1 os2 \/ prefix os2 os1
-     : prog * nat -> com -> state -> state -> astate -> astate -> Prop
-
-*)
- *)
-
-Lemma seq_same_obs_com_call (p : prog) : 
-  forall (n : nat) (e : aexp) (c' : com) (st1 st2 : state) (ast1 ast2 : astate),
-  seq_same_obs (p, n) <{{ call e }}> st1 st2 ast1 ast2 ->
-  aeval st1 e = aeval st2 e.
-Proof.
-Admitted.
 
 Lemma ideal_small_step_com_deterministic (p:prog) :
   forall n c b ds st1 ast1 ct1 stt1 astt1 bt1 os1 st2 ast2 ct2 stt2 astt2 bt2 os2,
@@ -2413,43 +2435,31 @@ Proof.
     - apply seq_same_obs_com_if in Hsec.
       inversion Hev2; subst. rewrite Hsec. reflexivity.
     - inversion Hev2. apply seq_same_obs_com_call in Hsec; auto.
-      assert (E1 : b = bt2). { admit "". }
-      assert (E2 : aeval st e = aeval stt2 e). { admit "". }
-      subst.
-      destruct bt2.
+      subst. destruct bt2.
       + simpl in H2, H. rewrite andb_true_r in H, H2. 
         destruct (is_empty (vars_aexp e)).
-        * simpl in H, H2. rewrite H in E2. rewrite H2 in E2. 
-          rewrite add_comm in E2. rewrite (add_comm i0 n) in E2.
-          rewrite add_cancel_l in E2. subst. simpl in H0, H3.
+        * simpl in H, H2. rewrite H in Hsec. rewrite H2 in Hsec. 
+          rewrite add_comm in Hsec. rewrite (add_comm i0 n) in Hsec.
+          rewrite add_cancel_l in Hsec. subst. simpl in H0, H3.
           rewrite H0 in H3. injection H3. intros; auto.
         * simpl in H, H2. symmetry in H. rewrite eq_add_0 in H.
-          destruct H. subst. replace (fst (p, 0)) with p in * by (simpl; auto).
+          destruct H. subst. 
+          replace (fst (p, 0)) with p in * by (simpl; auto).
           replace (snd (p, 0)) with 0 in * by (simpl; auto).
           symmetry in H2. rewrite eq_add_0 in H2. destruct H2. subst.
           rewrite H0 in H3. injection H3. intros; auto.
-      + rewrite andb_false_r in H, H2. replace (fst (p, n)) with p in * by (simpl; auto).
-        replace (snd (p, n)) with n in * by (simpl; auto). rewrite H in E2.
-        rewrite H2 in E2. rewrite add_comm in E2. rewrite (add_comm i0 n) in E2.
-          rewrite add_cancel_l in E2. subst. rewrite H0 in H3. injection H3.
-          intros; auto. 
-    - (* Call/force *) admit "".
-Admitted.
-
-(*
-ISM_Call : forall (e : aexp) (i : nat) (c : com) 
-                 (st : state) (ast : astate) (b : bool),
-               (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i + snd p ->
-               nth_error (fst p) i = Some c ->
-               p |- <(( call e, st, ast, b ))> -->i_ [DStep]^^ [OCall (i + snd p)] <(( c, st, ast, b ))>
-  | ISM_Call_F : forall (e : aexp) (i j : nat) (c : com) 
-                   (st : state) (ast : astate) (b : bool),
-                 (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i + snd p ->
-                 i <> j ->
-                 nth_error (fst p) j = Some c ->
-                 p |- <(( call e, st, ast, b ))> -->i_[DForceCall (j + snd p)] ^^ [OForceCall] <(( c, st, ast,
-                 true ))>.
-*)
+      + rewrite andb_false_r in H, H2. 
+        replace (fst (p, n)) with p in * by (simpl; auto).
+        replace (snd (p, n)) with n in * by (simpl; auto). 
+        rewrite H in Hsec. rewrite H2 in Hsec. rewrite add_comm in Hsec. 
+        rewrite (add_comm i0 n) in Hsec. rewrite add_cancel_l in Hsec. 
+        subst. rewrite H0 in H3. injection H3.
+        intros; auto. 
+    - inversion Hev2. apply seq_same_obs_com_call in Hsec; auto.
+      subst. rewrite add_comm in H3. rewrite (add_comm j n) in H3.
+      rewrite add_cancel_l in H3. subst. simpl in H1, H13.
+      rewrite H1 in H13. injection H13. intros; auto.
+Qed.
 
 Lemma ideal_small_step_obs_type (p:prog) : forall n c b1 st1 ast1 stt1 astt1 ct1 ds1 os1 b2 ct2 st2 ast2 stt2 astt2 ds2 os2 bt1 bt2,
   (p, n) |- <((c, st1, ast1, b1))> -->i_ds1^^os1 <((ct1, stt1, astt1, bt1))> ->
@@ -2473,9 +2483,10 @@ Proof.
   - inversion H; inversion H0; subst; eauto.
   - inversion H; inversion H0; subst; eauto.
   - inversion H; inversion H0; subst; eauto.
-  - (* The problem is that call p0 could result in either OCall or OForceCall; 
-       how can I separate these out so I don't wind up with unprovable goals 
-       such as the ones below?
+  - (* The problem is that call p0 could result in either OCall or OForceCall, 
+       unlike the other commands for which there is only one possible observation.
+       How can I separate these out so I don't wind up with unprovable goals 
+       such as the ones below? Induction on commands doesn't make that distinction.
      *)
     inv H; inv H0; [exists i; auto| | |auto].
     + admit "".     
@@ -2553,16 +2564,18 @@ Proof.
   + invert H2. destruct (is_empty (vars_aexp ie)) eqn:Hempty; simpl; [|tauto].
     apply aeval_no_vars with (st:=st) (st':=stt2) in Hempty. now rewrite Hempty.
   + invert H4. split; [|tauto]. do 2 f_equal. now apply aeval_no_vars.
-  + invert H1. simpl in H, H3. destruct (is_empty (vars_aexp e)).
-    * simpl in H, H3. simpl in *. (* need aeval st e = aeval stt2 e to prove this case *)
-      admit "".
+  + invert H1. simpl in H, H3. destruct (is_empty (vars_aexp e)) eqn:Hempty.
+    * simpl in H, H3. simpl in *. 
+      apply aeval_no_vars with (st:=st) (st':=stt2) in Hempty. 
+      rewrite H, H3 in Hempty. rewrite add_comm in Hempty. 
+      rewrite (add_comm i0 n) in Hempty. rewrite add_cancel_l in Hempty. 
+      subst. rewrite H0 in H4. injection H4. intros. split; auto.
     * simpl in H, H3. symmetry in H, H3. rewrite eq_add_0 in H, H3. destruct H, H3. subst.
-      simpl. replace (fst (p, 0)) with p in H0, H4 by (simpl; auto). rewrite H0 in H4.
-      injection H4. intros.
-      split; auto.
+    simpl. replace (fst (p, 0)) with p in H0, H4 by (simpl; auto). rewrite H0 in H4.
+    injection H4. intros. split; auto.
   + invert H2. split; auto. rewrite add_comm in H4. setoid_rewrite add_comm in H4 at 2. 
     rewrite add_cancel_l in H4. subst. rewrite H1 in H13. injection H13. intros; auto.
-Admitted.
+Qed.
 
 Lemma ideal_misspeculated_unwinding (p:prog) : forall n c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
   (p, n) |- <((c, st1, ast1, true))> -->i*_ds^^os1 <((c1, stt1, astt1, true))> ->
