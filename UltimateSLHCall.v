@@ -824,65 +824,6 @@ Proof.
   eapply multi_seq_add_snd_com in Hev1, Hev2. eapply Hsec in Hev2; eauto.
 Qed.
 
-(* this was modeled on seq_small_step_if_total, 
-   but calls aren't total, and the premises required
-   cause problems in the proof below because I 
-   can't derive them when I need them. *)
-Lemma seq_small_step_call : forall p e i c ct st ast,
-  c = <{{call e}}> ->
-  aeval st e = i ->
-  nth_error p i = Some ct ->
-  exists c' stt astt os,
-  p |- <((c, st, ast))> -->^os <((c', stt, astt))> /\ os <> [].
-Proof.
-  intros p e i c ct st ast Heq Hnth. subst.
-  repeat econstructor; subst.
-  - simpl in *. eapply H.
-  - unfold not. intros. inv H0.
-Qed.
-
-(* see above for issue with admits *)
-Lemma seq_same_obs_com_call (p : prog) : 
-  forall (e : aexp) (c' : com) (st1 st2 : state) (ast1 ast2 : astate),
-  seq_same_obs p <{{ call e }}> st1 st2 ast1 ast2 ->
-  aeval st1 e = aeval st2 e.
-Proof.
-  intros e c' st1 st2 ast1 ast2 Hsec.
-  remember <{{call e}}> as c eqn:Eqc.
-  assert (L1: exists ct stt astt os, p |- <((c, st1, ast1))> -->^os <((ct, stt, astt))> /\ os <> []).
-  { eapply seq_small_step_call with (p:=p)
-    (st:=st1) (ast:=ast1) in Eqc. 
-    - destruct Eqc as (ct&stt&astt&os1&step1).
-      exists ct, stt, astt, os1. auto.
-    - unfold seq_same_obs in Hsec. rewrite Eqc in Hsec.
-      admit.
-    - admit.
-  }   
-  assert (L2: exists c' stt astt os, p |- <((c, st2, ast2))> -->^os <((c', stt, astt))> /\ os <> []).
-  { eapply seq_small_step_call with (p:=p)
-    (st:=st2) (ast:=ast2) in Eqc. 
-    - destruct Eqc as (ct&stt&astt&os1&step1).
-      exists ct, stt, astt, os1. auto.
-    - unfold seq_same_obs in Hsec. rewrite Eqc in Hsec.
-      admit. 
-    - admit.
-  }
-  destruct L1 as [c1 [stt1 [astt1 [os1 [Hev1 Hneq1] ] ] ] ].
-  destruct L2 as [c2 [stt2 [astt2 [os2 [Hev2 Hneq2] ] ] ] ].
-  apply seq_small_step_to_multi_seq in Hev1, Hev2.
-  eapply Hsec in Hev2 as Hpre; [| eapply Hev1].
-  inversion Hev1; subst; clear Hev1.
-  - destruct Hneq1; auto.
-  - inversion Hev2; subst; clear Hev2.
-    + destruct Hneq2; auto.
-    + inversion H1; subst; clear H1. inversion H; subst; clear H.
-      (* destruct Hpre as [Hpre | Hpre]; simpl in Hpre; *)
-      (* apply prefix_heads in Hpre; injection Hpre; intros;  *)
-      (* rewrite add_comm in H; setoid_rewrite add_comm in H at 2; *)
-      (* rewrite add_cancel_l in H; subst; rewrite <- H4 in H3;  *)
-      (* auto. *)
-Admitted.
-
 Lemma ideal_one_step_force_obs (p:prog) :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs p c st1 st2 ast1 ast2 ->
@@ -2416,54 +2357,29 @@ Proof.
       inversion Hev2; subst. rewrite Hsec. reflexivity.
     - apply seq_same_obs_com_if in Hsec.
       inversion Hev2; subst. rewrite Hsec. reflexivity.
-    - inversion Hev2. apply seq_same_obs_com_call in Hsec; auto.
-      subst. destruct bt2.
-      + destruct (is_empty (vars_aexp e)).
-        * rewrite Hsec in *.
-          rewrite H0 in H3. injection H3. intros; auto.
-        * rewrite Hsec in *.
-          rewrite H0 in H3. injection H3. intros; auto.
-      + rewrite Hsec in *.
-        subst. rewrite H0 in H3. injection H3.
-        intros; auto.
-    - inversion Hev2. apply seq_same_obs_com_call in Hsec; auto.
-      subst. subst. simpl in H1, H13. rewrite Hsec in *.
-      rewrite H1 in H13. injection H13. intros; auto.
+    - inversion Hev2. unfold seq_same_obs in Hsec. rewrite H10 in H.
+      destruct (negb (is_empty (vars_aexp e)) && bt2).
+      + rewrite <- H in H0. rewrite <- H2 in H3. rewrite H0 in H3.
+        injection H3. intros; auto.
+      + rewrite H8 in *. eapply SSM_Call in H, H2; eauto.
+        eapply multi_seq_trans in H2, H; eauto.
+        2, 3 : econstructor. simpl in H, H2.
+        specialize (Hsec _ _ _ _ [OCall i] [OCall i0] c ct2 H H2).
+        destruct Hsec.
+        * assert (Datatypes.length [OCall i] = Datatypes.length [OCall i0]).
+             { simpl. auto. } apply prefix_eq_length in H13; auto. injection H13.
+             intros. rewrite <- H14 in H3. rewrite H0 in H3. injection H3.
+             intros; auto.
+        * assert (Datatypes.length [OCall i] = Datatypes.length [OCall i0]).
+             { simpl. auto. } apply prefix_eq_length in H13; auto. injection H13.
+             intros. rewrite <- H14 in H3. rewrite H0 in H3. injection H3.
+             intros; auto.
+    - inversion Hev2. unfold seq_same_obs in Hsec; subst. 
+      destruct (negb (is_empty (vars_aexp e)) && b); rewrite H1 in H13; 
+      injection H13; intros; auto.
 Qed.
 
-Lemma ideal_small_step_obs_type (p:prog) : forall c b1 st1 ast1 stt1 astt1 ct1 ds1 os1 b2 ct2 st2 ast2 stt2 astt2 ds2 os2 bt1 bt2,
-  p |- <((c, st1, ast1, b1))> -->i_ds1^^os1 <((ct1, stt1, astt1, bt1))> ->
-  p |- <((c, st2, ast2, b2))> -->i_ds2^^os2 <((ct2, stt2, astt2, bt2))> ->
-  match os2 with
-  | [] => os1 = []
-  | OBranch _ :: os => exists b, os1 = OBranch b :: os
-  | OARead _ _ :: os => exists a i, os1 = OARead a i :: os
-  | OAWrite _ _ :: os => exists a i, os1 = OAWrite a i :: os
-  | OCall _ :: os => exists i, os1 = OCall i :: os
-  | OForceCall :: os => os1 = OForceCall :: os
-  end.
-Proof.
-  induction c; intros.
-  - inversion H; inversion H0; subst; eauto.
-  - inversion H; inversion H0; subst; eauto.
-  - inversion H; inversion H0; subst; try (eapply IHc1; eauto); eauto.
-    + inversion H12.
-    + inversion H23.
-  - inversion H; inversion H0; subst; eauto.
-  - inversion H; inversion H0; subst; eauto.
-  - inversion H; inversion H0; subst; eauto.
-  - inversion H; inversion H0; subst; eauto.
-  - (* The problem is that call p0 could result in either OCall or OForceCall, 
-       unlike the other commands for which there is only one possible observation.
-       How can I separate these out so I don't wind up with unprovable goals 
-       such as the ones below? Induction on commands doesn't make that distinction.
-     *)
-    (* inv H; inv H0; [exists i; auto| | |auto]. *)
-    (* + admit "".      *)
-    (* + admit "". *)
-Admitted.
-
-Corollary ideal_small_step_obs_length (p:prog) : forall c b1 st1 ast1 stt1 astt1 ct1 ds1 os1 b2 ct2 st2 ast2 stt2 astt2 ds2 os2 bt1 bt2,
+Lemma ideal_small_step_obs_length (p:prog) : forall c b1 st1 ast1 stt1 astt1 ct1 ds1 os1 b2 ct2 st2 ast2 stt2 astt2 ds2 os2 bt1 bt2,
   p |- <((c, st1, ast1, b1))> -->i_ds1^^os1 <((ct1, stt1, astt1, bt1))> ->
   p |- <((c, st2, ast2, b2))> -->i_ds2^^os2 <((ct2, stt2, astt2, bt2))> ->
   length os1 = length os2.
@@ -2481,15 +2397,6 @@ Proof.
   - inv H; inv H0; destruct (is_empty (vars_aexp i)); simpl in *; auto.
   - inv H; inv H0; auto.
 Qed.
-
-(*  
-| ISM_Seq : forall c1 st ast b ds os c1t stt astt bt c2,
-      p |- <((c1, st, ast, b))>  -->i_ds^^os <((c1t, stt, astt, bt))>  ->
-      p |- <(((c1;c2), st, ast, b))>  -->i_ds^^os <(((c1t;c2), stt, astt, bt))>
-  | ISM_Seq_Skip : forall st ast b c2,
-      p |- <(((skip;c2), st, ast, b))>  -->i_[]^^[] <((c2, st, ast, b))>
-
-*)
 
 (** * Unwinding Lemma for Ideal Misspeculated Executions *)
 
@@ -2622,6 +2529,43 @@ Proof.
     apply multi_ideal_refl.
 Qed.
 
+Lemma multi_ideal_single_forcecall_direction (p:prog) :
+  forall j c st ast ct astt stt os,
+  p |- <(( c, st, ast, false ))> -->i*_ [DForceCall j]^^ os <((ct, stt, astt, true))> ->
+    exists cm1 stm1 astm1 cm2 stm2 astm2,
+  p |- <((c, st, ast, false))> -->i*_[]^^[] <((cm1, stm1, astm1, false))> /\
+  p |- <((cm1, stm1, astm1, false))>  -->i_[DForceCall j]^^os <((cm2, stm2, astm2, true))> /\
+  p |- <((cm2, stm2, astm2, true))>  -->i*_[]^^[] <((ct, stt, astt, true))>.
+Proof.
+  intros j c st ast ct astt stt os Hev. remember [DForceCall j] as ds eqn:Eqds.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  induction Hev; try discriminate; subst.
+  assert (L: ds1 = [] \/ ds2 = []).
+  { destruct ds1; auto; destruct ds2; auto. inversion Eqds.
+    apply app_eq_nil in H2 as [_ Contra]. inversion Contra. }
+  destruct L as [L | L]; subst; simpl in *.
+  - assert (Hb': b' = false).
+    { destruct b' eqn:Eqb'; auto. apply ideal_eval_small_step_spec_needs_force in H. 
+      destruct H; [inv H|destruct H as [j0 H]; inv H].
+    }
+    apply IHHev in Eqds; auto; subst.
+    destruct Eqds as [cm1 [stm1 [astm1 [cm2 [stm2 [astm2 [H1 [H2 H3] ] ] ] ] ] ] ].
+    exists cm1, stm1, astm1, cm2, stm2, astm2.
+    assert (os1 = []). { apply length_zero_iff_nil. apply ideal_eval_small_step_obs_length in H. now rewrite <- H. } subst.
+    split; [| split]; auto.
+    replace ([] :dirs) with ([]++[] :dirs) by (apply app_nil_l).
+    rewrite <- app_nil_l with (l:=[]:obs). eapply multi_ideal_trans; eauto.
+  - rewrite app_nil_r in Eqds. subst.
+    assert (Hb': b' = true).
+    { destruct b' eqn:Eqb'; auto. apply ideal_eval_small_step_final_spec_bit_false with (d:=DForceCall j) in H; simpl; auto.
+      inversion H. } subst.
+    exists c; exists st; exists ast; exists c'; exists st'; exists ast'.
+    assert (os2 = []). { apply length_zero_iff_nil. apply multi_ideal_obs_length in Hev. now rewrite <- Hev. } subst.
+    rewrite !app_nil_r.
+    split; [| split]; auto.
+    apply multi_ideal_refl.
+Qed.
+
 (*
 multi_ideal_spec_needs_force
      : forall (p : prog) (c : com) (st : state) 
@@ -2653,6 +2597,31 @@ Proof.
   destruct H2. do 6 destruct H1. destruct H2. subst.
   assert (x7 = true). { destruct x7; [reflexivity|]. apply multi_ideal_final_spec_bit_false with (d:=DForce) in H1; [discriminate|now left]. } subst.
   eapply multi_ideal_single_force_direction in H1. do 7 destruct H1. destruct H3.
+  do 9 econstructor. split.
+  { rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds1). eapply multi_ideal_combined_executions; eassumption. }
+  repeat econstructor; [eassumption|]. rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds2). eapply multi_ideal_combined_executions; eassumption.
+Qed.
+
+Lemma ideal_exec_split_dfc (p:prog) : forall j c st ast ds stt astt os ds1 ds2 cm3,
+  p |- <((c, st, ast, false))> -->i*_ds^^os <((cm3, stt, astt, true))> ->
+  (forall d, In d ds1 -> d = DStep) -> 
+  ds = ds1 ++ [DForceCall j] ++ ds2 ->
+  exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
+  p |- <((c, st, ast, false))> -->i*_ds1^^os1 <((cm1, stm1, astm1, false))>  /\
+  p |- <((cm1, stm1, astm1, false))>  -->i_[DForceCall j]^^os2 <((cm2, stm2, astm2, true))> /\
+  p |- <((cm2, stm2, astm2, true))> -->i*_ds2^^os3  <((cm3, stt, astt, true))> /\
+    os = os1 ++ os2 ++ os3.
+Proof.
+  intros.
+  apply ideal_eval_small_step_split_by_dirs with (ds1:=ds1) (ds2:=[DForceCall j] ++ ds2) in H; [|assumption].
+  do 7 destruct H. destruct H2. subst.
+  assert (x2 = false). { destruct x2; [|reflexivity]. apply multi_ideal_spec_needs_force in H.
+    destruct H; [|destruct H as (j0&H)]; apply H0 in H; discriminate. } subst.
+    apply ideal_eval_small_step_split_by_dirs with (ds1:=[DForceCall j]) (ds2:=ds2) in H2; [|reflexivity].
+  destruct H2. do 6 destruct H1. destruct H2. subst.
+  assert (x7 = true). { destruct x7; [reflexivity|]. Check multi_ideal_final_spec_bit_false. 
+    apply multi_ideal_final_spec_bit_false with (d:=(DForceCall j)) in H1; [discriminate|now left]. } subst.
+    eapply multi_ideal_single_forcecall_direction in H1. do 7 destruct H1. destruct H3.
   do 9 econstructor. split.
   { rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds1). eapply multi_ideal_combined_executions; eassumption. }
   repeat econstructor; [eassumption|]. rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds2). eapply multi_ideal_combined_executions; eassumption.
@@ -2735,38 +2704,67 @@ Lemma ideal_eval_relative_secure : forall p c st1 st2 ast1 ast2,
   seq_same_obs p c st1 st2 ast1 ast2 ->
   ideal_same_obs p c st1 st2 ast1 ast2.
 Proof.
-  unfold ideal_same_obs. intros n c st1 st2 ast1 ast2 Hsec
+  unfold ideal_same_obs. intros p c st1 st2 ast1 ast2 Hsec
   ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
   eapply ideal_eval_spec_bit_deterministic in Hev1 as SameB; try eassumption. subst.
   destruct bt1 eqn:Eqbt1.
   - (* with mis-speculation *)
     eapply ideal_dirs_split in Hev1 as L.
     destruct L as [ds1 [ds2 [Hds1 Heq] ] ]. subst.
-    eapply ideal_exec_split in Hev1; eauto.
-    destruct Hev1 as [cm1 [stm1 [astm1 [os1_1 [cm2 [stm2 [astm2 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
-    eapply ideal_exec_split in Hev2; eauto.
-    destruct Hev2 as [cm1' [stm1' [astm1' [os2_1 [cm2' [stm2' [astm2' [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
-    assert (Hlen2: length os1_1 = length os2_1).
-    { apply multi_ideal_obs_length in Hsmall1, Hsmall2. congruence. }
-    assert (L: os1_1 = os2_1).
-    { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
-      eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
-      apply prefix_eq_length in Hpre; auto. } subst.
-    assert (L : cm1' = cm1).
-    { eapply multi_ideal_no_spec in Hsmall1, Hsmall2; eauto.
-      eapply multi_ideal_lock_step; eauto.
-      all: intro; (do 3 destruct H). all:eapply seq_to_ideal in H; simpl in *.
-      2: assert (os1_2 = []) by now (apply length_zero_iff_nil; eapply ideal_small_step_obs_length in Hone1; eauto; rewrite <- Hone1).
-      1: assert (os2_2 = []) by now (apply length_zero_iff_nil; eapply ideal_small_step_obs_length in Hone2; eauto; rewrite <- Hone2).
-      all:subst. 2: now eapply ideal_eval_small_step_obs_length in Hone1.
-      now eapply ideal_eval_small_step_obs_length in Hone2. } subst.
-    assert (Hsec2: seq_same_obs cm1 stm1 stm1' astm1 astm1').
-    { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
-      eapply multi_seq_preserves_seq_same_obs; eauto. }
-    assert (L: cm2 = cm2').
-    { eapply ideal_small_step_com_deterministic in Hone2; eauto. } subst.
-    eapply ideal_one_step_force_obs in Hone2; eauto.
-    eapply ideal_misspeculated_unwinding in Hbig1; eauto. congruence.
+    destruct Heq.
+    (* DForce *)
+    + eapply ideal_exec_split in Hev1; eauto.
+      destruct Hev1 as [cm1 [stm1 [astm1 [os1_1 [cm2 [stm2 [astm2 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
+      eapply ideal_exec_split in Hev2; eauto.
+      destruct Hev2 as [cm1' [stm1' [astm1' [os2_1 [cm2' [stm2' [astm2' [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
+      assert (Hlen2: length os1_1 = length os2_1).
+      { apply multi_ideal_obs_length in Hsmall1, Hsmall2. congruence. }
+      assert (L: os1_1 = os2_1).
+      { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
+        eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
+        apply prefix_eq_length in Hpre; auto. } subst.
+      assert (L : cm1' = cm1).
+      { eapply multi_ideal_no_spec in Hsmall1, Hsmall2; eauto.
+        eapply multi_ideal_lock_step; eauto.
+        all: intro; (do 3 destruct H). all:eapply seq_to_ideal in H; simpl in *.
+        2: assert (os1_2 = []) by now (apply length_zero_iff_nil; eapply ideal_small_step_obs_length in Hone1; eauto; rewrite <- Hone1).
+        1: assert (os2_2 = []) by now (apply length_zero_iff_nil; eapply ideal_small_step_obs_length in Hone2; eauto; rewrite <- Hone2).
+        all:subst. 2: now eapply ideal_eval_small_step_obs_length in Hone1.
+        now eapply ideal_eval_small_step_obs_length in Hone2. } subst.
+      assert (Hsec2: seq_same_obs p cm1 stm1 stm1' astm1 astm1').
+      { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
+        eapply multi_seq_preserves_seq_same_obs; eauto. }
+      assert (L: cm2 = cm2').
+      { eapply ideal_small_step_com_deterministic in Hone2; eauto. } subst.
+      eapply ideal_one_step_force_obs in Hone2; eauto.
+      eapply ideal_misspeculated_unwinding in Hbig1; eauto. congruence.
+      (* DForceCall *)
+    + destruct H as (j&H). 
+      apply ideal_exec_split_dfc with (j:=j) (ds1:=ds1) (ds2:=ds2) in Hev1; auto.            
+      destruct Hev1 as [cm1 [stm1 [astm1 [os1_1 [cm2 [stm2 [astm2 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
+      eapply ideal_exec_split_dfc in Hev2; eauto.
+      destruct Hev2 as [cm1' [stm1' [astm1' [os2_1 [cm2' [stm2' [astm2' [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
+      assert (Hlen2: length os1_1 = length os2_1).
+      { apply multi_ideal_obs_length in Hsmall1, Hsmall2. congruence. }
+      assert (L: os1_1 = os2_1).
+      { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
+        eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
+        apply prefix_eq_length in Hpre; auto. } subst.
+      assert (L : cm1' = cm1).
+      { eapply multi_ideal_no_spec in Hsmall1, Hsmall2; eauto.
+        eapply multi_ideal_lock_step; eauto.
+        all: intro; (do 3 destruct H). all:eapply seq_to_ideal in H; simpl in *.
+        2: assert (os1_2 = []) by now (apply length_zero_iff_nil; eapply ideal_small_step_obs_length in Hone1; eauto; rewrite <- Hone1).
+        1: assert (os2_2 = []) by now (apply length_zero_iff_nil; eapply ideal_small_step_obs_length in Hone2; eauto; rewrite <- Hone2).
+        all:subst. 2: now eapply ideal_eval_small_step_obs_length in Hone1.
+        now eapply ideal_eval_small_step_obs_length in Hone2. } subst.
+      assert (Hsec2: seq_same_obs p cm1 stm1 stm1' astm1 astm1').
+      { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
+        eapply multi_seq_preserves_seq_same_obs; eauto. }
+      assert (L: cm2 = cm2').
+      { eapply ideal_small_step_com_deterministic in Hone2; eauto. } subst.
+      eapply ideal_one_step_forcecall_obs in Hone2; eauto.
+      eapply ideal_misspeculated_unwinding in Hbig1; eauto. congruence.
   - (* without mis-speculation *)
     (* LATER: this case is similar to the start of the more interesting case
               above; we can likely share more (e.g. use the same obs_length lemma) *)
@@ -2804,18 +2802,38 @@ Question: Do we need to define relative security for programs?
           we would need to define it differently.
  *)
 
-Theorem ultimate_slh_relative_secure :
+(*  
+Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
+  nonempty_arrs ast ->
+  unused_prog "b" p ->
+  unused "b" c ->
+  unused_prog "callee" p ->
+  unused "callee" c ->
+  st "b" = (if b then 1 else 0) ->
+  ultimate_slh_prog p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
+  /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
+Proof.
+
+*)
+
+Theorem ultimate_slh_relative_secure (p:prog) :
   forall c st1 st2 ast1 ast2,
     (* some extra assumptions needed by slh_bcc *)
+    unused_prog "callee" p ->
+    unused_prog "b" p ->
+    In c p ->
+    unused "callee" c ->
     unused "b" c ->
     st1 "b" = 0 ->
     st2 "b" = 0 ->
     nonempty_arrs ast1 ->
     nonempty_arrs ast2 ->
-    relative_secure ultimate_slh c st1 st2 ast1 ast2.
+    relative_secure p ultimate_slh c st1 st2 ast1 ast2.
 Proof. (* from bcc + ideal_eval_relative_secure *)
   unfold relative_secure.
-  intros c st1 st2 ast1 ast2 Hunused Hst1b Hst2b Hast1 Hast2 Hseq ds stt1 stt2
+  intros c st1 st2 ast1 ast2 Hunused_prog_callee Hunused_prog_b 
+    Hin Hunused_callee Hunused_b Hst1b Hst2b Hast1 Hast2 Hseq ds stt1 stt2
     astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
   apply ultimate_slh_bcc in Hev1; try assumption. destruct Hev1 as [c1' Hev1].
   apply ultimate_slh_bcc in Hev2; try assumption. destruct Hev2 as [c2' Hev2].
