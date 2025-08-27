@@ -43,8 +43,6 @@ Reserved Notation
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-(* YH: To avoid complex errors from fixing the notation,
-       I changed program to a tuple with its starting point. *)
 Inductive seq_eval_small_step (p:prog) :
 com -> state -> astate ->
     com -> state -> astate -> obs -> Prop :=
@@ -341,10 +339,20 @@ Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop :=
     p |- <((c, st2, ast2, false))> -->*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
     os1 = os2. 
 
-Definition relative_secure (p:prog) (trans : com -> com)
+(* The new definition adds the extra program transformation we 
+   needed to check for speculation at the target of a call instruction.
+   This was needed to apply the bcc proof in the final theorem. *)
+
+(*  old definition:
+   Definition relative_secure (p:prog) (trans : com -> com)
     (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop :=
   seq_same_obs p c st1 st2 ast1 ast2 ->
-  spec_same_obs p (trans c) st1 st2 ast1 ast2.
+   spec_same_obs p (trans c) st1 st2 ast1 ast2. *)
+
+Definition relative_secure (p:prog) (trans1 : prog -> prog) (trans2 : com -> com)
+    (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop :=
+  seq_same_obs p c st1 st2 ast1 ast2 ->
+  spec_same_obs (trans1 p) (trans2 c) st1 st2 ast1 ast2.
   
 (** * Ultimate Speculative Load Hardening *)
 
@@ -420,17 +428,17 @@ Definition ultimate_slh_prog (p:prog) :=
 
 (* Generalization of ultimate_slh_prog *)
 
-(* start from any index, not just 0 (this will help us prove things about uslh_prog on p vs a::p) *)
+(* partial program version of add_index *)
 Definition add_index_gen {a:Type} (xs:list a) (start: nat) : list (nat * a) :=
   combine (seq start (length xs)) xs.
 
-(* this is uslh_prog except with the use of add_index_nth and adding an extra start parameter accordingly *)
+(* this allows us to consider partial programs *)
 Definition ultimate_slh_prog_gen (p:prog) (start: nat) :=
   map (fun p =>
     let '(i,c) := p in
     <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}>) (add_index_gen p start).
 
-(* this is the special case that was ultimate_slh_prog previously *)
+(* this is the whole-program version we had before *)
 Definition ultimate_slh_prog (p: prog) := ultimate_slh_prog_gen p 0.
 
 (** The masking USLH does for indices requires that our arrays are nonempty. *)
@@ -1050,6 +1058,43 @@ Ltac com_step :=
   | |- _ => now constructor
   end).
 
+(** TODO replace with standard library lemmas *)
+
+Lemma app_cons : forall {A} (x : A) (l : list A), 
+  x :: l = [x] ++ l.
+Proof. simpl. auto. Qed.
+
+Lemma add_neq : forall (i j n : nat), 
+  ((i =? j)%nat = false) -> ((n + i =? n + j)%nat = false).
+Proof.
+  intros. induction n; auto.
+Qed.
+
+Lemma plus_eq_0 : forall n m,
+  n + m = 0 -> n = 0 /\ m = 0.
+Proof.
+  induction n; intros; try (simpl in H; rewrite H; tauto); discriminate.
+Qed.
+
+
+Lemma nat_True: forall (n : nat), 
+  (n = n) <-> True.
+Proof.
+  split; intros; auto.
+Qed.
+
+Lemma j_not_zero: forall (j : nat),
+  (0 <> j) -> (match j with
+              | 0 => true
+              | S _ => false 
+              end) = false.
+Proof.
+  induction j; intros;
+  [unfold not in H; rewrite nat_True in H; contradiction|auto].
+Qed.
+
+(** End todo *)
+
 
 Definition measure (c : com) (ds : dirs) : nat * nat :=
   (length ds, com_size c).
@@ -1143,10 +1188,6 @@ Proof.
     subst. auto.
 Qed.
 
-Lemma app_cons : forall {A} (x : A) (l : list A), 
-  x :: l = [x] ++ l.
-Proof. simpl. auto. Qed.
-
 Lemma uslh_prog_cons: forall c p n,
     ultimate_slh_prog_gen (c :: p) n = (<{{ "b" := ("callee" = n) ? "b" : 1; (ultimate_slh c) }}>) :: (ultimate_slh_prog_gen p (S n)).
 Proof.
@@ -1201,39 +1242,6 @@ Proof.
   simpl. auto.
 Qed.
 
-Definition admit (excuse: String.string) {T: Type} : T.  Admitted.
-Tactic Notation "admit" constr(excuse) := idtac excuse; exact (admit excuse).
-
-(* How to use: cadmit "comment". *)
-
-Lemma add_neq : forall (i j n : nat), 
-  ((i =? j)%nat = false) -> ((n + i =? n + j)%nat = false).
-Proof.
-  intros. induction n; auto.
-Qed.
-
-Lemma plus_eq_0 : forall n m,
-  n + m = 0 -> n = 0 /\ m = 0.
-Proof.
-  induction n; intros; try (simpl in H; rewrite H; tauto); discriminate.
-Qed.
-
-
-Lemma nat_True: forall (n : nat), 
-  (n = n) <-> True.
-Proof.
-  split; intros; auto.
-Qed.
-
-Lemma j_not_zero: forall (j : nat),
-  (0 <> j) -> (match j with
-              | 0 => true
-              | S _ => false 
-              end) = false.
-Proof.
-  induction j; intros;
-  [unfold not in H; rewrite nat_True in H; contradiction|auto].
-Qed.
 
 
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
@@ -2491,7 +2499,6 @@ Proof.
       eapply IHmulti_ideal; eauto.
 Qed.
 
-(* probably need to make a corresponding lemma for DForceCall *)
 Lemma multi_ideal_single_force_direction (p:prog) :
   forall c st ast ct astt stt os,
   p |- <(( c, st, ast, false ))> -->i*_ [DForce]^^ os <((ct, stt, astt, true))> ->
@@ -2566,7 +2573,7 @@ Proof.
     apply multi_ideal_refl.
 Qed.
 
-(*
+(* this is a duplicate of an existing lemma
 multi_ideal_spec_needs_force
      : forall (p : prog) (c : com) (st : state) 
          (ast : astate) (ds : dirs) (ct : com) (stt : state) 
@@ -2782,7 +2789,7 @@ Qed.
 (* LATER: Strengthen the conclusion so that our theorem is termination sensitive
    (and also error sensitive) by looking at prefixes there too. *)
 
-(* HIDE: YH:This pairs with the new bcc lemma definition I suggested above.
+(* HIDE: YH: This pairs with the new bcc lemma definition I suggested above.
 Theorem ultimate_slh_relative_secure :
   forall c st1 st2 ast1 ast2,
     (* some extra assumptions needed by slh_bcc *)
@@ -2802,21 +2809,6 @@ Question: Do we need to define relative security for programs?
           we would need to define it differently.
  *)
 
-(*  
-Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
-  nonempty_arrs ast ->
-  unused_prog "b" p ->
-  unused "b" c ->
-  unused_prog "callee" p ->
-  unused "callee" c ->
-  st "b" = (if b then 1 else 0) ->
-  ultimate_slh_prog p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
-  /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
-Proof.
-
-*)
-
 Theorem ultimate_slh_relative_secure (p:prog) :
   forall c st1 st2 ast1 ast2,
     (* some extra assumptions needed by slh_bcc *)
@@ -2829,13 +2821,13 @@ Theorem ultimate_slh_relative_secure (p:prog) :
     st2 "b" = 0 ->
     nonempty_arrs ast1 ->
     nonempty_arrs ast2 ->
-    relative_secure p ultimate_slh c st1 st2 ast1 ast2.
+    relative_secure p ultimate_slh_prog ultimate_slh c st1 st2 ast1 ast2.
 Proof. (* from bcc + ideal_eval_relative_secure *)
   unfold relative_secure.
   intros c st1 st2 ast1 ast2 Hunused_prog_callee Hunused_prog_b 
-    Hin Hunused_callee Hunused_b Hst1b Hst2b Hast1 Hast2 Hseq ds stt1 stt2
-    astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
+  Hin Hunused_callee Hunused_b Hst1b Hst2b Hast1 Hast2 Hseq ds stt1 stt2
+  astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
   apply ultimate_slh_bcc in Hev1; try assumption. destruct Hev1 as [c1' Hev1].
   apply ultimate_slh_bcc in Hev2; try assumption. destruct Hev2 as [c2' Hev2].
-  eapply (ideal_eval_relative_secure c st1 st2); eassumption.
+  eapply (ideal_eval_relative_secure p c st1 st2); eassumption.
 Qed.

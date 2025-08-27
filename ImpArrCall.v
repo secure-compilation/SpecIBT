@@ -620,23 +620,6 @@ Require Import Coq.Relations.Relation_Operators.
 Require Import Coq.Wellfounded.Lexicographic_Product.
 Require Import Coq.Wellfounded.Inverse_Image.
 
-Check lt_wf.
-(* lt_wf : well_founded lt *)
-
-Check lexprod.
-(* lexprod : forall (A : Type) (B : A -> Type),
-       (A -> A -> Prop) ->
-       (forall x : A, B x -> B x -> Prop) ->
-       {x : A & B x} -> {x : A & B x} -> Prop *)
-
-Check wf_lexprod.
-(* wf_lexprod
-     : forall (A : Type) (B : A -> Type) (leA : A -> A -> Prop)
-         (leB : forall x : A, B x -> B x -> Prop),
-       well_founded leA ->
-       (forall x : A, well_founded (leB x)) ->
-       well_founded (lexprod A B leA leB) *)
-
 Definition to_sig (p : nat * nat) : { x : nat & nat } :=
   existT (fun _ => nat) (fst p) (snd p).
 
