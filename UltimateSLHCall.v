@@ -690,7 +690,7 @@ Lemma multi_ideal_obs_length : forall p c st ast b ds ct stt astt bt os,
   length ds = length os.
 Proof.
   intros p c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
-  do 2 rewrite app_length. apply ideal_eval_small_step_obs_length in H.
+  do 2 rewrite length_app. apply ideal_eval_small_step_obs_length in H.
   auto.
 Qed.
 
@@ -1130,7 +1130,7 @@ Proof.
   specialize H0 with (x:=c). apply H0 in H; auto.
 Qed.
 
-Ltac measure1 := rewrite lex_nat_nat_equiv; unfold measure, lex_nat_nat_spec; simpl; try (rewrite !app_length); simpl; lia.
+Ltac measure1 := rewrite lex_nat_nat_equiv; unfold measure, lex_nat_nat_spec; simpl; try (rewrite !length_app); simpl; lia.
 Ltac strs_neq := unfold not; intros; discriminate.
 
 Lemma ultimate_slh_inj: forall c1 c2,
@@ -1684,7 +1684,7 @@ Proof.
                 (* replace (DForceCall (j + 0)) with (DForceCall (j + (snd (c :: p, 0)))) by auto. *)
                 rewrite <- app_nil_r with (l:=[DForceCall j]).
                 rewrite <- app_nil_r with (l:=[OForceCall]).
-                Check multi_ideal_trans.
+                (* Check multi_ideal_trans. *)
                 apply multi_ideal_trans with (c':=c_src) (st':=st) (ast':=ast') (b':=true).
                 + eapply ISM_Call_F.
                   * simpl. rewrite Hf. simpl. reflexivity.
@@ -1710,7 +1710,7 @@ Proof.
                     -- simpl. rewrite Hf. simpl. reflexivity.
                     -- rewrite eqb_neq in H3. apply H3.
                     -- simpl. eapply H1.
-                  * Check ideal_unused_update.
+                  * (* Check ideal_unused_update. *)
                     rewrite <- plus_n_O in *. rewrite H3 in *. simpl in *.
                     apply ideal_unused_update in STEPS.
                     -- rewrite t_update_neq in STEPS; [|strs_neq].
@@ -2486,7 +2486,7 @@ Proof.
   - invert H1.
     + symmetry in H7. apply app_eq_nil in H7. destruct H7; subst.
       apply multi_ideal_obs_length in H0. apply ideal_eval_small_step_obs_length in H.
-      apply length_zero_iff_nil. now rewrite app_length, <- H, <- H0.
+      apply length_zero_iff_nil. now rewrite length_app, <- H, <- H0.
     + assert (b' = true) by now apply ideal_eval_small_step_spec_bit_monotonic in H. subst.
       assert (b'0 = true) by now apply ideal_eval_small_step_spec_bit_monotonic in H3. subst.
       assert(Eqds : ds0 = ds1).

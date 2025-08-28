@@ -1019,7 +1019,7 @@ Lemma multi_ideal_obs_length : forall c st ast b ds ct stt astt bt os pc P PA pc
   <[[c, st, ast, b, pc, P, PA]]> -->i*_ds^^os <[[ct, stt, astt, bt, pct, Pt, PAt]]> ->
   length ds = length os.
 Proof. intros. induction H; [tauto|].
-  do 2 rewrite app_length. apply ideal_eval_small_step_obs_length in H.
+  do 2 rewrite length_app. apply ideal_eval_small_step_obs_length in H.
   auto.
 Qed.
 
@@ -1470,11 +1470,11 @@ Qed.
 
 Ltac prog_size_auto :=
   try ( apply prog_size_monotonic; left; split; simpl;
-        [| repeat rewrite app_length]; lia );
+        [| repeat rewrite length_app]; lia );
   try ( apply prog_size_monotonic; right; split; simpl;
-        [| repeat rewrite app_length]; lia);
+        [| repeat rewrite length_app]; lia);
   try ( apply prog_size_monotonic; left; split; simpl;
-        [auto | repeat rewrite app_length; lia] ).
+        [auto | repeat rewrite length_app; lia] ).
 
 Ltac solve_refl :=
   now (do 5 eexists); split; [|split; [(try discriminate); (try now repeat econstructor)|(try discriminate); tauto] ]; rewrite ?t_update_shadow, t_update_same;

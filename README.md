@@ -13,7 +13,7 @@ https://github.com/secure-compilation/fslh-rocq
 
 The development uses the [Rocq prover](https://rocq-prover.org).
 
-We tested this with versions 8.19.2, 8.20.0 and 8.20.1, when it was still called Coq.
+We tested this with version 8.20.1, when it was still called Coq.
 
 Installation instructions for these versions are available here:
 https://web.archive.org/web/20250305221757/https://coq.inria.fr/download

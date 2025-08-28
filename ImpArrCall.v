@@ -537,11 +537,11 @@ Qed.
 
 Ltac prog_size_auto :=
   try ( apply prog_size_monotonic; left; split; simpl;
-        [| repeat rewrite app_length]; lia );
+        [| repeat rewrite length_app]; lia );
   try ( apply prog_size_monotonic; right; split; simpl;
-        [| repeat rewrite app_length]; lia);
+        [| repeat rewrite length_app]; lia);
   try ( apply prog_size_monotonic; left; split; simpl;
-        [auto | repeat rewrite app_length; lia] ).
+        [auto | repeat rewrite length_app; lia] ).
 
 Lemma aeval_beval_unused_update : forall X st n,
   (forall ae, a_unused X ae ->

@@ -608,7 +608,7 @@ Lemma multi_ideal_obs_length : forall c st ast b ds ct stt astt bt os,
   length ds = length os.
 Proof.
   intros c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
-  do 2 rewrite app_length. apply ideal_eval_small_step_obs_length in H.
+  do 2 rewrite length_app. apply ideal_eval_small_step_obs_length in H.
   auto.
 Qed.
 
@@ -955,7 +955,7 @@ Proof.
       { destruct H2, H. exists x6. split; [|tauto]. rewrite !app_assoc. com_step.
         erewrite <- t_update_same, <- t_update_shadow in H at 1.
         apply ideal_unused_update in H; try tauto. rewrite t_update_eq in H; eauto. }
-      { unfold prog_size. rewrite !app_length. simpl. lia. }
+      { unfold prog_size. rewrite !length_app. simpl. lia. }
       { eapply ideal_eval_preserves_nonempty_arrs; eassumption. }
       { tauto. }
       tauto.
@@ -1423,7 +1423,7 @@ Proof.
   - invert H1.
     + symmetry in H7. apply app_eq_nil in H7. destruct H7; subst.
       apply multi_ideal_obs_length in H0. apply ideal_eval_small_step_obs_length in H.
-      apply length_zero_iff_nil. now rewrite app_length, <- H, <- H0.
+      apply length_zero_iff_nil. now rewrite length_app, <- H, <- H0.
     + assert (b' = true) by now apply ideal_eval_small_step_spec_bit_monotonic in H. subst.
       assert (b'0 = true) by now apply ideal_eval_small_step_spec_bit_monotonic in H3. subst.
       assert(Eqds : ds0 = ds1).

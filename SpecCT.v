@@ -1752,11 +1752,11 @@ Qed.
 
 Ltac prog_size_auto :=
   try ( apply prog_size_monotonic; left; split; simpl;
-        [| repeat rewrite app_length]; lia );
+        [| repeat rewrite length_app]; lia );
   try ( apply prog_size_monotonic; right; split; simpl;
-        [| repeat rewrite app_length]; lia);
+        [| repeat rewrite length_app]; lia);
   try ( apply prog_size_monotonic; left; split; simpl;
-        [auto | repeat rewrite app_length; lia] ).
+        [auto | repeat rewrite length_app; lia] ).
 
 (** To properly apply [prog_size_ind], we need to state [sel_slh_flag]
     as a proposition of type [com -> dirs -> Prop]. Therefore we define the

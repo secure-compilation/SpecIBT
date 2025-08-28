@@ -306,7 +306,7 @@ Lemma multi_ideal_obs_length : forall P PA c st ast b ds ct stt astt bt os,
   P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   length ds = length os.
 Proof. intros. induction H; [tauto|].
-  do 2 rewrite app_length. apply ideal_eval_small_step_obs_length in H.
+  do 2 rewrite length_app. apply ideal_eval_small_step_obs_length in H.
   auto.
 Qed.
 
