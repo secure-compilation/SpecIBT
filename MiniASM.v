@@ -27,7 +27,8 @@ i ::= skip
 
 p ::= [c₀,...,cₙ]       program is a list of commands for procedure bodies
 
-link p = resolve c₀ p ++ ... ++ resolve cₙ p    program to instruction memory
+link p = [call_target, resolve c₀ p] ++         program to instruction memory
+          ... ++ [call_target, resolve cₙ p]
 
 Sequential semantics with CT observations:
 -----------------------------------------
@@ -121,4 +122,51 @@ Notes:
     - can we set this up so that we get the observation(s)
       before we have to issue the direction(s)?
     - probably no big problem with just a few procedures
+
+uslh skip = [skip]
+uslh (x:=e) = [x:=e]
+uslh (jump n) = [jump n]
+uslh (call_target) = [skip]       these should anyway be inserted by linking
+                                  (not present in original program)
+uslh (ret) = [ret]                - nothing to do here because of CET?
+uslh (x<-load[ae]) =
+  let ae' := "ms"=1 ? 0 : ae in   masking the whole address
+  [x<-load[ae']]                  - fine if this is valid data memory, right?
+uslh (store[ae] <- e) =
+  let ae' := "ms"=1 ? 0 : ae in   masking the whole address
+  [store[ae'] <- e]               - fine if this is valid data memory, right?
+
+uslh (branch be +n) =
+  let be' = "ms"=0 && be in             masking branch condition
+  [branch be' +n, "ms" := be'?1:"ms"]   updating flag when not branching
+
+  TODO: also need to update flag when actually branching; possible?
+  TODO: also need to adjust offset of this and other branches to account for added instructions
+  - branching to labels instead of to concrete offsets could help?
+    + still, what if multiple branches/jumps go to the same label
+      and we add flag updating at that label?
+      update flag wrt multiple boolean conditions?
+  - I don't (yet) know how to do SLH for unstructured programs;
+    + LLVM Machine IR works with a CFG; even that's more structured:
+      labeled basic blocks connected by jumps or branches?
+    + if this gets too hard it may be easier to do it a bit earlier in the
+      compiler? (e.g. like Lucie did, or something in between)
+
+uslh (call ae) =
+  let ae' := "ms"=1 ? 0 : ae in   masking the whole address
+                                  - fine if 0 is valid call site, right?
+  ["callee":=ae', call ae']
+
+  TODO: even if ae is not masked it may go to a different place than before,
+        since uslh itself will likely change the instruction memory layout
+        - was this Yonghyun's worry yesterday?
+        - it seems pretty bad since `ae` can be computed in arbitrary ways,
+          not only using nice (potential) features like `proc_addr` or code labels
+
+uslh_prog p :=
+  map (fun c => ["ms" := "callee" = get_pc+delta ? "ms" : 1]) p
+  - this part seems easiest to define using new get_pc feature,
+    otherwise only know what address to check against after the
+    modified code gets laid out in memory (linked)
+
 *)
