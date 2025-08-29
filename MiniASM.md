@@ -32,6 +32,7 @@ p ∈ prog = list (list inst * bool)
   + all labels are defined
   + direct branches/jumps don't go to procedure starts
   + &l below only allowed for procedure starts (`snd p[l]` is true)
+  + ctarget instruction not already used
 
 e ::= ...
     | x                register
@@ -152,49 +153,55 @@ Notes:
 
 ## New attempt at defining Ultimate SLH
 
-uslh skip = [skip]
-uslh (x:=e) = [x:=e]
-uslh (jump l) = [jump l]
-uslh (ctarget) = [skip]           these should anyway be inserted by
-                                  transformation of basic blocks
+uslh skip = return [skip]
+uslh (x:=e) = return [x:=e]
+uslh (jump l) = return [jump l]
+uslh (ctarget) = return [skip]    these inserted by transformation of basic blocks
                                   (not present in original program)
-uslh (ret) = [ret]                - nothing to do here because of CET?
+uslh (ret) = return [ret]         nothing to do here because of CET
 uslh (x<-load[e]) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
-  [x<-load[e']]                   - fine if this is valid data memory, right?
+  return [x<-load[e']]            - fine if this is valid data memory, right?
 uslh (store[e] <- e) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
-  [store[e'] <- e]                - fine if this is valid data memory, right?
-
-uslh (branch e l) : nat -> list inst * nat =
-  let e' = "ms"=0 && e in             masking branch condition
-  bind l' <- fresh_block do           need to track used/free blocks
-  return ([branch e' l', "ms" := e'?1:"ms"],   updating flag when not branching
-           (l',["ms" := ~e'?1:"ms"; jump l]))  updating flag when actually branching
+  return [store[e'] <- e]         - fine if this is valid data memory, right?
 
 uslh (branch e l) : prog -> list inst * prog =
   let e' = "ms"=0 && e in                           masking branch condition
   bind l' <- addblock ["ms" := ~e'?1:"ms"; jump l]  updating flag when actually branching
-  return ([branch e' l', "ms" := e'?1:"ms"])        updating flag when not branching
+  return ([branch e' l'; "ms" := e'?1:"ms"])        updating flag when not branching
 
-  TODO: also need to update flag when actually branching (solved above)
-  + still, what if multiple branches/jumps go to the same label
+  DONE: also need to update flag when actually branching (solved above)
+  + what if multiple branches/jumps go to the same label
     and we add flag updating at that label?
     * update flag wrt multiple boolean conditions? — not correct!
-    * create new label/block <—— trying this above
+    * create new label/block <—— doing this above
 
 uslh (call e) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
                                   - fine if 0 is valid call site, right?
-  ["callee":=e', call e']
+  return ["callee":=e'; call e']
 
 
-uslh l (bl,false) = concatm (mapm uslh bl)  block not start of procedure
-uslh l (bl,true) =                          block is start of procedure
+uslh l (bl,false) = concatM (mapM uslh bl)  block is not procedure start
+uslh l (bl,true) =                          block is procedure start
   bind bl'<- uslh l (bl,false)
-  return ([ctarget, "ms" := "callee" = l ? "ms" : 1] ++ bl')
+  return ([ctarget; "ms" := "callee" = l ? "ms" : 1] ++ bl')
 
-uslh p = mapm uslh p
+uslh p = let '(p1,p2) = (mapM uslh p) p in update p1 in p2
+
+TODO: something quite shady happening above:
+      both mapping over the program AND changing it via state passing
+      - I guess could combine the p1 and p2 at the end
+      - but there should be a better way to express this
+
+## Some intermediate attempt
+
+uslh (branch e l) : nat -> list inst * nat =
+  let e' = "ms"=0 && e in             masking branch condition
+  bind l' <- fresh_block do           need to track used/free blocks
+  return ([branch e' l'; "ms" := e'?1:"ms"],   updating flag when not branching
+           (l',["ms" := ~e'?1:"ms"; jump l]))  updating flag when actually branching
 
 # First attempt
 
