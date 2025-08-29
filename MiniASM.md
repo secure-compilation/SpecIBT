@@ -7,6 +7,8 @@ Main ideas:
     block = whole procedure (Linear? Mach?)
          or basic block (LTL? MIR?) <- tentatively went for this below
             + jumps can only go to the beginning of basic blocks
+            + but we do allow exiting from anywhere in the block
+              * Q (Yonghyun): is that okay?
          or individual instruction (Santiago ASPLOS'25)? – seems extreme
   + (basic) blocks identified by labels?
 - pc that's a CompCert-style pointer (label + offset)
@@ -26,8 +28,14 @@ p ∈ prog = list (list inst * bool)
 - so `p[pc] = let '(l,o)=pc in (fst p[l])[o]`
 - and `pc+1 = let '(l,o)=pc in (l,o+1)`
 - `snd p[l]` stores a bool telling us if the basic block is a procedure start
+- static well-formedness check:
+  + all labels are defined
+  + direct branches/jumps don't go to procedure starts
+  + &l below only allowed for procedure starts (`snd p[l]` is true)
 
 e ::= ...
+    | x                register
+    | n                constant
     | e1 + e2          defined only on numbers
     | &l               function pointer, can only be used with call
 
@@ -45,76 +53,82 @@ o := OBranch b
    | OLoad n
    | OStore n
    | OCall l           offset 0 is implicit
-   | ORet (l,o)
 
 d := DBranch b'
    | DCall (l',o')
 
 ## Sequential semantics with CT observations
 
-p |- (pc, r, m, sk, ct) -->^os  (pc', r', m', sk', ct')
+p |- (pc, r, m, sk) -->^os  (pc', r', m', sk')
 
 p[pc] = skip
-——————————————————————————————————————————————————
-p |- (pc, r, m, sk, ⊥) -->^[]  (pc+1, r, m, sk, ⊥)
+————————————————————————————————————————————
+p |- (pc, r, m, sk) -->^[]  (pc+1, r, m, sk)
 
 p[pc] = x:=e   r'=r[x<-eval r e]
-————————————————————————————————————————————————————
-p |- (pc, r, m, sk, ⊥) -->^[]  (pc+1, r', m, sk, ⊥)
+—————————————————————————————————————————————
+p |- (pc, r, m, sk) -->^[]  (pc+1, r', m, sk)
 
 p[pc] = branch e l   n=eval r e   b=(n≠0)
 pc'=if b then (l,0) else pc+1
                  ^- only branch to beginning of basic block
 ———————————————————————————————————————————————————————————
-p |- (pc, r, m, sk, ⊥) -->^[OBranch b] (pc', r, m, sk, ⊥)
+p |- (pc, r, m, sk) -->^[OBranch b] (pc', r, m, sk)
 
 p[pc] = jump l
-———————————————————————————————————————————————————
-p |- (pc, r, m, sk, ⊥) -->^[] ((l,0), r, m, sk, ⊥)
+————————————————————————————————————————————
+p |- (pc, r, m, sk) -->^[] ((l,0), r, m, sk)
                                    ^- only to beginning of bb
                              ^--- no observation needed
+                                  (other maybe for the proofs)
 
-p[pc] = x<-load[e]   n=eval r e   r'=r[x<-m[a]]
-—————————————————————————————————————————————————
-p |- (pc, r, m, sk, ⊥) -->^[OLoad n] (pc+1, r', m, sk, ⊥)
+p[pc] = x<-load[e]   n=eval r e   r'=r[x<-m[n]]
+———————————————————————————————————————————————————
+p |- (pc, r, m, sk) -->^[OLoad n] (pc+1, r', m, sk)
 
-p[pc] = store[e]<-e'   n=eval r e   v=eval r e'   m'=m[a<-v]
+p[pc] = store[e]<-e'   n=eval r e   v=eval r e'   m'=m[n<-v]
 ————————————————————————————————————————————————————————————
-p |- (pc, r, m, sk, ⊥) -->^[OStore n] (pc+1, r, m', sk, ⊥)
+p |- (pc, r, m, sk) -->^[OStore n] (pc+1, r, m', sk)
 
 p[pc] = call e   l=eval r e
-——————————————————————————————————————————————————————————————
-p |- (pc, r, m, sk, ⊥) -->^[OCall l] (a, r, m, (pc+1)::sk, ⊤)
+———————————————————————————————————————————————————————————
+p |- (pc, r, m, sk) -->^[OCall l] ((l,0), r, m, (pc+1)::sk)
 
 p[pc] = ctarget
-——————————————————————————————————————————————————
-p |- (pc, r, m, sk, ⊤) -->^[] (pc+1, r, m, sk, ⊥)
-                    ^--- ctarget can only run after call?
+———————————————————————————————————————————
+p |- (pc, r, m, sk) -->^[] (pc+1, r, m, sk)
 
 p[pc] = ret
-——————————————————————————————————————————————————————————————
-p |- (pc, r, m, pc'::sk, ⊥) -->^[ORet pc'] (pc', r, m, sk, ⊥)
+——————————————————————————————————————————————————————
+p |- (pc, r, m, pc'::sk) -->^[] (pc', r, m, sk)
+                              ^————— no observation, right? (CET)
 
 ## Speculative semantics:
 
 p |- (pc,r,m,sk,ct,ms) -->_ds^os (pc',r',m',sk',ms')  (the interesting parts)
+                ^———— expecting only call target
 
 p[pc]=branch e l   n=eval r e   b=(n≠0)
 pc'=if b' then (l,0) else pc+1   ms'=ms\/b≠b'
 ——————————————————————————————————————————————————————————————————————
 p |- (pc,r,m,sk,⊥,ms) -->_[DBranch b']^[OBranch b] (pc',r,m,sk,⊥,ms')
 
-p[pc]=x<-load[e]   n=eval r e   r'=r[x<-m[a]]
+p[pc]=x<-load[e]   n=eval r e   r'=r[x<-m[n]]
 ———————————————————————————————————————————————————————————
-p |- (pc,r,m,sk,⊥,ms) -->_[]^[OLoad a] (pc+1,r',m,sk,⊥,ms)
+p |- (pc,r,m,sk,⊥,ms) -->_[]^[OLoad n] (pc+1,r',m,sk,⊥,ms)
 
-p[pc]=store[e]<-e'   a=eval r e   n=eval r e'   m'=m[a<-n]
-——————————————————————————————————————————————————————————
-p |- (pc,r,m,sk,⊥) -->_[]^[OStore a] (pc+1,r,m',sk,⊥,ms)
+p[pc]=store[e]<-e'   n=eval r e   n'=eval r e'   m'=m[n<-n']
+———————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥) -->_[]^[OStore n] (pc+1,r,m',sk,⊥,ms)
 
-p[pc]=call e   n=eval r e   ms'=ms\/a≠a'
+p[pc]=call e   l=eval r e   ms'=ms\/(l,0)≠pc'
 ——————————————————————————————————————————————————————————————————————————
-p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall n] (pc',r,m,(pc+1)::sk,⊤,ms')
+p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
+                ^--- ctarget can only run after call? (CET)
+
+p[pc] = ret
+—————————————————————————————————————————————————————————
+p |- (pc, r, m, pc'::sk, ⊥) -->_[]^[] (pc', r, m, sk, ⊥)
 
 Notes:
 - no (mis-)speculation on returns; assuming protected stack
@@ -152,16 +166,21 @@ uslh (store[e] <- e) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
   [store[e'] <- e]                - fine if this is valid data memory, right?
 
-uslh (branch e l) =
+uslh (branch e l) : nat -> list inst * nat =
   let e' = "ms"=0 && e in             masking branch condition
   bind l' <- fresh_block do           need to track used/free blocks
   return ([branch e' l', "ms" := e'?1:"ms"],   updating flag when not branching
            (l',["ms" := ~e'?1:"ms"; jump l]))  updating flag when actually branching
 
-  TODO: also need to update flag when actually branching
+uslh (branch e l) : prog -> list inst * prog =
+  let e' = "ms"=0 && e in                           masking branch condition
+  bind l' <- addblock ["ms" := ~e'?1:"ms"; jump l]  updating flag when actually branching
+  return ([branch e' l', "ms" := e'?1:"ms"])        updating flag when not branching
+
+  TODO: also need to update flag when actually branching (solved above)
   + still, what if multiple branches/jumps go to the same label
     and we add flag updating at that label?
-    * update flag wrt multiple boolean conditions? — not correct?
+    * update flag wrt multiple boolean conditions? — not correct!
     * create new label/block <—— trying this above
 
 uslh (call e) =
@@ -170,10 +189,12 @@ uslh (call e) =
   ["callee":=e', call e']
 
 
-uslh (bl,false) = concat (map.. uslh bl)      block not start of procedure
-uslh (bl,true) = [ctarget, uslh (bl, false)]  block is start of procedure
+uslh l (bl,false) = concatm (mapm uslh bl)  block not start of procedure
+uslh l (bl,true) =                          block is start of procedure
+  bind bl'<- uslh l (bl,false)
+  return ([ctarget, "ms" := "callee" = l ? "ms" : 1] ++ bl')
 
-uslh p = map uslh p
+uslh p = mapm uslh p
 
 # First attempt
 
