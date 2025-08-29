@@ -4,25 +4,28 @@ Main ideas:
 - jumps go to labels
 - block-based memory model for the instructions
   + what granularity though?
-    block = whole procedures (Linear? Mach?)
-         or basic blocks (LTL? MIR?) <- tentatively went for this below
-         or individual instructions (Santiago ASPLOS'25)? – seems extreme
-  + blocks identified by labels?
-- pc that's a CompCert-like pointer
+    block = whole procedure (Linear? Mach?)
+         or basic block (LTL? MIR?) <- tentatively went for this below
+            + jumps can only go to the beginning of basic blocks
+         or individual instruction (Santiago ASPLOS'25)? – seems extreme
+  + (basic) blocks identified by labels?
+- pc that's a CompCert-style pointer (label + offset)
 - function pointers as first class values
 - no longer merging all instructions together at this level
 
 v ::= n
-    | l                function pointer to function starting at label l
+    | l                function pointer to procedure starting at label l
 
-registers and memory store values, not just numbers
+registers and memory store such values, not just numbers (r[x]=v, m[n]=v)
 
-pc := (l,o)            label(=block) and offset, at least if not everything is labeled
+pc := (l,o)            label(=(basic) block identifier) and offset
 
-p ∈ prog = list (list inst)
-- with lookup written p[l][o] where l is a label and o is an offset
-- so p[pc] = let '(l,o)=pc in p[l][o]
-- pc+1 = let '(l,o)=pc in (l,o+1)
+p ∈ prog = list (list inst * bool)
+                  ^—— basic block
+- with lookup written `p[l][o]` where `l` is a label and o is an offset
+- so `p[pc] = let '(l,o)=pc in (fst p[l])[o]`
+- and `pc+1 = let '(l,o)=pc in (l,o+1)`
+- `snd p[l]` stores a bool telling us if the basic block is a procedure start
 
 e ::= ...
     | e1 + e2          defined only on numbers
@@ -47,8 +50,7 @@ o := OBranch b
 d := DBranch b'
    | DCall (l',o')
 
-Sequential semantics with CT observations:
------------------------------------------
+## Sequential semantics with CT observations
 
 p |- (pc, r, m, sk, ct) -->^os  (pc', r', m', sk', ct')
 
@@ -60,7 +62,7 @@ p[pc] = x:=e   r'=r[x<-eval r e]
 ————————————————————————————————————————————————————
 p |- (pc, r, m, sk, ⊥) -->^[]  (pc+1, r', m, sk, ⊥)
 
-p[pc] = branch be l   b=beval r e
+p[pc] = branch e l   n=eval r e   b=(n≠0)
 pc'=if b then (l,0) else pc+1
                  ^- only branch to beginning of basic block
 ———————————————————————————————————————————————————————————
@@ -69,18 +71,18 @@ p |- (pc, r, m, sk, ⊥) -->^[OBranch b] (pc', r, m, sk, ⊥)
 p[pc] = jump l
 ———————————————————————————————————————————————————
 p |- (pc, r, m, sk, ⊥) -->^[] ((l,0), r, m, sk, ⊥)
-                                   ^- only to beginning of basic block
+                                   ^- only to beginning of bb
                              ^--- no observation needed
 
-p[pc] = x<-load[ae]   n=eval r ae   r'=r[x<-m[a]]
+p[pc] = x<-load[e]   n=eval r e   r'=r[x<-m[a]]
 —————————————————————————————————————————————————
 p |- (pc, r, m, sk, ⊥) -->^[OLoad n] (pc+1, r', m, sk, ⊥)
 
-p[pc] = store[ae]<-ae'   n=eval r ae   v=eval r ae'   m'=m[a<-v]
-————————————————————————————————————————————————————————————————
+p[pc] = store[e]<-e'   n=eval r e   v=eval r e'   m'=m[a<-v]
+————————————————————————————————————————————————————————————
 p |- (pc, r, m, sk, ⊥) -->^[OStore n] (pc+1, r, m', sk, ⊥)
 
-p[pc] = call e   l=eval r ae
+p[pc] = call e   l=eval r e
 ——————————————————————————————————————————————————————————————
 p |- (pc, r, m, sk, ⊥) -->^[OCall l] (a, r, m, (pc+1)::sk, ⊤)
 
@@ -93,6 +95,85 @@ p[pc] = ret
 ——————————————————————————————————————————————————————————————
 p |- (pc, r, m, pc'::sk, ⊥) -->^[ORet pc'] (pc', r, m, sk, ⊥)
 
+## Speculative semantics:
+
+p |- (pc,r,m,sk,ct,ms) -->_ds^os (pc',r',m',sk',ms')  (the interesting parts)
+
+p[pc]=branch e l   n=eval r e   b=(n≠0)
+pc'=if b' then (l,0) else pc+1   ms'=ms\/b≠b'
+——————————————————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,ms) -->_[DBranch b']^[OBranch b] (pc',r,m,sk,⊥,ms')
+
+p[pc]=x<-load[e]   n=eval r e   r'=r[x<-m[a]]
+———————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,ms) -->_[]^[OLoad a] (pc+1,r',m,sk,⊥,ms)
+
+p[pc]=store[e]<-e'   a=eval r e   n=eval r e'   m'=m[a<-n]
+——————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥) -->_[]^[OStore a] (pc+1,r,m',sk,⊥,ms)
+
+p[pc]=call e   n=eval r e   ms'=ms\/a≠a'
+——————————————————————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall n] (pc',r,m,(pc+1)::sk,⊤,ms')
+
+Notes:
+- no (mis-)speculation on returns; assuming protected stack
+- DLoad a' and DStore a' are gone with memory layout concrete
+  + we no longer have that |os|=|ds|, which will impact the proofs
+- tentatively went "uniform" on remaining cases, following
+  Jonathan's proposal and Santiago's POPL'25+ASPLOS'25 formalizations
+  + the nice part is that with this we don't add extra rules
+  + for forcing DCalls it seems fine to leak `OCall a`,
+    since this sequential semantics doesn't get stuck
+    immediately when calling an invalid address,
+    but only in then next step if the instruction can't be fetched
+  + this formulation makes it hard for the attacker to just step?
+    still possible, but only by chance and
+    attacker doesn't know whether it stepped or not, does it?
+  + practically, can we randomly generate directions
+    that don't force calls too frequently?
+    - can we set this up so that we get the observation(s)
+      before we have to issue the direction(s)?
+    - probably no big problem with just a few procedures
+
+## New attempt at defining Ultimate SLH
+
+uslh skip = [skip]
+uslh (x:=e) = [x:=e]
+uslh (jump l) = [jump l]
+uslh (ctarget) = [skip]           these should anyway be inserted by
+                                  transformation of basic blocks
+                                  (not present in original program)
+uslh (ret) = [ret]                - nothing to do here because of CET?
+uslh (x<-load[e]) =
+  let e' := "ms"=1 ? 0 : e in     masking the whole address
+  [x<-load[e']]                   - fine if this is valid data memory, right?
+uslh (store[e] <- e) =
+  let e' := "ms"=1 ? 0 : e in     masking the whole address
+  [store[e'] <- e]                - fine if this is valid data memory, right?
+
+uslh (branch e l) =
+  let e' = "ms"=0 && e in             masking branch condition
+  bind l' <- fresh_block do           need to track used/free blocks
+  return ([branch e' l', "ms" := e'?1:"ms"],   updating flag when not branching
+           (l',["ms" := ~e'?1:"ms"; jump l]))  updating flag when actually branching
+
+  TODO: also need to update flag when actually branching
+  + still, what if multiple branches/jumps go to the same label
+    and we add flag updating at that label?
+    * update flag wrt multiple boolean conditions? — not correct?
+    * create new label/block <—— trying this above
+
+uslh (call e) =
+  let e' := "ms"=1 ? 0 : e in     masking the whole address
+                                  - fine if 0 is valid call site, right?
+  ["callee":=e', call e']
+
+
+uslh (bl,false) = concat (map.. uslh bl)      block not start of procedure
+uslh (bl,true) = [ctarget, uslh (bl, false)]  block is start of procedure
+
+uslh p = map uslh p
 
 # First attempt
 
@@ -127,8 +208,7 @@ p ::= [c₀,...,cₙ]       program is a list of commands for procedure bodies
 link p = [ctarget, resolve c₀ p] ++         program to instruction memory
           ... ++ [ctarget, resolve cₙ p]
 
-Sequential semantics with CT observations:
------------------------------------------
+## Sequential semantics with CT observations:
 
 o := OBranch b
    | OLoad a
@@ -176,8 +256,7 @@ p[pc] = ret
 ————————————————————————————————————————————————————————
 p |- (pc, r, m, a::sk, ⊥) -->^[ORet a] (a, r, m, sk, ⊥)
 
-Speculative semantics:
-----------------------
+## Speculative semantics:
 
 d := DBranch b'
    | DCall a'
@@ -200,25 +279,7 @@ p[pc]=call ae   a=aeval r ae   ms'=ms\/a≠a'
 —————————————————————————————————————————————————————————————————————————
 p |- (pc,r,m,sk,⊥,ms) -->_[DCall a']^[OCall a] (a',r,m,(pc+1)::sk,⊤,ms')
 
-Notes:
-- no (mis-)speculation on returns; assuming protected stack
-- DLoad a' and DStore a' are gone with memory layout concrete
-  + we no longer have that |os|=|ds|, which will impact the proofs
-- tentatively went "uniform" on remaining cases, following
-  Jonathan's proposal and Santiago's POPL'25 formalization
-  + the nice part is that with this we don't add extra rules
-  + for forcing DCalls it seems fine to leak `OCall a`,
-    since this sequential semantics doesn't get stuck
-    immediately when calling an invalid address,
-    but only in then next step if the instruction can't be fetched
-  + this formulation makes it hard for the attacker to just step?
-    still possible, but only by chance and
-    attacker doesn't know whether it stepped or not, does it?
-  + practically, can we randomly generate directions
-    that don't force calls too frequently?
-    - can we set this up so that we get the observation(s)
-      before we have to issue the direction(s)?
-    - probably no big problem with just a few procedures
+## Failed attempt at defining Ultimate SLH
 
 uslh skip = [skip]
 uslh (x:=e) = [x:=e]
