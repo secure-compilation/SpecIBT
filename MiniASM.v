@@ -162,6 +162,9 @@ uslh (call ae) =
         - was this Yonghyun's worry yesterday?
         - it seems pretty bad since `ae` can be computed in arbitrary ways,
           not only using nice (potential) features like `proc_addr` or code labels
+        - the easiest way out may be to define a language with function
+          pointers and in which trying to abuse function pointers
+          (e.g. calling random crap) is UB or an error
 
 uslh_prog p :=
   map (fun c => ["ms" := "callee" = get_pc+delta ? "ms" : 1]) p
