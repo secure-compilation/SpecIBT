@@ -151,7 +151,22 @@ Notes:
       before we have to issue the direction(s)?
     - probably no big problem with just a few procedures
 
+## Monad used below: M a = nat -> a * prog
+
+return x n = (x,[])
+
+bind m f n =
+  let '(r,p) = m n in
+  let '(r',p') = f r (n+|p|) in
+  (r',p++p')
+
+get-counter c = (c,[])
+
+add-block bl = (c,[(bl,false)])
+
 ## New attempt at defining Ultimate SLH
+
+uslh :: inst -> M (list inst)
 
 uslh skip = return [skip]
 uslh (x:=e) = return [x:=e]
@@ -166,9 +181,9 @@ uslh (store[e] <- e) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
   return [store[e'] <- e]         - fine if this is valid data memory, right?
 
-uslh (branch e l) : prog -> list inst * prog =
+uslh (branch e l) =
   let e' = "ms"=0 && e in                           masking branch condition
-  bind l' <- addblock ["ms" := ~e'?1:"ms"; jump l]  updating flag when actually branching
+  bind l' <- add-block ["ms" := ~e'?1:"ms"; jump l] updating flag when actually branching
   return ([branch e' l'; "ms" := e'?1:"ms"])        updating flag when not branching
 
   DONE: also need to update flag when actually branching (solved above)
@@ -182,26 +197,45 @@ uslh (call e) =
                                   - fine if 0 is valid call site, right?
   return ["callee":=e'; call e']
 
+uslh-blk :: nat -> (list inst * bool) -> M (list inst * bool)
 
-uslh l (bl,false) = concatM (mapM uslh bl)  block is not procedure start
-uslh l (bl,true) =                          block is procedure start
-  bind bl'<- uslh l (bl,false)
-  return ([ctarget; "ms" := "callee" = l ? "ms" : 1] ++ bl')
+uslh-blk l (bl,false) = concatM (mapM uslh bl)  block is not procedure start
+uslh-blk l (bl,true) =                          block is procedure start
+  bind bl'<- uslh-blk l (bl,false)
+  return ([ctarget; "ms" := "callee" = l ? "ms" : 1] ++ bl',true)
 
-uslh p = let '(p1,p2) = (mapM uslh p) p in update p1 in p2
+uslh-prog :: prog -> prog
 
-TODO: something quite shady happening above:
-      both mapping over the program AND changing it via state passing
-      - I guess could combine the p1 and p2 at the end
-      - but there should be a better way to express this
+uslh-prog p =
+  let '(p',newp) = (mapM uslh-blk (add-index p)) (length p) in p' ++ newp
 
-## Some intermediate attempt
+### Original monad: M a = nat -> a * nat + some more manual stuff
 
-uslh (branch e l) : nat -> list inst * nat =
+uslh (branch e l) :  =
   let e' = "ms"=0 && e in             masking branch condition
   bind l' <- fresh_block do           need to track used/free blocks
   return ([branch e' l'; "ms" := e'?1:"ms"],   updating flag when not branching
            (l',["ms" := ~e'?1:"ms"; jump l]))  updating flag when actually branching
+
+### Somewhat better monad: M a = prog -> a * prog
+
+DONE: something quite shady was happening above:
+      both mapping over the program AND changing it via state passing
+
+I guess could combine the p1 and p2 at the end:
+uslh-prog p = let '(p1,p2) = (mapM uslh-blk (add-index p)) p in update p1 in p2
+
+but there are better ways to express this, for instance:
+
+### Somewhat better still: M a = nat -> a * nat * prog?
+                                                   ^————— added blocks (output monad)
+                   old-counter ——^            ^————— new-counter
+
+uslh-prog p =
+  let '(p',_,newp) = (mapM uslh-blk (add-index p)) (length p) in p' ++ newp
+
+But we have new-counter = old-counter + |newp|, so maybe we don't need it?
+- switched to even better monad: `M a = nat -> a * prog` above
 
 # First attempt
 
