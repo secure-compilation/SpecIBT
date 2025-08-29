@@ -79,9 +79,9 @@ p |- (pc, r, m, sk) -->^[OBranch b] (pc', r, m, sk)
 p[pc] = jump l
 ————————————————————————————————————————————
 p |- (pc, r, m, sk) -->^[] ((l,0), r, m, sk)
-                                   ^- only to beginning of bb
-                             ^--- no observation needed
-                                  (other maybe for the proofs)
+                               ^- only to beginning of basic block
+                         ^--- no observation needed
+                              (other maybe for the proofs)
 
 p[pc] = x<-load[e]   n=eval r e   r'=r[x<-m[n]]
 ———————————————————————————————————————————————————
@@ -106,7 +106,7 @@ p |- (pc, r, m, pc'::sk) -->^[] (pc', r, m, sk)
 
 ## Speculative semantics:
 
-p |- (pc,r,m,sk,ct,ms) -->_ds^os (pc',r',m',sk',ms')  (the interesting parts)
+p |- (pc,r,m,sk,ct,ms) -->_ds^os (pc',r',m',sk',ct',ms')  (the interesting parts)
                 ^———— expecting only call target
 
 p[pc]=branch e l   n=eval r e   b=(n≠0)
@@ -130,6 +130,7 @@ p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
 p[pc] = ret
 —————————————————————————————————————————————————————————
 p |- (pc, r, m, pc'::sk, ⊥) -->_[]^[] (pc', r, m, sk, ⊥)
+                                 ^————— still uninteresting
 
 Notes:
 - no (mis-)speculation on returns; assuming protected stack
@@ -153,16 +154,14 @@ Notes:
 
 ## Monad used below: M a = nat -> a * prog
 
-return x n = (x,[])
+return x _ = (x,[])
 
-bind m f n =
-  let '(r,p) = m n in
-  let '(r',p') = f r (n+|p|) in
+bind m f c =
+  let '(r,p) = m c in
+  let '(r',p') = f r (c+|p|) in
   (r',p++p')
 
-get-counter c = (c,[])
-
-add-block bl = (c,[(bl,false)])
+add-block bl c = (c,[(bl,false)])
 
 ## New attempt at defining Ultimate SLH
 
@@ -197,12 +196,14 @@ uslh (call e) =
                                   - fine if 0 is valid call site, right?
   return ["callee":=e'; call e']
 
-uslh-blk :: nat -> (list inst * bool) -> M (list inst * bool)
+uslh-blk :: (nat * (list inst * bool)) -> M (list inst * bool)
 
-uslh-blk l (bl,false) = concatM (mapM uslh bl)  block is not procedure start
-uslh-blk l (bl,true) =                          block is procedure start
+uslh-blk (_, (bl,false)) =     block is not procedure start
+  bind bl' <- concatM (mapM uslh bl)
+  return (bl', false)
+uslh-blk (l, (bl,true)) =      block is procedure start
   bind bl'<- uslh-blk l (bl,false)
-  return ([ctarget; "ms" := "callee" = l ? "ms" : 1] ++ bl',true)
+  return ([ctarget; "ms" := "callee" = l ? "ms" : 1] ++ bl', true)
 
 uslh-prog :: prog -> prog
 
