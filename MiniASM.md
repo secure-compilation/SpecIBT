@@ -38,7 +38,8 @@ e ::= ...
     | x                register
     | n                constant
     | e1 + e2          defined only on numbers
-    | &l               function pointer, can only be used with call
+    | e1 = e2          defined on numbers and function pointers
+    | &l               function pointer, can only be used with call and =
 
 i ::= skip
     | x := e           assignment to variable (i.e. register)
@@ -192,8 +193,8 @@ uslh (branch e l) =
     * create new label/block <—— doing this above
 
 uslh (call e) =
-  let e' := "ms"=1 ? 0 : e in     masking the whole address
-                                  - fine if 0 is valid call site, right?
+  let e' := "ms"=1 ? &0 : e in    masking the whole address
+                                  - fine that &0 is valid function pointer, right?
   return ["callee":=e'; call e']
 
 uslh-blk :: (nat * (list inst * bool)) -> M (list inst * bool)
@@ -203,7 +204,7 @@ uslh-blk (_, (bl,false)) =     block is not procedure start
   return (bl', false)
 uslh-blk (l, (bl,true)) =      block is procedure start
   bind bl'<- uslh-blk l (bl,false)
-  return ([ctarget; "ms" := "callee" = l ? "ms" : 1] ++ bl', true)
+  return ([ctarget; "ms" := "callee" = &l ? "ms" : 1] ++ bl', true)
 
 uslh-prog :: prog -> prog
 
