@@ -2,7 +2,6 @@
 
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
-From SECF Require Import ListMaps.
 From Coq Require Import Bool.Bool.
 From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.
@@ -10,6 +9,16 @@ From Coq Require Import Arith.PeanoNat. Import Nat.
 From Coq Require Import Lia.
 From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
+
+From QuickChick Require Import QuickChick Tactics.
+Import QcNotation QcDefaultNotation. Open Scope qc_scope.
+Require Export ExtLib.Structures.Monads.
+Require Import ExtLib.Data.List.
+Require Import ExtLib.Data.Monads.OptionMonad.
+Export MonadNotation.
+From Coq Require Import String.
+
+From SECF Require Import ListMaps.
 
 Inductive binop : Type :=
   | BinPlus
@@ -23,7 +32,7 @@ Inductive binop : Type :=
 Definition not_zero (n : nat) : bool := negb (n =? 0).
 Definition bool_to_nat (b : bool) : nat := if b then 1 else 0.
 
-Definition eval_binop (o:binop) (n1 n2 : nat) : nat :=
+Definition eval_binop_nat (o:binop) (n1 n2 : nat) : nat :=
   match o with
   | BinPlus => n1 + n2
   | BinMinus => n1 - n2
@@ -38,8 +47,8 @@ Inductive exp : Type :=
   | ANum (n : nat)
   | AId (x : string)
   | ABin (o : binop) (e1 e2 : exp)
-  | ACTIf (b : exp) (e1 e2 : exp).
-
+  | ACTIf (b : exp) (e1 e2 : exp)
+  | AAddr (l : nat). (* <- NEW: function pointer for procedure at label [l] *)
 
 (** We encode all the previous arithmetic and boolean operations: *)
 
@@ -58,7 +67,7 @@ Definition BLe := ABin BinLe.
 Definition BGt e1 e2 := BNot (BLe e1 e2).
 Definition BLt e1 e2 := BGt e2 e1.
 
-Hint Unfold eval_binop : core.
+Hint Unfold eval_binop_nat : core.
 Hint Unfold APlus AMinus AMult : core.
 Hint Unfold BTrue BFalse : core.
 Hint Unfold BAnd BImpl BNot BOr BEq BNeq BLe BGt BLt : core.
@@ -103,6 +112,8 @@ Notation "x <> y"  := (BNeq x y) (in custom com at level 70, no associativity).
 Notation "x && y"  := (BAnd x y) (in custom com at level 80, left associativity).
 Notation "'~' b"   := (BNot b) (in custom com at level 75, right associativity).
 
+Notation "'&' l"   := (AAddr l) (in custom com at level 75, right associativity).
+
 Open Scope com_scope.
 
 Notation "be '?' e1 ':' e2"  := (ACTIf be e1 e2)
@@ -111,11 +122,34 @@ Notation "be '?' e1 ':' e2"  := (ACTIf be e1 e2)
 Definition reg := total_map nat.
 Definition mem := total_map (list nat).
 
-Fixpoint eval (st : reg) (e: exp) : nat :=
+Inductive val : Type :=
+  | N (n:nat)
+  | FP (l:nat).
+
+Definition eval_binop (o:binop) (v1 v2 : val) : option val :=
+  match v1, v2 with
+  | N n1, N n2 => Some (N (eval_binop_nat o n1 n2))
+  | FP l1, FP l2 =>
+      match o with
+      | BinEq => Some (N (if l1 =? l2 then 1 else 0))
+      | _ => None
+      end
+  | _, _ => None
+  end.
+
+Fixpoint eval (st : reg) (e: exp) : option val :=
   match e with
-  | ANum n => n
-  | AId x => apply st x
-  | ABin b e1 e2 => eval_binop b (eval st e1) (eval st e2)
-  | <{b ? e1 : e2}> => if not_zero (eval st b) then eval st e1
-                                               else eval st e2
+  | ANum n => ret (N n)
+  | AId x => ret (N (apply st x))
+  | ABin b e1 e2 =>
+      v1 <- eval st e1;;
+      v2 <- eval st e2;;
+      eval_binop b v1 v2
+  | <{b ? e1 : e2}> =>
+      v1 <- eval st b;;
+      match v1 with
+      | N n1 => if not_zero n1 then eval st e1 else eval st e2
+      | _ => None
+      end
+  | <{&l}> => ret (FP l)
   end.

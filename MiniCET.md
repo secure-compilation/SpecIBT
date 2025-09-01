@@ -15,8 +15,8 @@ Main ideas:
 - function pointers as first class values
 - no longer merging all instructions together at this level
 
-v ::= n
-    | l                function pointer to procedure starting at label l
+v ::= N n
+    | FP l               function pointer to procedure starting at label l
 
 registers and memory store such values, not just numbers (r[x]=v, m[n]=v)
 
