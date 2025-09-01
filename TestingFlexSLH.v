@@ -15,15 +15,6 @@ From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
-(* Tail recursive append to prevent stack overflows when testing *)
-Fixpoint rev_append {A:Type} (l1 l2 : list A) : list A :=
-  match l1 with
-  | [] => l2
-  | x :: l1 => rev_append l1 (x :: l2)
-  end.
-Definition rev {A : Type} (l : list A) := rev_append l [].
-Definition app {A:Type} (l1:list A) := rev_append (rev l1).
-Notation "x ++ y" := (app x y) (right associativity, at level 60).
 
 Fixpoint vars_aexp (a:aexp) : list string :=
   match a with
