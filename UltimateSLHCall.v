@@ -1258,7 +1258,7 @@ Proof.
   simpl in H; apply H; left; auto.
 Qed.
 
-Ltac refl hyp := eexists; split; [|intros; inv hyp];
+Ltac refl H := eexists; split; [|intros; inv H];
           simpl; rewrite t_update_permute; [|discriminate];
           rewrite t_update_shadow; do 2 rewrite t_update_same;
           constructor.
@@ -1266,86 +1266,11 @@ Ltac refl hyp := eexists; split; [|intros; inv hyp];
 Ltac expose_src_cmd st H := specialize (ultimate_slh_prog_contents _ _ _ _ st H) as (c_src & A);
   subst; eapply uslh_prog_to_uslh_com' in H.
 
-Ltac clean_goal_1 st_b := rewrite t_update_permute; [|discriminate]; rewrite t_update_shadow;
-              rewrite t_update_permute; [|discriminate]; try (rewrite <- st_b; do 2 rewrite t_update_same);
-              try (rewrite t_update_neq; [|discriminate]).
+Ltac clean_goal st_b := try (rewrite t_update_shadow); rewrite t_update_permute; [|discriminate];
+    rewrite t_update_shadow; try (rewrite t_update_permute; [|discriminate]); try (rewrite <- st_b);
+   try (do 2 rewrite t_update_same); try (do 2 rewrite t_update_eq); try (rewrite t_update_neq; [|discriminate]).
 
-Ltac clean_goal_2 st_b := do 2 (rewrite t_update_shadow; rewrite t_update_permute; [|discriminate]);
-  try (rewrite <- st_b; do 2 rewrite t_update_same).
-
-Ltac clean_goal_3 st_b := rewrite t_update_shadow; rewrite t_update_permute; [|discriminate];
-    rewrite t_update_shadow; try (rewrite <- st_b); do 2 rewrite t_update_same; 
-    try (do 2 rewrite t_update_eq).
-
-(** goal state transforms:
-
-opt/DStep/refl initial: 1' same
-
-rewrite t_update_permute; [|discriminate]. rewrite t_update_shadow.
-rewrite t_update_permute; [|discriminate]. do 2 rewrite t_update_same.
-
-opt/DStep/trans initial: 2
-
- do 2 (rewrite t_update_shadow; rewrite t_update_permute; [|discriminate]).
-
-opt/DForceCall/refl initial: 1
-
-rewrite t_update_permute; [|discriminate]. rewrite t_update_shadow.
-              rewrite t_update_permute; [|discriminate].
-
-opt/DForceCall/trans initial: 3 
-
-rewrite t_update_shadow. rewrite t_update_permute; [|discriminate].
-                rewrite t_update_shadow. do 2 rewrite t_update_same. 
-                do 2 rewrite t_update_eq.
-
-   ----------- 
-
-no opt/DStep/already misspeculating/refl/nonempty p initial: 1' neq
-
-rewrite t_update_permute; [|discriminate]. rewrite t_update_shadow.
-                rewrite t_update_permute; [|discriminate]. rewrite t_update_neq; [|discriminate].
-   (same as opt counterpart except last ones different)
-
-no opt/DStep/already misspeculating/trans/nonempty p initial: 2
-
-do 2 (rewrite t_update_shadow; rewrite t_update_permute; [|discriminate]). (same as opt counterpart)
-
-no opt/DStep/not yet misspeculating/refl initial: 1' st_b same
-
-rewrite t_update_permute; [|discriminate]. rewrite t_update_shadow.
-                rewrite t_update_permute; [|discriminate].
-                rewrite <- st_b. do 2 rewrite t_update_same.
-   (same as first opt one except rewrite of st_b)
-
-no opt/DStep/not yet misspeculating/trans initial: 2' st_b same
-
-do 2 (rewrite t_update_shadow; rewrite t_update_permute; [|discriminate]).
-                  rewrite <- st_b. do 2 rewrite t_update_same.
-
-no opt/DForceCall/already misspeculating/refl initial: 1' st_b same
-
-rewrite t_update_permute; [|discriminate]. rewrite t_update_shadow.
-                rewrite t_update_permute; [|discriminate]. rewrite <- st_b.
-                do 2 rewrite t_update_same.
-
-   no opt/DForceCall/already misspeculating/trans initial: 3 st_b before same
-
-rewrite t_update_shadow. rewrite t_update_permute; [|discriminate].
-                  rewrite t_update_shadow. rewrite <- st_b. do 2 rewrite t_update_same.
-
-no opt/DForceCall/not yet misspeculating/refl initial: 1' st_b same
-
-rewrite t_update_permute; [|discriminate]. rewrite t_update_shadow.
-                rewrite t_update_permute; [|discriminate].
-                rewrite <- st_b. do 2 rewrite t_update_same.
-
-no opt/DForceCall/not yet misspeculating/trans initial: 2 st_b same
-
-do 2 (rewrite t_update_shadow; rewrite t_update_permute; [|discriminate]).
-                  rewrite <- st_b. do 2 rewrite t_update_same.
-
-*)
+Ltac clean_ds_os dir := simpl; rewrite <- app_nil_r; rewrite <- app_nil_r with (l:=dir).
 
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
@@ -1362,7 +1287,7 @@ Proof.
   intros c ds IH. intros until os.
   intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'.
   invert st_st'.
-  { do 2 rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
+  { do 2 rewrite t_update_same. eexists. split; [constructor|].
     split; auto. now destruct c.
   }
   destruct c; invert H.
@@ -1373,14 +1298,11 @@ Proof.
           { (* optimization *)
             inv H; inv H0; rewrite aeval_unused_update in *; auto.
             (* DStep *)
-            - clean_goal_1 st_b. expose_src_cmd st H3. exists c_src. split; [|intros; inv H]. simpl.
-              rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=[DStep]).
-              do 2 econstructor; try rewrite Hf; eauto.  
+            - clean_goal st_b. expose_src_cmd st H3. exists c_src. split; [|intros; inv H]. 
+              clean_ds_os [DStep]. do 2 econstructor; try rewrite Hf; eauto.  
             - expose_src_cmd st H3. inv H. inv H13. inv H1.
-              + clean_goal_2 st_b. 
-                exists c_src. split; [|intros; discriminate]. simpl.
-                rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=[DStep]).
-                eapply multi_ideal_trans_nil_r; [constructor; [rewrite Hf|]; eauto|econstructor].
+              + clean_goal st_b. exists c_src. split; [|intros; discriminate]. 
+                clean_ds_os [DStep]. eapply multi_ideal_trans_nil_r; [constructor; [rewrite Hf|]; eauto|econstructor].
               + inv H; [inv H13|]. 
                 simpl in H0 |- *. rewrite t_update_eq in H0. 
                 rewrite Nat.eqb_refl in H0. rewrite t_update_same in H0.
@@ -1392,16 +1314,13 @@ Proof.
                 eapply ideal_unused_update in H; try (eapply unused_vars); eauto.
                 econstructor; [constructor; [rewrite Hf|]; eauto|eauto].
             (* DForceCall *) 
-            - simpl. clean_goal_1 st_b. expose_src_cmd st H4. exists c_src. split; [|intros; inv H].
-              rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=[DForceCall j]).
-              econstructor; [econstructor; [rewrite Hf| |];
-              eauto|do 2 rewrite t_update_same; econstructor].
+            - clean_goal st_b. expose_src_cmd st H4. exists c_src. split; [|intros; inv H].
+              clean_ds_os [DForceCall j]. econstructor; [econstructor; [rewrite Hf| |]; eauto|econstructor].
             - simpl in H3, H4 |- *. 
               expose_src_cmd st H4. inv H. inv H14. inv H1.
-              + simpl. clean_goal_3 st_b. rewrite <- eqb_neq in H3.
-                specialize (add_neq (aeval st f) j 0 H3). intros. exists c_src.
-                split; [eapply multi_ideal_trans_nil_r; econstructor;
-                [rewrite Hf|rewrite eqb_neq in H3|]; auto|split; intros; discriminate].
+              + simpl. clean_goal st_b. exists c_src.
+                split; [|discriminate]. clean_ds_os [DForceCall j].
+                eapply multi_ideal_trans_nil_r; econstructor; [rewrite Hf| |]; eauto.
               + simpl in H. rewrite t_update_eq in H. rewrite <- eqb_neq in H3.
                 specialize (add_neq (aeval st f) j 0 H3). intros.
                 rewrite eqb_neq in H3. simpl in H1 |- *. inv H; [inv H15|].
@@ -1415,8 +1334,8 @@ Proof.
                 rewrite t_update_neq in H; [|discriminate]. rewrite t_update_eq in H. 
                 rewrite t_update_permute in H; [|discriminate]. eapply ideal_unused_update in H; 
                 try (eapply unused_vars); eauto. rewrite t_update_neq in H; [|discriminate]. 
-                rewrite t_update_permute in H; [|discriminate]. apply ideal_unused_update in H; try (eapply unused_vars); eauto.
-                rewrite t_update_permute in H; [|discriminate]. auto.
+                rewrite t_update_permute in H; [|discriminate]. apply ideal_unused_update in H; 
+                try (eapply unused_vars); eauto. rewrite t_update_permute in H; [|discriminate]. auto.
           }
           (* no optimization *)
           inv H; simpl.
@@ -1430,13 +1349,11 @@ Proof.
               destruct p; simpl in *; try discriminate. rewrite st_b. simpl.
               (* p is nonempty *)
               inv H3. destruct H0.
-              - clean_goal_1 st_b. exists c. split; [|intros; discriminate].
-                rewrite <- app_nil_r with (l:=[DStep]). rewrite <- app_nil_r with (l:=[OCall 0]).
-                eapply multi_ideal_trans; [econstructor; [rewrite Hf|simpl]|]; eauto. constructor.
+              - clean_goal st_b. exists c. split; [|intros; discriminate]. clean_ds_os [DStep].
+                eapply multi_ideal_trans; econstructor; [rewrite Hf|]; auto.
               - inv H. inv H12. inv H0.
-                + clean_goal_2 st_b. exists c. split; [|intros; discriminate]. simpl.
-                  rewrite <- app_nil_r with (l:=[DStep]). rewrite <- app_nil_r with (l:=([OCall 0])).
-                  econstructor; econstructor; [rewrite Hf|]; auto.
+                + clean_goal st_b. exists c. split; [|intros; discriminate]. 
+                  clean_ds_os [DStep]. econstructor; econstructor; [rewrite Hf|]; auto.
                 + inv H; [inv H12|]. apply IH in H1; try measure1; try (eapply unused_vars_cons); eauto. 
                   simpl in H1. rewrite t_update_eq in H1. do 2 (rewrite t_update_neq in H1; [|discriminate]).
                   rewrite t_update_eq in H1. rewrite t_update_permute in H1; [|discriminate]. 
@@ -1451,16 +1368,15 @@ Proof.
               destruct p; [rewrite nth_error_nil in H3; discriminate|].
               (* p is nonempty *)
               inv H3. inv H0.
-              { simpl. clean_goal_1 st_b. rewrite st_b. rewrite aeval_unused_update; auto.
+              { simpl. clean_goal st_b. rewrite st_b. rewrite aeval_unused_update; auto.
                 expose_src_cmd st H1. exists c_src. split; [|split; [discriminate|auto] ].
                 eapply multi_ideal_trans_nil_r; econstructor; [rewrite Hf|simpl]; auto.
               }
               { rewrite t_update_neq; [|discriminate]. rewrite aeval_unused_update; [|apply unused_c_callee].
                 rewrite st_b. simpl. fold_cons.
                 expose_src_cmd st H1. inv H. inv H13. inv H2.
-                - clean_goal_2 st_b. exists c_src. split; [|intros; discriminate].
-                  simpl. rewrite <- app_nil_r with (l:=[DStep]). rewrite <- app_nil_r.
-                  econstructor; econstructor; [rewrite Hf|]; auto.
+                - clean_goal st_b. exists c_src. split; [|intros; discriminate].
+                  clean_ds_os [DStep]. econstructor; econstructor; [rewrite Hf|]; auto.
                 - inv H; [inv H13|]. apply IH in H0; try measure1; try (eapply unused_vars); eauto;
                   [|simpl; do 2 rewrite t_update_eq; rewrite Nat.eqb_refl; rewrite t_update_neq; [|discriminate]; auto].
                   rewrite t_update_eq in H0. rewrite t_update_neq in H0; [|discriminate].
@@ -1481,10 +1397,10 @@ Proof.
               destruct p; simpl in *; [rewrite nth_error_nil in H4; discriminate|].
               (* p is nonempty *)
               inv H4. inv H0.
-              - clean_goal_1 st_b. expose_src_cmd st H1. exists c_src. split; [|split; [discriminate|auto] ].
+              - clean_goal st_b. expose_src_cmd st H1. exists c_src. split; [|split; [discriminate|auto] ].
                 eapply multi_ideal_trans_nil_r; [econstructor; [rewrite Hf|eapply H3|]; eauto|econstructor].
               - expose_src_cmd st H1. inv H. inv H14. inv H2.
-                + clean_goal_3 st_b. exists c_src. split; [|split; discriminate].
+                + clean_goal st_b. exists c_src. split; [|split; discriminate].
                   eapply multi_ideal_trans_nil_r; econstructor; [rewrite Hf|eapply H3|]; eauto.
                 + inv H; [inv H14|]. apply IH in H0; try measure1;
                   try (eapply unused_vars); eauto; [|rewrite t_update_eq; simpl; rewrite j_not_zero; auto].
@@ -1503,13 +1419,12 @@ Proof.
               destruct p; [rewrite nth_error_nil in H4; discriminate|].
               (* p is nonempty *)
               inv H4. inv H0.
-              - clean_goal_1 st_b. expose_src_cmd st H1. exists c_src. split; try split; try discriminate.
+              - clean_goal st_b. expose_src_cmd st H1. exists c_src. split; try split; try discriminate.
                 eapply multi_ideal_trans_nil_r; econstructor; [rewrite Hf|apply H3|]; eauto.
               - expose_src_cmd st H1. inv H. inv H14. inv H2.
-                + clean_goal_2 st_b. rewrite <- eqb_neq in H3. specialize (add_neq (aeval st f) j 0 H3). intros.
-                  rewrite eqb_neq in H3. exists c_src. split; [|intros; discriminate]. simpl.
-                  rewrite <- app_nil_r with (l:=[DForceCall j]). rewrite <- app_nil_r with (l:=[OForceCall]).
-                  econstructor; econstructor; [rewrite Hf| |]; eauto.
+                + clean_goal st_b. rewrite <- eqb_neq in H3. specialize (add_neq (aeval st f) j 0 H3). intros.
+                  rewrite eqb_neq in H3. exists c_src. split; [|intros; discriminate]. 
+                  clean_ds_os [DForceCall j]. econstructor; econstructor; [rewrite Hf| |]; eauto.
                 + inv H; [inv H14|].
                   simpl in H0. rewrite t_update_eq in H0. rewrite t_update_neq in H0; [|discriminate].
                   rewrite <- eqb_neq in H3. rewrite H3 in H0.
