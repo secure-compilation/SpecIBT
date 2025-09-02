@@ -347,7 +347,7 @@ Definition is_dcall (d:direction) : option cptr :=
   | _ => None
   end.
 
-Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs* obs) :=
+Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs * obs) :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
   i <- p[[pc]];;
@@ -356,20 +356,20 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs*
       is_false ct;;
       d <- hd_error ds;;
       b' <- is_dbranch d;;
-      ret (sc, tl ds, [])
-      (* v <- eval r e;; *)
-      (* n <- to_nat v;; *)
-      (* let b := n =? 0 in *)
-      (* ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b]) *)
+      v <- eval r e;;
+      n <- to_nat v;;
+      let b := (n =? 0) in 
+      let ms' := ms || negb (Bool.eqb b b') in 
+      let pc' := if b' then (l, 0) else (pc+1) in 
+      ret ((((pc', r, m, sk), ct, ms'), tl ds), [OBranch b'])
   | <{{call e}}> =>
       is_false ct;;
       d <- hd_error ds;;
       pc' <- is_dcall d;;
-      let ms' := false in
-      ret ((c, true, ms'), ds, [])
-      (* v <- eval r e;; *)
-      (* l <- to_fp v;; *)
-      (* ret (((l,0), r, m, (pc+1)::sk), [OCall l]) *)
+      v <- eval r e;;
+      l <- to_fp v;; 
+      let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in 
+      ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall (fst pc')])
   | <{{ctarget}}> =>
       is_true ct;;
       ret (((pc+1, r, m, sk), false, ms), ds, [])
