@@ -130,6 +130,9 @@ Inductive val : Type :=
   | N (n:nat)
   | FP (l:nat). (* <- NEW: function pointer to procedure at label [l] *)
 
+(** Since type mismatches are now possible, evaluation of expressions can now
+    fail, so the [eval] function is in the option monad. *)
+
 Definition eval_binop (o:binop) (v1 v2 : val) : option val :=
   match v1, v2 with
   | N n1, N n2 => Some (N (eval_binop_nat o n1 n2))
