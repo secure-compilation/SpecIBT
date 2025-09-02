@@ -128,6 +128,10 @@ p |- (pc,r,m,sk,⊥) -->_[]^[OStore n] (pc+1,r,m',sk,⊥,ms)
 p[pc]=call e   l=eval r e   ms'=ms\/(l,0)≠pc'
 ——————————————————————————————————————————————————————————————————————————
 p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
+
+p[pc] = ctarget
+———————————————————————————————————————————————
+p |- (pc,r,m,sk,⊤,ms) -->^[] (pc+1,r,m,sk,⊥,ms)
                 ^--- ctarget can only run after call? (CET)
 
 p[pc] = ret

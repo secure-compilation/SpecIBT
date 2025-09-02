@@ -276,7 +276,7 @@ Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
   let '(pc, r, m, sk) := c in
   i <- p[[pc]];;
   match i with
-  | <{{skip}}> =>
+  | <{{skip}}> | <{{ctarget}}> =>
       ret ((pc+1, r, m, sk), [])
   | <{{x:=e}}> =>
       v <- eval r e;;
@@ -298,5 +298,101 @@ Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
       n <- to_nat v;;
       v' <- eval r e';;
       ret ((pc+1, r, upd n m v', sk), [OStore n])
-  | _ => ret (c, [])
+  | <{{call e}}> =>
+      v <- eval r e;;
+      l <- to_fp v;;
+      ret (((l,0), r, m, (pc+1)::sk), [OCall l])
+  | <{{ret}}> =>
+      pc' <- hd_error sk;;
+      ret ((pc', r, m, tl sk), [])
   end.
+
+(* Morally state+output monad hidden in here: step p >> steps f' p  *)
+Fixpoint steps (f:nat) (p:prog) (c:cfg) : option (cfg * obs) :=
+  match f with
+  | S f' =>
+      co1 <- step p c;;
+      let '(c1,o1) := co1 in
+      co2 <- steps f' p c1;;
+      let '(c2,o2) := co2 in
+      ret (c2, o1++o2)
+  | 0 => ret (c,[])
+  end.
+
+(** SOONER: write down speculative semantics *)
+
+Inductive direction : Type :=
+  | DBranch (b':bool)
+  | DCall (lo:cptr).
+
+Definition dirs := list direction.
+
+Definition spec_cfg : Type := ((cfg * bool) * bool).
+
+Definition is_true (b:bool) : option unit :=
+  if b then Some tt else None.
+
+Definition is_false (b:bool) : option unit :=
+  if b then None else Some tt.
+
+Definition is_dbranch (d:direction) : option bool :=
+  match d with
+  | DBranch b => Some b
+  | _ => None
+  end.
+
+Definition is_dcall (d:direction) : option cptr :=
+  match d with
+  | DCall pc => Some pc
+  | _ => None
+  end.
+
+Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs* obs) :=
+  let '(c, ct, ms) := sc in
+  let '(pc, r, m, sk) := c in
+  i <- p[[pc]];;
+  match i with
+  | <{{branch e to l}}> =>
+      is_false ct;;
+      d <- hd_error ds;;
+      b' <- is_dbranch d;;
+      ret (sc, tl ds, [])
+      (* v <- eval r e;; *)
+      (* n <- to_nat v;; *)
+      (* let b := n =? 0 in *)
+      (* ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b]) *)
+  | <{{call e}}> =>
+      is_false ct;;
+      d <- hd_error ds;;
+      pc' <- is_dcall d;;
+      let ms' := false in
+      ret ((c, true, ms'), ds, [])
+      (* v <- eval r e;; *)
+      (* l <- to_fp v;; *)
+      (* ret (((l,0), r, m, (pc+1)::sk), [OCall l]) *)
+  | <{{ctarget}}> =>
+      is_true ct;;
+      ret (((pc+1, r, m, sk), false, ms), ds, [])
+  | _ =>
+      is_false ct;;
+      co <- step p c;;
+      let '(c',o) := co in
+      ret ((c',false,ms), ds, o)
+  end.
+
+Fixpoint spec_steps (f:nat) (p:prog) (c:spec_cfg) (ds:dirs)
+  : option (spec_cfg * dirs * obs) :=
+  match f with
+  | S f' =>
+      cdo1 <- spec_step p c ds;;
+      let '(c1,ds1,o1) := cdo1 in
+      cdo2 <- spec_steps f' p c1 ds1;;
+      let '(c2,ds2,o2) := cdo2 in
+      ret (c2,ds2,o1++o2)
+  | 0 =>
+      None (* Q: Do we need more precise out-of-fuel error here? *)
+  end.
+
+(* SOONER: define monad used by uslh *)
+
+(* SOONER: Try to use this to define our new uslh *)
