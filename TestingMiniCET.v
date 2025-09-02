@@ -85,6 +85,8 @@ Definition Y : string := "Y".
 Definition Z : string := "Z".
 Definition AP : string := "AP".
 Definition AS : string := "AS".
+Definition msf : string := "msf".
+Definition callee : string := "callee".
 
 Coercion AId : string >-> exp.
 Coercion ANum : nat >-> exp.
@@ -187,7 +189,7 @@ Inductive inst : Type :=
   | IBranch (e : exp) (l : nat)
   | IJump (l : nat)
   | ILoad (x : string) (a : exp)
-  | IStore (a : string) (e : exp)
+  | IStore (a : exp) (e : exp)
   | ICall (fp:exp)
   | ICTarget
   | IRet.
@@ -394,5 +396,73 @@ Fixpoint spec_steps (f:nat) (p:prog) (c:spec_cfg) (ds:dirs)
   end.
 
 (* SOONER: define monad used by uslh *)
+
+Definition M (A: Type) := nat -> A * prog.
+
+Definition uslh_ret {A: Type} (x: A) : M A :=
+  fun c => (x, []).
+
+Definition uslh_bind {A B: Type} (m: M A) (f: A -> M B) : M B :=
+  fun c =>
+    let '(r, p) := m c in
+    let '(r', p') := f r (c + Datatypes.length p) in
+    (r', p ++ p').
+
+#[export] Instance monadUSLH : Monad M :=
+  { ret := @uslh_ret;
+    bind := @uslh_bind
+  }.
+
+Fixpoint mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
+  match l with
+  | [] => ret []
+  | hd :: tl =>
+      hd' <- f hd;;
+      tl' <- mapM f tl;;
+      ret (hd' :: tl')
+  end.
+
+Definition concatM {A: Type} (m: M (list (list A))) : M (list A) :=
+  xss <- m;; ret (List.concat xss).
+
+Definition add_block (bl: list inst) (c: nat) := (c, [(bl, false)]).
+
+Definition add_block_M (bl: list inst) : M nat :=
+  fun c => add_block bl c.
+
+Definition uslh_inst (i: inst) : M (list inst) :=
+  match i with
+  | <{{ctarget}}> => ret [<{{skip}}>]
+  | <{{x<-load[e]}}> =>
+      let e' := <{ (msf=1) ? 0 : e }> in
+      ret [<{{x<-load[e']}}>]
+  | <{{store[e] <- e1}}> =>
+      let e' := <{ (msf=1) ? 0 : e }> in
+      ret [<{{store[e'] <- e1}}>]
+  | <{{branch e to l}}> =>
+      let e' := <{ (msf=0) && e }> in
+      l' <- add_block_M [<{{ msf := ~e' ? 1 : msf }}>; <{{jump l}}>];;
+      ret [<{{ branch e' to l' }}>; <{{ msf := e' ? 1 : msf }}>]
+  | <{{call e}}> =>
+      let e' := <{ (msf=1) ? &0 : e }> in
+      ret [<{{ callee:=e' }}> ; <{{ call e' }}>]
+  | _ => ret [i]
+  end.
+
+Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
+  let '(l, (bl, h)) := nblk in
+  bl' <- concatM (mapM uslh_inst bl);;
+  if h
+  then
+    ret ([<{{ ctarget }}> ; <{{ msf := callee = &l ? msf : 1 }}>] ++ bl', true)
+  else
+    ret (bl', false).
+
+Definition uslh_prog (p: prog) : prog :=
+  let idx_p := (add_index p) in
+  let m := mapM uslh_blk idx_p in
+  let len_p := (Datatypes.length p) in
+  let '(p',newp) := m len_p in
+  (p' ++ newp).
 
 (* SOONER: Try to use this to define our new uslh *)

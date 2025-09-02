@@ -23,3 +23,6 @@ Proof.
   induction l; destruct i; auto.
   intros. simpl. now f_equal.
 Qed.
+
+Definition add_index {a:Type} (xs:list a) : list (nat * a) :=
+  combine (seq 0 (length xs)) xs.
