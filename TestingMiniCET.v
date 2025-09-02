@@ -134,8 +134,9 @@ Definition eval_binop (o:binop) (v1 v2 : val) : option val :=
   match v1, v2 with
   | N n1, N n2 => Some (N (eval_binop_nat o n1 n2))
   | FP l1, FP l2 =>
+      (* Function pointers can only be tested for equality: *)
       match o with
-      | BinEq => Some (N (if l1 =? l2 then 1 else 0))
+      | BinEq => Some (N (bool_to_nat (l1 =? l2)))
       | _ => None
       end
   | _, _ => None
