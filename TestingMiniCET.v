@@ -20,6 +20,8 @@ From Coq Require Import String.
 
 From SECF Require Import ListMaps.
 
+(** The factoring of expressions is taken from the latest SpecCT chapter *)
+
 Inductive binop : Type :=
   | BinPlus
   | BinMinus
@@ -48,7 +50,7 @@ Inductive exp : Type :=
   | AId (x : string)
   | ABin (o : binop) (e1 e2 : exp)
   | ACTIf (b : exp) (e1 e2 : exp)
-  | FPtr (l : nat). (* <- NEW: function pointer for procedure at label [l] *)
+  | FPtr (l : nat). (* <- NEW: function pointer to procedure at label [l] *)
 
 (** We encode all the previous arithmetic and boolean operations: *)
 
@@ -122,9 +124,11 @@ Notation "be '?' e1 ':' e2"  := (ACTIf be e1 e2)
 Definition reg := total_map nat.
 Definition mem := total_map (list nat).
 
+(** Now to the first interesting part, values instead of just numbers: *)
+
 Inductive val : Type :=
   | N (n:nat)
-  | FP (l:nat).
+  | FP (l:nat). (* <- NEW: function pointer to procedure at label [l] *)
 
 Definition eval_binop (o:binop) (v1 v2 : val) : option val :=
   match v1, v2 with
