@@ -37,8 +37,8 @@ Definition eval_binop_nat (o:binop) (n1 n2 : nat) : nat :=
   | BinPlus => n1 + n2
   | BinMinus => n1 - n2
   | BinMult => n1 * n2
-  | BinEq => if n1 =? n2 then 1 else 0
-  | BinLe => if n1 <=? n2 then 1 else 0
+  | BinEq => bool_to_nat (n1 =? n2)
+  | BinLe => bool_to_nat (n1 <=? n2)
   | BinAnd => bool_to_nat (not_zero n1 && not_zero n2)
   | BinImpl => bool_to_nat (negb (not_zero n1) || not_zero n2)
   end.
@@ -48,7 +48,7 @@ Inductive exp : Type :=
   | AId (x : string)
   | ABin (o : binop) (e1 e2 : exp)
   | ACTIf (b : exp) (e1 e2 : exp)
-  | AAddr (l : nat). (* <- NEW: function pointer for procedure at label [l] *)
+  | FPtr (l : nat). (* <- NEW: function pointer for procedure at label [l] *)
 
 (** We encode all the previous arithmetic and boolean operations: *)
 
@@ -73,7 +73,7 @@ Hint Unfold BTrue BFalse : core.
 Hint Unfold BAnd BImpl BNot BOr BEq BNeq BLe BGt BLt : core.
 
 (** The notations we use for expressions are the same as in Imp,
-    except the notation for [be?e1:e2] which is new: *)
+    except the notation for [be?e1:e2] and [&l] which are new: *)
 Definition U : string := "U".
 Definition V : string := "V".
 Definition W : string := "W".
@@ -112,7 +112,7 @@ Notation "x <> y"  := (BNeq x y) (in custom com at level 70, no associativity).
 Notation "x && y"  := (BAnd x y) (in custom com at level 80, left associativity).
 Notation "'~' b"   := (BNot b) (in custom com at level 75, right associativity).
 
-Notation "'&' l"   := (AAddr l) (in custom com at level 75, right associativity).
+Notation "'&' l"   := (FPtr l) (in custom com at level 75, right associativity).
 
 Open Scope com_scope.
 
