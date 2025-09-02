@@ -18,6 +18,7 @@ Require Import ExtLib.Data.Monads.OptionMonad.
 Export MonadNotation.
 From Coq Require Import String.
 
+From SECF Require Import Utils.
 From SECF Require Import ListMaps.
 
 (** The factoring of expressions is taken from the latest SpecCT chapter *)
@@ -114,15 +115,22 @@ Notation "x <> y"  := (BNeq x y) (in custom com at level 70, no associativity).
 Notation "x && y"  := (BAnd x y) (in custom com at level 80, left associativity).
 Notation "'~' b"   := (BNot b) (in custom com at level 75, right associativity).
 
-Notation "'&' l"   := (FPtr l) (in custom com at level 75, right associativity).
-
-Open Scope com_scope.
-
 Notation "be '?' e1 ':' e2"  := (ACTIf be e1 e2)
                  (in custom com at level 20, no associativity).
 
-Definition reg := total_map nat.
-Definition mem := total_map (list nat).
+Notation "'&' l"   := (FPtr l)
+                        (in custom com at level 75,
+                          l constr at level 0, right associativity).
+
+Notation "<{{ e }}>" := e (at level 0, e custom com at level 99) : com_scope.
+Notation "( x )" := x (in custom com, x at level 99) : com_scope.
+Notation "x" := x (in custom com at level 0, x constr at level 0) : com_scope.
+Notation "f x .. y" := (.. (f x) .. y)
+                  (in custom com at level 0, only parsing,
+                  f constr at level 0, x constr at level 9,
+                  y constr at level 9) : com_scope.
+
+Open Scope com_scope.
 
 (** Now to the first interesting part, values instead of just numbers: *)
 
@@ -133,31 +141,162 @@ Inductive val : Type :=
 (** Since type mismatches are now possible, evaluation of expressions can now
     fail, so the [eval] function is in the option monad. *)
 
+Definition to_nat (v:val) : option nat :=
+  match v with
+  | N n => Some n
+  | FP _ => None
+  end.
+
+Definition to_fp (v:val) : option nat :=
+  match v with
+  | FP l => Some l
+  | N _ => None
+  end.
+
 Definition eval_binop (o:binop) (v1 v2 : val) : option val :=
   match v1, v2 with
   | N n1, N n2 => Some (N (eval_binop_nat o n1 n2))
   | FP l1, FP l2 =>
-      (* Function pointers can only be tested for equality: *)
       match o with
       | BinEq => Some (N (bool_to_nat (l1 =? l2)))
-      | _ => None
+      | _ => None (* Function pointers can only be tested for equality *)
       end
-  | _, _ => None
+  | _, _ => None (* Type error *)
   end.
+
+Definition reg := total_map val.
 
 Fixpoint eval (st : reg) (e: exp) : option val :=
   match e with
   | ANum n => ret (N n)
-  | AId x => ret (N (apply st x))
+  | AId x => ret (apply st x)
   | ABin b e1 e2 =>
       v1 <- eval st e1;;
       v2 <- eval st e2;;
       eval_binop b v1 v2
   | <{b ? e1 : e2}> =>
       v1 <- eval st b;;
-      match v1 with
-      | N n1 => if not_zero n1 then eval st e1 else eval st e2
-      | _ => None
-      end
+      n1 <- to_nat v1;; (* Can't branch on function pointers *)
+      if not_zero n1 then eval st e1 else eval st e2
   | <{&l}> => ret (FP l)
+  end.
+
+Inductive inst : Type :=
+  | ISkip
+  | IAsgn (x : string) (e : exp)
+  | IBranch (e : exp) (l : nat)
+  | IJump (l : nat)
+  | ILoad (x : string) (a : exp)
+  | IStore (a : string) (e : exp)
+  | ICall (fp:exp)
+  | ICTarget
+  | IRet.
+
+Notation "'skip'"  :=
+  ISkip (in custom com at level 0) : com_scope.
+Notation "x := y"  :=
+  (IAsgn x y)
+    (in custom com at level 0, x constr at level 0,
+      y custom com at level 85, no associativity) : com_scope.
+Notation "'branch' e 'to' l"  := (* SOONER: get rid of the [to] *)
+  (IBranch e l)
+     (in custom com at level 0, e custom com at level 85,
+      l constr at level 0, no associativity) : com_scope.
+Notation "'jump' l"  :=
+  (IJump l)
+     (in custom com at level 0,
+      l constr at level 0, no associativity) : com_scope.
+Notation "x '<-' 'load[' a ']'"  :=
+  (ILoad x a)
+     (in custom com at level 0, x constr at level 0,
+      a custom com at level 85, no associativity) : com_scope.
+Notation "'store[' a ']'  '<-' e"  :=
+  (IStore a e)
+     (in custom com at level 0, a custom com at level 0,
+      e custom com at level 85,
+         no associativity) : com_scope.
+Notation "'call' e" :=
+  (ICall e)
+    (in custom com at level 89, e custom com at level 99) : com_scope.
+Notation "'ctarget'"  :=
+  ICTarget (in custom com at level 0) : com_scope.
+Notation "'ret'"  :=
+  IRet (in custom com at level 0) : com_scope.
+
+Definition prog := list (list inst * bool).
+
+(** The inner [list inst] is a basic block, and the [bool] is telling us if the
+    basic block is a procedure start. *)
+
+Notation "'i[' x ; .. ; y ']'" := (cons x .. (cons y nil) ..)
+  (in custom com at level 89, x custom com at level 99,
+      y custom com at level 99, no associativity) : com_scope.
+
+Check <{{ skip }}>.
+Check <{{ i[skip ; skip ; skip] }}>.
+Check <{ 1 + 2 }>.
+Check <{ 2 = 1 }>.
+Check <{{ Z := X }}>.
+Check <{{ Z := X + 3 }}>.
+Check <{ true && ~(false && true) }>.
+(* SOONER: need tests for new notations *)
+(* Check <{{ if true then skip else skip end }}>. *)
+(* Check <{{ if true && true then skip; skip else skip; X:=X+1 end }}>. *)
+(* Check <{{ while Z <> 0 do Y := Y * Z; Z := Z - 1 end }}>. *)
+Check <{{ call 0 }}>.
+
+
+Definition cptr : Type := nat * nat. (* label(=(basic) block identifier) and offset *)
+
+Definition mem := list val.
+
+Definition cfg : Type := ((cptr*reg)*mem)*list cptr.
+
+Inductive observation : Type :=
+  | OBranch (b:bool)
+  | OLoad (n:nat)
+  | OStore (n:nat)
+  | OCall (l:nat).
+
+Definition obs := list observation.
+
+Definition fetch (p:prog) (pc:cptr) : option inst :=
+  let '(l,o) := pc in
+  r <- nth_error p l;;
+  nth_error (fst r) o.
+
+Notation "p '[[' pc ']]'" := (fetch p pc).
+
+Definition inc (pc:cptr) : cptr :=
+  let '(l,o) := pc in (l,o+1).
+
+Notation "pc '+1'" := (inc pc).
+
+Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
+  let '(pc, r, m, sk) := c in
+  i <- p[[pc]];;
+  match i with
+  | <{{skip}}> =>
+      ret ((pc+1, r, m, sk), [])
+  | <{{x:=e}}> =>
+      v <- eval r e;;
+      ret ((pc+1, (x !-> v; r), m, sk), [])
+  | <{{branch e to l}}> =>
+      v <- eval r e;;
+      n <- to_nat v;;
+      let b := n =? 0 in
+      ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
+  | <{{jump l}}> =>
+      ret (((l,0), r, m, sk), [])
+  | <{{x<-load[e]}}> =>
+      v <- eval r e;;
+      n <- to_nat v;;
+      v' <- nth_error m n;;
+      ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])      
+  | <{{store[e]<-e'}}> =>
+      v <- eval r e;;
+      n <- to_nat v;;
+      v' <- eval r e';;
+      ret ((pc+1, r, upd n m v', sk), [OStore n])
+  | _ => ret (c, [])
   end.

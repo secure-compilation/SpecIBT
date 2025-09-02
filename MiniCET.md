@@ -20,7 +20,7 @@ v ::= N n
 
 registers and memory store such values, not just numbers (r[x]=v, m[n]=v)
 
-pc := (l,o)            label(=(basic) block identifier) and offset
+pc ∈ cptr := (l,o)            label(=(basic) block identifier) and offset
 
 p ∈ prog = list (list inst * bool)
                   ^—— basic block
@@ -34,19 +34,21 @@ p ∈ prog = list (list inst * bool)
   + &l below only allowed for procedure starts (`snd p[l]` is true)
   + ctarget instruction not already used
 
-e ::= ...
+e, a ::=
     | x                register
     | n                constant
     | e1 + e2          defined only on numbers
     | e1 = e2          defined on numbers and function pointers
+    | ...
+    | e1 ? e2 : e3     constant-time conditional
     | &l               function pointer, can only be used with call and =
 
 i ::= skip
     | x := e           assignment to variable (i.e. register)
     | branch e l       conditional branch (direct)
     | jump l           direct jump (direct)
-    | x <- load[e]     memory load (from flat data memory)
-    | store[e] <- e'   memory store (to flat data memory)
+    | x <- load[a]     memory load (from flat data memory)
+    | store[a] <- e'   memory store (to flat data memory)
     | call e           indirect call
     | ctarget          allowed target of call (CET)
     | ret              return using protected stack (CET)

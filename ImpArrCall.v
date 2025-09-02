@@ -4,6 +4,7 @@
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
 From SECF Require Import Maps.
+From SECF Require Import Utils.
 From Coq Require Import Bool.Bool.
 From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.
@@ -301,13 +302,6 @@ with beval (st : state) (b : bexp) : bool :=
   | <{a1 > a2}>   => negb ((aeval st a1) <=? (aeval st a2))
   | <{~ b1}>      => negb (beval st b1)
   | <{b1 && b2}>  => andb (beval st b1) (beval st b2)
-  end.
-
-Fixpoint upd (i:nat) (ns:list nat) (n:nat) : list nat :=
-  match i, ns with
-  | 0, _ :: ns' => n :: ns'
-  | S i', n' :: ns' => n' :: upd i' ns' n
-  | _, _ => ns
   end.
 (* TERSE: /HIDEFROMHTML *)
 

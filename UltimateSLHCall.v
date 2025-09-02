@@ -3,6 +3,7 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
+From SECF Require Import Utils.
 From SECF Require Import Maps.
 From SECF Require Import ImpArrCall.
 From Coq Require Import Bool.Bool.
@@ -47,7 +48,7 @@ Inductive seq_eval_small_step (p:prog) :
 com -> state -> astate ->
     com -> state -> astate -> obs -> Prop :=
   | SSM_Asgn  : forall st ast e n x,
-aeval st e = n ->
+      aeval st e = n ->
       p |- <((x := e, st, ast))> -->^[] <((skip, x !-> n; st, ast))>
   | SSM_Seq : forall c1 st ast os c1t stt astt c2,
   p|- <((c1, st, ast))>  -->^os <((c1t, stt, astt))>  ->
@@ -61,11 +62,11 @@ aeval st e = n ->
          | false => cf end, st, ast))>
   | SSM_While : forall be c st ast,
   p |- <((while be do c end, st, ast))> -->^[]
-<((if be then c; while be do c end else skip end, st, ast))>
+       <((if be then c; while be do c end else skip end, st, ast))>
   | SSM_ARead : forall x a ie st ast i,
-   aeval st ie = i ->
+      aeval st ie = i ->
       i < length (ast a) ->
-   p |- <((x <- a[[ie]], st, ast))> -->^[OARead a i]
+      p |- <((x <- a[[ie]], st, ast))> -->^[OARead a i]
           <((skip, x !-> nth i (ast a) 0; st, ast))>
   | SSM_Write : forall a ie e st ast i n,
       aeval st e = n ->
@@ -985,13 +986,6 @@ Proof.
   intros. rewrite <- (t_update_same _ st X) at 1.
   eapply spec_unused_overwrite with (X:=X) (n:=(st X)) in H1; [|assumption|assumption].
   now rewrite !t_update_shadow in H1.
-Qed.
-
-Lemma upd_length : forall l i a,
-  length (upd i l a) = length l.
-Proof.
-  induction l; destruct i; auto.
-  intros. simpl. now f_equal.
 Qed.
 
 Lemma spec_eval_preserves_nonempty_arrs (p:prog) : forall c c' st ast b ds st' ast' b' os,
