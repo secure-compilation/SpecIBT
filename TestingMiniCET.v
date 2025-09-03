@@ -13,6 +13,7 @@ Set Default Goal Selector "!".
 From QuickChick Require Import QuickChick Tactics.
 Import QcNotation QcDefaultNotation. Open Scope qc_scope.
 Require Export ExtLib.Structures.Monads.
+Require Import ExtLib.Structures.Traversable.
 Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
 Export MonadNotation.
@@ -417,14 +418,8 @@ Definition uslh_bind {A B: Type} (m: M A) (f: A -> M B) : M B :=
   }.
 
 (* No mapM in ExtLib, seems it got removed: https://github.com/rocq-community/coq-ext-lib/commit/ef2e35f43b2d1db4cb64188e9521948fdd1e0527 *)
-Fixpoint mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
-  match l with
-  | [] => ret []
-  | hd :: tl =>
-      hd' <- f hd;;
-      tl' <- mapM f tl;;
-      ret (hd' :: tl')
-  end.
+Definition mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
+  sequence (List.map f l).
 
 Definition concatM {A: Type} (m: M (list (list A))) : M (list A) :=
   xss <- m;; ret (List.concat xss).
