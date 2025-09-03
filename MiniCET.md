@@ -29,10 +29,11 @@ p ∈ prog = list (list inst * bool)
 - and `pc+1 = let '(l,o)=pc in (l,o+1)`
 - `snd p[l]` stores a bool telling us if the basic block is a procedure start
 - static well-formedness check:
-  + all labels are defined
-  + direct branches/jumps don't go to procedure starts
+  + all labels are defined by the program -- allows us to generate fresh blocks
+  + direct branches/jumps don't go to procedure starts -- they are not calls
+    * direct calls would be a different instruction, without this requirement
   + &l below only allowed for procedure starts (`snd p[l]` is true)
-  + ctarget instruction not already used
+  + ctarget instruction not already used in source
 
 e, a ::=
     | x                register

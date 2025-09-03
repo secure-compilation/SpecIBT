@@ -183,6 +183,9 @@ Fixpoint eval (st : reg) (e: exp) : option val :=
   | <{&l}> => ret (FP l)
   end.
 
+(* PROPERTY: forAll e st, is_some (eval st e) ==> True
+   will show we need custom generators *)
+
 Inductive inst : Type :=
   | ISkip
   | IAsgn (x : string) (e : exp)
@@ -272,7 +275,7 @@ Notation "p '[[' pc ']]'" := (fetch p pc).
 Definition inc (pc:cptr) : cptr :=
   let '(l,o) := pc in (l,o+1).
 
-Notation "pc '+1'" := (inc pc).
+Notation "pc '+' '1'" := (inc pc).
 
 Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
   let '(pc, r, m, sk) := c in
@@ -286,7 +289,7 @@ Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
   | <{{branch e to l}}> =>
       v <- eval r e;;
       n <- to_nat v;;
-      let b := n =? 0 in
+      let b := not_zero n in
       ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
   | <{{jump l}}> =>
       ret (((l,0), r, m, sk), [])
@@ -360,10 +363,10 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       b' <- is_dbranch d;;
       v <- eval r e;;
       n <- to_nat v;;
-      let b := (n =? 0) in 
+      let b := not_zero n in
       let ms' := ms || negb (Bool.eqb b b') in 
-      let pc' := if b' then (l, 0) else (pc+1) in 
-      ret ((((pc', r, m, sk), ct, ms'), tl ds), [OBranch b'])
+      let pc' := if b' then (l, 0) else (pc+1) in
+      ret ((((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
   | <{{call e}}> =>
       is_false ct;;
       d <- hd_error ds;;
@@ -373,7 +376,7 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in 
       ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall (fst pc')])
   | <{{ctarget}}> =>
-      is_true ct;;
+      is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
       ret (((pc+1, r, m, sk), false, ms), ds, [])
   | _ =>
       is_false ct;;
@@ -413,6 +416,7 @@ Definition uslh_bind {A B: Type} (m: M A) (f: A -> M B) : M B :=
     bind := @uslh_bind
   }.
 
+(* No mapM in ExtLib, seems it got removed: https://github.com/rocq-community/coq-ext-lib/commit/ef2e35f43b2d1db4cb64188e9521948fdd1e0527 *)
 Fixpoint mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
   match l with
   | [] => ret []
@@ -430,6 +434,8 @@ Definition add_block (bl: list inst) (c: nat) := (c, [(bl, false)]).
 Definition add_block_M (bl: list inst) : M nat :=
   fun c => add_block bl c.
 
+(* SOONER: Try to use this to define our new uslh *)
+
 Definition uslh_inst (i: inst) : M (list inst) :=
   match i with
   | <{{ctarget}}> => ret [<{{skip}}>]
@@ -440,29 +446,61 @@ Definition uslh_inst (i: inst) : M (list inst) :=
       let e' := <{ (msf=1) ? 0 : e }> in
       ret [<{{store[e'] <- e1}}>]
   | <{{branch e to l}}> =>
-      let e' := <{ (msf=0) && e }> in
-      l' <- add_block_M [<{{ msf := ~e' ? 1 : msf }}>; <{{jump l}}>];;
-      ret [<{{ branch e' to l' }}>; <{{ msf := e' ? 1 : msf }}>]
+      let e' := <{ (msf=0) && e }> in (* if mispeculating always pc+1 *)
+      l' <- add_block_M <{{ i[msf := ~e' ? 1 : msf; jump l] }}>;;
+      ret <{{ i[branch e' to l'; msf := e' ? 1 : msf] }}>
   | <{{call e}}> =>
       let e' := <{ (msf=1) ? &0 : e }> in
-      ret [<{{ callee:=e' }}> ; <{{ call e' }}>]
+      ret <{{ i[callee:=e'; call e'] }}>
   | _ => ret [i]
   end.
 
 Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
-  let '(l, (bl, h)) := nblk in
+  let '(l, (bl, is_proc)) := nblk in
   bl' <- concatM (mapM uslh_inst bl);;
-  if h
-  then
-    ret ([<{{ ctarget }}> ; <{{ msf := callee = &l ? msf : 1 }}>] ++ bl', true)
+  if is_proc then
+    ret (<{{ i[ctarget; msf := callee = &l ? msf : 1] }}> ++ bl', true)
   else
     ret (bl', false).
 
 Definition uslh_prog (p: prog) : prog :=
   let idx_p := (add_index p) in
-  let m := mapM uslh_blk idx_p in
-  let len_p := (Datatypes.length p) in
-  let '(p',newp) := m len_p in
+  let '(p',newp) := mapM uslh_blk idx_p (Datatypes.length p) in
   (p' ++ newp).
 
-(* SOONER: Try to use this to define our new uslh *)
+(* SOONER: Run some unit tests *)
+
+(* Static checks for both source and target programs *)
+
+Definition wf_label (p:prog) (is_proc:bool) (l:nat) : bool :=
+  match nth_error p l with
+  | Some (_,b) => Bool.eqb is_proc b (* also know l <? List.length p *)
+  | None => false
+  end.
+
+Fixpoint wf_exp (p:prog) (e : exp) : bool :=
+  match e with
+  | ANum _ | AId _ => true
+  | ABin _ e1 e2  | <{_ ? e1 : e2}> => wf_exp p e1 && wf_exp p e2
+  | <{&l}> => wf_label p true l
+  end.
+
+Definition wf_inst (p:prog) (i : inst) : bool :=
+  match i with
+  | <{{skip}}> | <{{ctarget}}> | <{{ret}}> => true
+  | <{{_:=e}}> | <{{_<-load[e]}}> | <{{call e}}> => wf_exp p e
+  | <{{store[e]<-e'}}> => wf_exp p e && wf_exp p e'
+  | <{{branch e to l}}> => wf_exp p e && wf_label p false l
+  | <{{jump l}}> => wf_label p false l
+  end.
+
+Definition wf_blk (p:prog) (blb : list inst * bool) : bool :=
+  forallb (wf_inst p) (fst blb).
+
+Definition wf (p:prog) : bool :=
+  forallb (wf_blk p) p.
+
+(* PROPERTY: uslh produces well-formed programs from well-formed programs
+   probably need generator for well-formed programs *)
+
+(* May (not) need separate check for no ctarget, only for source *)
