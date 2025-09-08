@@ -139,6 +139,15 @@ p[pc] = ret
 —————————————————————————————————————————————————————————
 p |- (pc, r, m, pc'::sk, ⊥) -->_[]^[] (pc', r, m, sk, ⊥)
                                  ^————— still uninteresting
+                              (since return stack protected)
+
+Should we add step directives for jump? and/or even ret?
+- this may help doing induction on directives
+- alternatively: could do like Gilles et al always do nad
+  add step directives so that |ds|=length of the execution?
+  + this would give us something simple to do induction on, but then need to
+    account for the fact that the compiler / SLH transformation can change the
+    length of the execution
 
 Notes:
 - no (mis-)speculation on returns; assuming protected stack
