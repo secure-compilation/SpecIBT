@@ -52,7 +52,8 @@ Inductive exp : Type :=
   | AId (x : string)
   | ABin (o : binop) (e1 e2 : exp)
   | ACTIf (b : exp) (e1 e2 : exp)
-  | FPtr (l : nat). (* <- NEW: function pointer to procedure at label [l] *)
+  | FPtr (l : nat) (* <- NEW: function pointer to procedure at label [l] *)
+  | GetPC.         (* <- NEW: get the current program counter *)
 
 (** We encode all the previous arithmetic and boolean operations: *)
 
@@ -137,9 +138,11 @@ Open Scope com_scope.
 
 (** Now to the first interesting part, values instead of just numbers: *)
 
+Definition cptr : Type := nat * nat. (* label(=(basic) block identifier) and offset *)
+
 Inductive val : Type :=
   | N (n:nat)
-  | FP (l:nat). (* <- NEW: function pointer to procedure at label [l] *)
+  | CP (cp:cptr). (* <- NEW: function pointer to procedure at label [l] *)
 
 (** Since type mismatches are now possible, evaluation of expressions can now
     fail, so the [eval] function is in the option monad. *)
@@ -147,45 +150,21 @@ Inductive val : Type :=
 Definition to_nat (v:val) : option nat :=
   match v with
   | N n => Some n
-  | FP _ => None
+  | CP _ => None
   end.
 
-Definition to_fp (v:val) : option nat :=
+Definition to_cp (v:val) : option cptr :=
   match v with
-  | FP l => Some l
+  | CP cp => Some cp
   | N _ => None
   end.
 
-Definition eval_binop (o:binop) (v1 v2 : val) : option val :=
-  match v1, v2 with
-  | N n1, N n2 => Some (N (eval_binop_nat o n1 n2))
-  | FP l1, FP l2 =>
-      match o with
-      | BinEq => Some (N (bool_to_nat (l1 =? l2)))
-      | _ => None (* Function pointers can only be tested for equality *)
-      end
-  | _, _ => None (* Type error *)
+Definition to_fp (v:val) : option nat :=
+  cp <- to_cp v;;
+  match cp with
+  | (l, 0) => ret l
+  | (_, S _) => None
   end.
-
-Definition reg := total_map val.
-
-Fixpoint eval (st : reg) (e: exp) : option val :=
-  match e with
-  | ANum n => ret (N n)
-  | AId x => ret (apply st x)
-  | ABin b e1 e2 =>
-      v1 <- eval st e1;;
-      v2 <- eval st e2;;
-      eval_binop b v1 v2
-  | <{b ? e1 : e2}> =>
-      v1 <- eval st b;;
-      n1 <- to_nat v1;; (* Can't branch on function pointers *)
-      if not_zero n1 then eval st e1 else eval st e2
-  | <{&l}> => ret (FP l)
-  end.
-
-(* PROPERTY: forAll e st, is_some (eval st e) ==> True
-   will show we need custom generators *)
 
 Inductive inst : Type :=
   | ISkip
@@ -197,6 +176,52 @@ Inductive inst : Type :=
   | ICall (fp:exp)
   | ICTarget
   | IRet.
+
+Definition prog := list (list inst * bool).
+
+Definition eval_binop (o:binop) (p:prog) (v1 v2 : val) : option val :=
+  match v1, v2 with
+  | N n1, N n2 => Some (N (eval_binop_nat o n1 n2))
+  | CP (l1,o1), CP (l2,o2) =>
+      match o with
+      | BinEq =>
+          '(b1,_) <- nth_error p l1;; '(b2,_) <- nth_error p l2;;
+          if (o1 <? List.length b1) && (o1 <? List.length b1) then
+            Some (N (bool_to_nat ((l1 =? l2) && (o1 =? o2))))
+          else None (* We prevent comparing oob code pointers! *)
+      | _ => None (* Old(!): Function pointers can only be tested for equality *)
+                  (* but now that we talk about code pointers could also do arithmetic,
+                     and in fact we would need to allow it to do GetPC-1; see below *)
+      end
+  | CP (l1,o1), N n2 =>
+      match o with
+      | BinPlus => ret (CP (l1,o1+n2))
+      | BinMinus => ret (CP (l1,o1-n2))
+      | _ => None
+      end
+  | _, _ => None (* Type error *)
+  end.
+
+Definition reg := total_map val.
+
+Fixpoint eval (st : reg) (pc:cptr) (p:prog) (e:exp) : option val :=
+  match e with
+  | ANum n => ret (N n)
+  | AId x => ret (apply st x)
+  | ABin b e1 e2 =>
+      v1 <- eval st pc p e1;;
+      v2 <- eval st pc p e2;;
+      eval_binop b p v1 v2
+  | <{b ? e1 : e2}> =>
+      v1 <- eval st pc p b;;
+      n1 <- to_nat v1;; (* Can't branch on function pointers *)
+      if not_zero n1 then eval st pc p e1 else eval st pc p e2
+  | <{&l}> => ret (CP (l,0))
+  | GetPC => ret (CP pc)
+  end.
+
+(* PROPERTY: forAll e st, is_some (eval st e) ==> True
+   will show we need custom generators *)
 
 Notation "'skip'"  :=
   ISkip (in custom com at level 0) : com_scope.
@@ -229,8 +254,6 @@ Notation "'ctarget'"  :=
 Notation "'ret'"  :=
   IRet (in custom com at level 0) : com_scope.
 
-Definition prog := list (list inst * bool).
-
 (** The inner [list inst] is a basic block, and the [bool] is telling us if the
     basic block is a procedure start. *)
 
@@ -250,9 +273,6 @@ Check <{ true && ~(false && true) }>.
 (* Check <{{ if true && true then skip; skip else skip; X:=X+1 end }}>. *)
 (* Check <{{ while Z <> 0 do Y := Y * Z; Z := Z - 1 end }}>. *)
 Check <{{ call 0 }}>.
-
-
-Definition cptr : Type := nat * nat. (* label(=(basic) block identifier) and offset *)
 
 Definition mem := list val.
 
@@ -285,27 +305,27 @@ Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
   | <{{skip}}> | <{{ctarget}}> =>
       ret ((pc+1, r, m, sk), [])
   | <{{x:=e}}> =>
-      v <- eval r e;;
+      v <- eval r pc p e;;
       ret ((pc+1, (x !-> v; r), m, sk), [])
   | <{{branch e to l}}> =>
-      v <- eval r e;;
+      v <- eval r pc p e;;
       n <- to_nat v;;
       let b := not_zero n in
       ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
   | <{{jump l}}> =>
       ret (((l,0), r, m, sk), [])
   | <{{x<-load[e]}}> =>
-      v <- eval r e;;
+      v <- eval r pc p e;;
       n <- to_nat v;;
       v' <- nth_error m n;;
       ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])      
   | <{{store[e]<-e'}}> =>
-      v <- eval r e;;
+      v <- eval r pc p e;;
       n <- to_nat v;;
-      v' <- eval r e';;
+      v' <- eval r pc p e';;
       ret ((pc+1, r, upd n m v', sk), [OStore n])
   | <{{call e}}> =>
-      v <- eval r e;;
+      v <- eval r pc p e;;
       l <- to_fp v;;
       ret (((l,0), r, m, (pc+1)::sk), [OCall l])
   | <{{ret}}> =>
@@ -362,7 +382,7 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       is_false ct;;
       d <- hd_error ds;;
       b' <- is_dbranch d;;
-      v <- eval r e;;
+      v <- eval r pc p e;;
       n <- to_nat v;;
       let b := not_zero n in
       let ms' := ms || negb (Bool.eqb b b') in 
@@ -372,7 +392,7 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       is_false ct;;
       d <- hd_error ds;;
       pc' <- is_dcall d;;
-      v <- eval r e;;
+      v <- eval r pc p e;;
       l <- to_fp v;; 
       let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in 
       ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall (fst pc')])
@@ -450,17 +470,16 @@ Definition uslh_inst (i: inst) : M (list inst) :=
   | _ => ret [i]
   end.
 
-Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
-  let '(l, (bl, is_proc)) := nblk in
+Definition uslh_blk (blk: list inst * bool) : M (list inst * bool) :=
+  let '(bl, is_proc) := blk in
   bl' <- concatM (mapM uslh_inst bl);;
   if is_proc then
-    ret (<{{ i[ctarget; msf := callee = &l ? msf : 1] }}> ++ bl', true)
+    ret (<{{ i[ctarget; msf := callee = (GetPC-1) ? msf : 1] }}> ++ bl', true)
   else
     ret (bl', false).
 
 Definition uslh_prog (p: prog) : prog :=
-  let idx_p := (add_index p) in
-  let '(p',newp) := mapM uslh_blk idx_p (Datatypes.length p) in
+  let '(p',newp) := mapM uslh_blk p (Datatypes.length p) in
   (p' ++ newp).
 
 (* SOONER: Run some unit tests *)
@@ -475,7 +494,7 @@ Definition wf_label (p:prog) (is_proc:bool) (l:nat) : bool :=
 
 Fixpoint wf_exp (p:prog) (e : exp) : bool :=
   match e with
-  | ANum _ | AId _ => true
+  | ANum _ | AId _ | GetPC => true
   | ABin _ e1 e2  | <{_ ? e1 : e2}> => wf_exp p e1 && wf_exp p e2
   | <{&l}> => wf_label p true l
   end.

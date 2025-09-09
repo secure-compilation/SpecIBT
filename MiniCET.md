@@ -15,12 +15,12 @@ Main ideas:
 - function pointers as first class values
 - no longer merging all instructions together at this level
 
+pc, cp ∈ cptr := (l,o)    label(=(basic) block identifier) and offset
+
 v ::= N n
-    | FP l               function pointer to procedure starting at label l
+    | CP cp               function pointer to procedure starting at label l
 
 registers and memory store such values, not just numbers (r[x]=v, m[n]=v)
-
-pc ∈ cptr := (l,o)            label(=(basic) block identifier) and offset
 
 p ∈ prog = list (list inst * bool)
                   ^—— basic block
@@ -33,6 +33,9 @@ p ∈ prog = list (list inst * bool)
   + direct branches/jumps don't go to procedure starts -- they are not calls
     * direct calls would be a different instruction, without this requirement
   + &l below only allowed for procedure starts (`snd p[l]` is true)
+    * getpc + pointer arithmetic allow us to also create much more
+      interesting code pointers (including OOB), is that bad?
+    * Maybe not; all we care is that the new labels are fresh?
   + ctarget instruction not already used in source
 
 e, a ::=
@@ -42,7 +45,8 @@ e, a ::=
     | e1 = e2          defined on numbers and function pointers
     | ...
     | e1 ? e2 : e3     constant-time conditional
-    | &l               function pointer, can only be used with call and =
+    | &l               function pointer, can only be used with call and `=`
+    | getpc            current program counter
 
 i ::= skip
     | x := e           assignment to variable (i.e. register)
