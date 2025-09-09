@@ -186,7 +186,7 @@ Definition eval_binop (o:binop) (p:prog) (v1 v2 : val) : option val :=
       match o with
       | BinEq =>
           '(b1,_) <- nth_error p l1;; '(b2,_) <- nth_error p l2;;
-          if (o1 <? List.length b1) && (o1 <? List.length b1) then
+          if (o1 <? List.length b1) && (o2 <? List.length b2) then
             Some (N (bool_to_nat ((l1 =? l2) && (o1 =? o2))))
           else None (* We prevent comparing oob code pointers! *)
       | _ => None (* Old(!): Function pointers can only be tested for equality *)
