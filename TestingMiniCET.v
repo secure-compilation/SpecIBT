@@ -499,3 +499,90 @@ Definition wf (p:prog) : bool :=
    probably need generator for well-formed programs *)
 
 (* May (not) need separate check for no ctarget, only for source *)
+
+(** custom tactics *)
+
+Ltac inv H := inversion H; subst; clear H.
+
+(** Generators and shows *)
+
+#[export] Instance genId : Gen string :=
+  {arbitrary := (n <- freq [(10, ret 0);
+                             (9, ret 1);
+                             (8, ret 2);
+                             (4, ret 3);
+                             (2, ret 4);
+                             (1, ret 5)];;
+                 ret ("X" ++ show n)%string) }.
+
+#[export] Instance shrinkId : Shrink string :=
+  {shrink :=
+    (fun s => match get 1 s with
+              | Some a => match (nat_of_ascii a - nat_of_ascii "0") with
+                          | S n => ["X" ++ show (S n / 2); "X" ++ show (S n - 1)]
+                          | 0 => []
+                          end
+              | None => nil
+              end)%string }.
+
+Eval compute in (shrink "X5")%string.
+Eval compute in (shrink "X0")%string.
+
+Derive (Arbitrary, Shrink) for binop.
+Derive (Arbitrary, Shrink) for exp.
+Derive (Arbitrary, Shrink) for inst.
+
+(* Derive Show for binop. *)
+(* Derive Show for exp. *)
+(* Derive Show for inst. *)
+
+#[export] Instance showBinop : Show binop :=
+  {show :=fun op => 
+      match op with
+      | BinPlus => "+"%string
+      | BinMinus => "-"%string  
+      | BinMult => "*"%string
+      | BinEq => "="%string
+      | BinLe => "<="%string
+      | BinAnd => "&&"%string
+      | BinImpl => "->"%string
+      end
+  }.
+
+#[export] Instance showExp : Show exp :=
+  {show := 
+    (let fix showExpRec (e : exp) : string :=
+       match e with
+       | ANum n => show n
+       | AId x => x
+       | ABin o e1 e2 => 
+           "(" ++ showExpRec e1 ++ " " ++ show o ++ " " ++ showExpRec e2 ++ ")"
+       | ACTIf b e1 e2 =>
+           "(" ++ showExpRec b ++ " ? " ++ showExpRec e1 ++ " : " ++ showExpRec e2 ++ ")"
+       | FPtr l => "&" ++ show l
+       end
+     in showExpRec)%string
+  }.
+
+#[export] Instance showInst : Show inst :=
+  {show := 
+      (fun i =>
+         match i with
+         | ISkip => "skip"
+         | IAsgn x e => x ++ " := " ++ show e
+         | IBranch e l => "branch " ++ show e ++ " to " ++ show l
+         | IJump l => "jump " ++ show l
+         | ILoad x a => x ++ " <- load[" ++ show a ++ "]"
+         | IStore a e => "store[" ++ show a ++ "] <- " ++ show e
+         | ICall fp => "call " ++ show fp
+         | ICTarget => "ctarget"
+         | IRet => "ret"
+         end)%string
+  }.
+
+
+Sample (arbitrarySized 1 : G binop).
+Sample (arbitrarySized 2 : G binop).
+Sample (arbitrarySized 1 : G exp).
+Sample (arbitrarySized 1 : G inst).
+
