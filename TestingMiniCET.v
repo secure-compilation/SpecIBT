@@ -597,18 +597,18 @@ Sample (arbitrarySized 1 : G inst).
 
 Derive Show for val.
 
-#[export] Instance showExp : Show exp :=
-  {show :=
-      (let fix showExpRec (a:exp) : string :=
-         match a with
-         | AId i => String DoubleQuote (i ++ String DoubleQuote "")
-         | ANum n => show n
-         | ABin bop e1 e2 => "(" ++ showExpRec e1 ++ " " ++ show bop ++ " " ++ showExpRec e2 ++ ")"
-         | ACTIf b e1 e2 => showExpRec b ++ " ? " ++ showExpRec e1 ++ " : " ++ showExpRec e2
-         | FPtr fp => "&" ++ show fp
-         end
-       in showExpRec)%string
-   }.
+(* #[export] Instance showExp : Show exp := *)
+(*   {show := *)
+(*       (let fix showExpRec (a:exp) : string := *)
+(*          match a with *)
+(*          | AId i => String DoubleQuote (i ++ String DoubleQuote "") *)
+(*          | ANum n => show n *)
+(*          | ABin bop e1 e2 => "(" ++ showExpRec e1 ++ " " ++ show bop ++ " " ++ showExpRec e2 ++ ")" *)
+(*          | ACTIf b e1 e2 => showExpRec b ++ " ? " ++ showExpRec e1 ++ " : " ++ showExpRec e2 *)
+(*          | FPtr fp => "&" ++ show fp *)
+(*          end *)
+(*        in showExpRec)%string *)
+(*    }. *)
 
 (* As in [TestingStaticIFC.v], we generate a finite total map which we use as state. *)
 #[export] Instance genTotalMap (A:Type) `{Gen A} : Gen (total_map A) :=
