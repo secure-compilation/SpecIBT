@@ -16,7 +16,7 @@ Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Structures.Traversable.
 Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
-Export MonadNotation.
+Export MonadNotation. Open Scope monad_scope.
 From Coq Require Import String.
 
 From SECF Require Import Utils.
@@ -500,6 +500,16 @@ Definition wf (p:prog) : bool :=
 
 (* May (not) need separate check for no ctarget, only for source *)
 
+(* ** Property testing of MiniCET *)
+
+(* Simple utility function to check if a value is Some.
+  TODO: Check if there is an Stdlib or Extlib function with the same
+  functionality. *)
+Definition is_some {A} (v : option A) : bool := match v with
+  | Some _ => true
+  | None => false
+  end.
+  
 (** custom tactics *)
 
 Ltac inv H := inversion H; subst; clear H.
@@ -524,7 +534,6 @@ Ltac inv H := inversion H; subst; clear H.
                           end
               | None => nil
               end)%string }.
-
 Eval compute in (shrink "X5")%string.
 Eval compute in (shrink "X0")%string.
 
@@ -586,3 +595,160 @@ Sample (arbitrarySized 2 : G binop).
 Sample (arbitrarySized 1 : G exp).
 Sample (arbitrarySized 1 : G inst).
 
+Derive Show for val.
+
+#[export] Instance showExp : Show exp :=
+  {show :=
+      (let fix showExpRec (a:exp) : string :=
+         match a with
+         | AId i => String DoubleQuote (i ++ String DoubleQuote "")
+         | ANum n => show n
+         | ABin bop e1 e2 => "(" ++ showExpRec e1 ++ " " ++ show bop ++ " " ++ showExpRec e2 ++ ")"
+         | ACTIf b e1 e2 => showExpRec b ++ " ? " ++ showExpRec e1 ++ " : " ++ showExpRec e2
+         | FPtr fp => "&" ++ show fp
+         end
+       in showExpRec)%string
+   }.
+
+(* As in [TestingStaticIFC.v], we generate a finite total map which we use as state. *)
+#[export] Instance genTotalMap (A:Type) `{Gen A} : Gen (total_map A) :=
+  {arbitrary := (d <- arbitrary;;
+                 v0 <- arbitrary;;
+                 v1 <- arbitrary;;
+                 v2 <- arbitrary;;
+                 v3 <- arbitrary;;
+                 v4 <- arbitrary;;
+                 v5 <- arbitrary;;
+                 ret (d,[("X0",v0); ("X1",v1); ("X2",v2);
+                         ("X3",v3); ("X4",v4); ("X5",v5)])%string)}.
+
+(* [TestingStaticIFC.v]: The ;; notation didn't work with oneOf, probably related to monadic
+   bind also using ;;. So I redefined the notation using ;;;. *)
+Notation " 'oneOf' ( x ;;; l ) " :=
+  (oneOf_ x (cons x l))  (at level 1, no associativity) : qc_scope.
+
+Notation " 'oneOf' ( x ;;; y ;;; l ) " :=
+  (oneOf_ x (cons x (cons y l)))  (at level 1, no associativity) : qc_scope.
+
+Derive (Arbitrary, Shrink) for val.
+Derive (Arbitrary, Shrink) for binop.
+Derive (Arbitrary, Shrink) for exp.
+
+(* The first property I test is the one proposed by Catalin, which shows how sane our
+  generators are: *)
+(* "forAll e st, is_some (eval st e) ==> True" *)
+
+(* Tests with generators derived by QuickChick are almost fully discarded: *)
+QuickChick (forAll arbitrary (fun (state : reg) =>
+            forAll arbitrary (fun (exp : exp) =>
+            implication (is_some (eval state exp)) true))).
+(* "*** Gave up! Passed only 4988 tests" *)
+
+(* Above, we test if our evaluation succeeds, i.e. "eval" function returns "Some" value.
+    From the definition of "eval", it fails in two cases: if the expression contains a binary expression 
+    on a function pointer; or if the expression branches on a function pointer.
+*)
+
+(* Both branching and operating on function pointers may happen in two cases: when
+    a function pointer is directly used, or an identifier which evaluates to a function pointer
+    is used. *)
+
+(* To generate expressions which successfully evaluate I restrict these two cases.
+    Similar to [TestingStaticIFC], I first define generators for "leaves": expressions of size 0.
+    In our case, there are two such generators: one that permits all expressions, and the other which
+    only allows non-pointer expressions. *)
+
+Definition is_not_ptr (state : reg) (var : string) := match apply state var with
+  | N _ => true
+  | FP _ => false
+  end.
+
+(* This generator creates leaves as numbers and identifiers, which evaluate to numbers  *)
+Definition gen_exp_leaf_no_ptr (state : reg) : G exp :=
+  oneOf (liftM ANum arbitrary ;;;
+        (let not_ptrs := filter (is_not_ptr state) (map_dom (snd state)) in
+         if seq.nilp not_ptrs then [] else
+         [liftM AId (elems_ "X0"%string not_ptrs)] ) ).
+
+Sample (P <- arbitrary ;; 
+       exp <- gen_exp_leaf_no_ptr P;; 
+       ret (P, exp)).
+
+(* This generator allows numbers, function pointers and all variables *)
+Definition gen_exp_leaf (state : reg) : G exp :=
+  oneOf (liftM ANum arbitrary ;;; 
+         liftM FPtr arbitrary ;;; 
+         (let vars := map_dom (snd state) in
+          if seq.nilp vars then [] else
+          [liftM AId (elems_ "X0"%string vars)] )).
+
+(* I then define generators for expressions of a given size. Similarly,
+    there are two generators: one that allows all expressions, and one which
+    produces expressions without pointers. *)
+
+Fixpoint gen_exp_no_ptr (sz : nat) (state : reg) : G exp :=
+  match sz with
+  | O => gen_exp_leaf_no_ptr state
+  | S sz' => 
+      freq [ (2, gen_exp_leaf_no_ptr state);
+             (sz, liftM3 ABin arbitrary (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state));
+             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state))
+          ]
+  end.
+
+Print binop.
+
+Fixpoint gen_exp (sz : nat) (state : reg) : G exp :=
+  match sz with 
+  | O => gen_exp_leaf state
+  | S sz' => 
+          freq [ 
+            (2, gen_exp_leaf state);
+             (sz, binop <- arbitrary;; match binop with
+                | BinEq => liftM2 (ABin BinEq) (gen_exp sz' state) (gen_exp sz' state)
+                | _ => liftM2 (ABin binop) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state)
+              end);
+             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp sz' state) (gen_exp sz' state))
+          ]
+  end.
+
+(* Notice, that a "gen_exp" generator calls non-pointer "gen_exp_no_ptr" generator when branching and
+  when performing a binary operation other than "BinEq" (equality is allowed on function pointers). *)
+
+Sample (P <- arbitrary;;
+        a <- gen_exp 4 P;;
+        ret (P, a)).
+
+QuickChick (forAll arbitrary (fun (state : reg) =>
+            forAll (gen_exp 4 state) (fun (exp : exp) =>
+            implication (is_some (eval state exp)) true))).
+(* "+++ Passed 10000 tests (382 discards)" *)
+
+(* Better, but we still get discards. These cases are when the equality is generated between pointer
+  and non-pointer. The following generator accounts for that: *)
+
+Definition eitherOf {A} (a : G A) (b : G A) : G A := freq [(1, a); (1, b)].
+
+Fixpoint gen_exp' (sz : nat) (state : reg) : G exp :=
+  match sz with 
+  | O => gen_exp_leaf state
+  | S sz' => 
+          freq [ 
+             (2, gen_exp_leaf state);
+             (sz, binop <- arbitrary;; match binop with
+                | BinEq => eitherOf
+                    (liftM2 (ABin BinEq) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state))
+                    (liftM2 (ABin BinEq) (liftM FPtr arbitrary) (liftM FPtr arbitrary))
+                | _ => liftM2 (ABin binop) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state)
+              end);
+             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp' sz' state) (gen_exp' sz' state))
+          ]
+  end.
+
+QuickChick (forAll arbitrary (fun (state : reg) =>
+            forAll (gen_exp' 4 state) (fun (exp : exp) =>
+            implication (is_some (eval state exp)) true))).
+(* "+++ Passed 10000 tests (0 discards)" *)
+
+(* Now we generate expressions, where we only branch on numbers and identifiers evaluating to numbers,
+  and a binary operation allowed for function pointers is only equality. *)
