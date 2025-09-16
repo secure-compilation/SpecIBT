@@ -756,131 +756,6 @@ Fixpoint gen_exp (sz : nat) (state : reg) : G exp :=
 
 (* Wf Generator *)
 
-(* pl: program langth *)
-Definition gen_exp_leaf_wf (pl: nat) (state : reg) : G exp :=
-  oneOf (liftM ANum arbitrary ;;;
-         liftM FPtr (choose (0, pl));;;
-         (let vars := map_dom (snd state) in
-          if seq.nilp vars then [] else
-          [liftM AId (elems_ "X0"%string vars)] )).
-
-Fixpoint gen_exp_wf (sz : nat) (pl: nat) (state : reg) : G exp :=
-  match sz with
-  | O => gen_exp_leaf_wf pl state
-  | S sz' =>
-          freq [
-             (2, gen_exp_leaf_wf pl state);
-             (sz, binop <- arbitrary;; match binop with
-                | BinEq => eitherOf
-                    (liftM2 (ABin BinEq) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state))
-                    (liftM2 (ABin BinEq) (liftM FPtr (choose (0, pl))) (liftM FPtr (choose (0, pl))))
-                | _ => liftM2 (ABin binop) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state)
-              end);
-             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp_wf sz' pl state) (gen_exp_wf sz' pl state))
-          ]
-  end.
-
-(* YH: 8 sec in my machine *)
-(* QuickChick (forAll arbitrary (fun (state : reg) => *)
-(*             forAll (gen_exp_wf 4 4 state) (fun (exp : exp) => *)
-(*             implication (is_some (eval state exp)) true))). *)
-
-
-(* Instruction Generator *)
-
-(* forAll e st, is_some (step p cfg) ==> True *)
-
-Definition gen_asgn_wf (pl: nat) (rs: reg) : G inst :=
-  let vars := map_dom (snd rs) in
-  x <- elems_ "X0"%string vars;;
-  a <- gen_exp_wf 1 pl rs;;
-  ret <{ x := a }>.
-
-Definition gen_branch_wf (pl: nat) (rs: reg) : G inst :=
-  e <- gen_exp_no_ptr 1 rs;;
-  l <- choose (0, pl);;
-  ret <{ branch e to l }>.
-
-Definition gen_jump_wf (pl: nat) : G inst :=
-  l <- choose (0, pl);;
-  ret <{ jump l }>.
-
-(* memory length? *)
-Definition gen_load_wf (pl: nat) (rs: reg) : G inst :=
-  let vars := map_dom (snd rs) in
-  e <- gen_exp_no_ptr 1 rs;;
-  x <- elems_ "X0"%string vars;;
-  ret <{ x <- load[e] }>.
-
-(* memory length? *)
-Definition gen_store_wf (pl: nat) (rs: reg) : G inst :=
-  e1 <- gen_exp_no_ptr 1 rs;;
-  e2 <- gen_exp_wf 1 pl rs;;
-  ret <{ store[e1] <- e2 }>.
-
-Definition gen_exp_leaf_ptr (pl: nat) (rs : reg) : G exp :=
-  oneOf (liftM FPtr (choose (0, pl));;;
-         (let ptrs := filter (fun s => negb (is_not_ptr rs s)) (map_dom (snd rs)) in
-          if seq.nilp ptrs then [] else
-          [liftM AId (elems_ "X0"%string ptrs)] )).
-
-Fixpoint gen_exp_ptr (sz : nat) (pl: nat) (rs : reg) : G exp :=
-  match sz with
-  | O => gen_exp_leaf_ptr pl rs
-  | S sz' =>
-          freq [
-             (2, gen_exp_leaf_ptr pl rs);
-             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' rs) (gen_exp_ptr sz' pl rs) (gen_exp_ptr sz' pl rs))
-          ]
-  end.
-
-(* SOONER: fix -> # of procedure is needed. *)
-Definition gen_call_wf (pl: nat) (rs: reg) : G inst :=
-  l <- gen_exp_ptr 2 pl rs;;
-  ret <{ call l }>.
-
-Definition gen_inst (gen_asgn : nat -> reg -> G inst)
-                    (gen_branch : nat -> reg -> G inst)
-                    (gen_jump : nat -> G inst)
-                    (gen_load : nat -> reg -> G inst)
-                    (gen_store : nat -> reg -> G inst)
-                    (gen_call : nat -> reg -> G inst)
-                    (sz:nat) (pl: nat) (c: reg) : G inst :=
-  freq [ (1, ret ISkip);
-         (1, ret IRet);
-         (sz, gen_asgn pl c);
-         (sz, gen_branch pl c);
-         (sz, gen_jump pl);
-         (sz, gen_load pl c);
-         (sz, gen_store pl c);
-         (sz, gen_call pl c)].
-
-Definition gen_inst_wf (sz pl: nat) (rs: reg) : G inst :=
-  gen_inst gen_asgn_wf gen_branch_wf gen_jump_wf
-           gen_load_wf gen_store_wf gen_call_wf sz pl rs.
-
-(* bsz: # of instruction in blk *)
-Definition gen_blk_wf (bsz pl: nat) (rs: reg) : G (list inst) :=
-  vectorOf bsz (gen_inst_wf bsz pl rs).
-
-(* fsz: # of blocks in procedure *)
-(* TODO: block length *)
-Fixpoint _gen_proc_wf (fsz pl: nat) (rs: reg) : G (list (list inst * bool)) :=
-  match fsz with
-  | O => ret []
-  | S fsz' => blk <- gen_blk_wf 8 pl rs;;
-             rest <- _gen_proc_wf fsz' pl rs;;
-             ret ((blk, false) :: rest)
-  end.
-
-Definition gen_proc_wf (fsz pl: nat) (rs: reg) : G (list (list inst * bool)) :=
-  match fsz with
-  | O => ret [] (* unreachable *)
-  | S fsz' => blk <- gen_blk_wf 8 pl rs;;
-             rest <- _gen_proc_wf fsz' pl rs;;
-             ret ((blk, true) :: rest)
-  end.
-
 Fixpoint _gen_partition (fuel n: nat) : G (list nat) :=
   match fuel with
   | 0 => ret [n]
@@ -896,42 +771,377 @@ Fixpoint _gen_partition (fuel n: nat) : G (list nat) :=
 
 Definition gen_partition (n: nat) := _gen_partition n n.
 
-(* Sample (gen_partition 8). *)
+Sample (gen_partition 8).
 
-Definition gen_val_bounded (pl: nat) (sz: nat) : G val :=
-  match sz with
-  | O => oneOf [liftM N arbitrary ; liftM FP (choose (0, pl))]
-  | S sz' =>
-      freq [ (sz, liftM N arbitrary);
-             (1, liftM FP (choose (0, pl)))]
+Definition gen_vars (len: nat) : G (list string) :=
+  vectorOf len arbitrary.
+
+Sample (gen_vars 5).
+
+Definition ex_vars : list string :=
+  ["X0"%string; "X1"%string; "X2"%string; "X3"%string; "X4"%string].
+
+Fixpoint proc_hd (pst: list nat) : list nat :=
+  match pst with
+  | [] => []
+  | hd :: tl => 0 :: map (fun x => x + hd) (proc_hd tl)
   end.
 
-(* register set *)
-Definition gen_total_map_bounded (pl: nat) : G (total_map val) :=
-  (d <- arbitrary;;
-   v0 <- gen_val_bounded pl 4;;
-   v1 <- gen_val_bounded pl 4;;
-   v2 <- gen_val_bounded pl 4;;
-   v3 <- gen_val_bounded pl 4;;
-   v4 <- gen_val_bounded pl 4;;
-   v5 <- gen_val_bounded pl 4;;
-   ret (d,[("X0",v0); ("X1",v1); ("X2",v2);
-           ("X3",v3); ("X4",v4); ("X5",v5)])%string).
+Compute (proc_hd [3; 3; 1; 1]).
+(* = <{{ i[ 0; 3; 6; 7] }}> *)
 
-(* Sample (rs <- gen_total_map_bounded 8;; *)
-(*         i <- gen_inst_wf 8 8 rs;;  *)
-(*         ret (rs, i)). *)
+Definition gen_exp_leaf_wf (vars: list string) (pst: list nat) : G exp :=
+  oneOf [liftM ANum arbitrary ;
+         liftM FPtr (elems_ 0 (proc_hd pst));
+         liftM AId (elems_ "X0"%string vars)].
 
-Fixpoint _gen_prog_wf (pl: nat) (pst: list nat) (rs: reg) : G (list (list inst * bool)) :=
-  match pst with
+Fixpoint gen_exp_wf (vars: list string) (sz : nat) (pst: list nat) : G exp :=
+  match sz with 
+  | O => gen_exp_leaf_wf vars pst
+  | S sz' => 
+          freq [
+             (2, gen_exp_leaf_wf vars pst);
+             (sz, binop <- arbitrary;;
+                  liftM2 (ABin binop) (gen_exp_wf vars sz' pst) (gen_exp_wf vars sz' pst));
+             (sz, liftM3 ACTIf (gen_exp_wf vars sz' pst) (gen_exp_wf vars sz' pst) (gen_exp_wf vars sz' pst))
+          ]
+  end.
+
+Definition gen_asgn_wf (vars: list string) (pst: list nat) : G inst :=
+  x <- elems_ "X0"%string vars;;
+  a <- gen_exp_wf vars 1 pst;;
+  ret <{ x := a }>.
+
+Definition nat_list_minus (l1 l2 : list nat) : list nat :=
+  filter (fun x => negb (existsb (Nat.eqb x) l2)) l1.
+
+(* YH: TODO *)
+Definition gen_branch_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
+  e <- gen_exp_wf vars 1 pst;;
+  l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
+  ret <{ branch e to l }>.
+
+Sample (gen_branch_wf ex_vars 8 [3; 3; 1; 1]).
+
+Definition gen_jump_wf (pl: nat) (pst: list nat) : G inst :=
+  l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
+  ret <{ jump l }>.
+
+Sample (gen_jump_wf 8 [3; 3; 1; 1]).
+
+Definition gen_load_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
+  e <- gen_exp_wf vars 1 pst;;
+  x <- elems_ "X0"%string vars;;
+  ret <{ x <- load[e] }>.
+
+Sample (gen_load_wf ex_vars 8 [3; 3; 1; 1]).
+
+Definition gen_store_wf  (vars: list string) (pl: nat) (pst: list nat) : G inst :=
+  e1 <- gen_exp_wf vars 1 pst;;
+  e2 <- gen_exp_wf vars 1 pst;;
+  ret <{ store[e1] <- e2 }>.
+
+Sample (gen_store_wf ex_vars 8 [3; 3; 1; 1]).
+
+(* Definition gen_exp_leaf_ptr (pl: nat) (rs : reg) : G exp := *)
+(*   oneOf (liftM FPtr (choose (0, pl));;; *)
+(*          (let ptrs := filter (fun s => negb (is_not_ptr rs s)) (map_dom (snd rs)) in *)
+(*           if seq.nilp ptrs then [] else *)
+(*           [liftM AId (elems_ "X0"%string ptrs)] )). *)
+
+(* Fixpoint gen_exp_ptr (sz : nat) (pl: nat) (rs : reg) : G exp := *)
+(*   match sz with *)
+(*   | O => gen_exp_leaf_ptr pl rs *)
+(*   | S sz' => *)
+(*           freq [ *)
+(*              (2, gen_exp_leaf_ptr pl rs); *)
+(*              (sz, liftM3 ACTIf (gen_exp_no_ptr sz' rs) (gen_exp_ptr sz' pl rs) (gen_exp_ptr sz' pl rs)) *)
+(*           ] *)
+(*   end. *)
+
+(* SOONER: fix -> # of procedure is needed. *)
+Definition gen_call_wf (pst: list nat) : G inst :=
+  (* l <- gen_exp_wf vars pl pst;; *)
+  l <- elems_ 0 (proc_hd pst);;
+  ret <{ call (FPtr l) }>.
+
+Sample (gen_call_wf [3; 3; 1; 1]).
+(* = <{{ i[ 0; 3; 6; 7] }}> *)
+
+Sample (vectorOf 1 (gen_call_wf [3; 3; 1; 1])).
+
+Definition gen_inst (gen_asgn : list string -> list nat -> G inst)
+                    (gen_branch : list string -> nat -> list nat -> G inst)
+                    (gen_jump : nat -> list nat -> G inst)
+                    (gen_load : list string -> nat -> list nat -> G inst)
+                    (gen_store : list string -> nat -> list nat -> G inst)
+                    (gen_call : list nat -> G inst)
+                    (vars: list string) (sz:nat) (pl: nat) (c: list nat) : G inst :=
+  freq [ (1, ret ISkip);
+         (1, ret IRet);
+         (sz, gen_asgn vars c);
+         (sz, gen_branch vars pl c);
+         (sz, gen_jump pl c);
+         (sz, gen_load vars pl c);
+         (sz, gen_store vars pl c);
+         (sz, gen_call c)].
+
+Definition gen_inst_wf (vars: list string) (sz pl: nat) (pst: list nat) : G inst :=
+  gen_inst gen_asgn_wf gen_branch_wf gen_jump_wf
+           gen_load_wf gen_store_wf gen_call_wf vars sz pl pst.
+
+Sample (gen_inst_wf ex_vars 8 8 [3; 3; 1; 1]).
+
+(* bsz: # of instruction in blk *)
+Definition gen_blk_wf (vars: list string) (bsz pl: nat) (pst: list nat) : G (list inst) :=
+  vectorOf bsz (gen_inst_wf vars bsz pl pst).
+
+Sample (gen_blk_wf ex_vars 8 8 [3; 3; 1; 1]).
+
+(* fsz: # of blocks in procedure *)
+(* blk length = 8 *)
+Fixpoint _gen_proc_wf (vars: list string) (fsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
+  match fsz with
+  | O => ret []
+  | S fsz' => blk <- gen_blk_wf vars 3 pl pst;;
+             rest <- _gen_proc_wf vars fsz' pl pst;;
+             ret ((blk, false) :: rest)
+  end.
+
+Sample (_gen_proc_wf ex_vars 3 8 [3; 3; 1; 1]).
+
+(* blk length = 8 *)
+Definition gen_proc_wf (vars: list string) (fsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
+  match fsz with
+  | O => ret [] (* unreachable *)
+  | S fsz' => blk <- gen_blk_wf vars 3 pl pst;;
+             rest <- _gen_proc_wf vars fsz' pl pst;;
+             ret ((blk, true) :: rest)
+  end.
+
+Sample (gen_proc_wf ex_vars 3 3 [3; 3; 1; 1]).
+
+Fixpoint _gen_prog_wf (vars: list string) (pl: nat) (pst pst': list nat) : G (list (list inst * bool)) :=
+  match pst' with
   | [] => ret []
-  | hd :: tl => hd_proc <- gen_proc_wf hd pl rs;;
-              tl_proc <- _gen_prog_wf pl tl rs;;
+  | hd :: tl => hd_proc <- gen_proc_wf vars hd pl pst;;
+              tl_proc <- _gen_prog_wf vars pl pst tl;;
               ret (hd_proc ++ tl_proc)
   end.
 
-Definition gen_prog_wf :=
-  pl <- choose(1, 10);;
+Sample (_gen_prog_wf ex_vars 8 [3; 3; 1; 1] [3; 3; 1; 1]).
+
+Definition gen_prog_wf_example :=
+  let pl := 8%nat in
   pst <- gen_partition pl;;
-  rs <- gen_total_map_bounded pl;;
-  _gen_prog_wf pl pst rs.
+  _gen_prog_wf ex_vars pl pst pst.
+
+Sample (gen_prog_wf_example).
+
+Definition gen_prog_wf_example' :=
+  let pl := 8%nat in
+  let pst := [3;3;1;1] in
+  _gen_prog_wf ex_vars pl pst pst.
+
+Definition test_wf_example' : G bool :=
+  prog <- gen_prog_wf_example';;
+  ret (wf prog).
+
+Sample (vectorOf 1 test_wf_example').
+
+
+Definition gen_prog_wf :=
+  pl <- choose(1, 8);;
+  pst <- gen_partition pl;;
+  _gen_prog_wf ex_vars pl pst pst.
+
+Definition find_failing_block : G (option (nat * (list inst * bool) * prog)) :=
+  prog <- gen_prog_wf_example;;
+  let indexed_blocks := combine (seq 0 (Datatypes.length prog)) prog in
+  let failing := filter (fun '(i, blk) => negb (wf_blk prog blk)) indexed_blocks in
+  match failing with
+  | [] => ret None
+  | (i, blk) :: _ => ret (Some (i, blk, prog))
+  end.
+
+Sample find_failing_block.
+
+(* (* pl: program langth *) *)
+(* Definition gen_exp_leaf_wf (pl: nat) (state : reg) : G exp := *)
+(*   oneOf (liftM ANum arbitrary ;;; *)
+(*          liftM FPtr (choose (0, pl));;; *)
+(*          (let vars := map_dom (snd state) in *)
+(*           if seq.nilp vars then [] else *)
+(*           [liftM AId (elems_ "X0"%string vars)] )). *)
+
+(* Fixpoint gen_exp_wf (sz : nat) (pl: nat) (state : reg) : G exp := *)
+(*   match sz with *)
+(*   | O => gen_exp_leaf_wf pl state *)
+(*   | S sz' => *)
+(*           freq [ *)
+(*              (2, gen_exp_leaf_wf pl state); *)
+(*              (sz, binop <- arbitrary;; match binop with *)
+(*                 | BinEq => eitherOf *)
+(*                     (liftM2 (ABin BinEq) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state)) *)
+(*                     (liftM2 (ABin BinEq) (liftM FPtr (choose (0, pl))) (liftM FPtr (choose (0, pl)))) *)
+(*                 | _ => liftM2 (ABin binop) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state) *)
+(*               end); *)
+(*              (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp_wf sz' pl state) (gen_exp_wf sz' pl state)) *)
+(*           ] *)
+(*   end. *)
+
+(* (* YH: 8 sec in my machine *) *)
+(* (* QuickChick (forAll arbitrary (fun (state : reg) => *) *)
+(* (*             forAll (gen_exp_wf 4 4 state) (fun (exp : exp) => *) *)
+(* (*             implication (is_some (eval state exp)) true))). *) *)
+
+
+(* (* Instruction Generator *) *)
+
+(* (* forAll e st, is_some (step p cfg) ==> True *) *)
+
+(* Definition gen_asgn_wf (pl: nat) (rs: reg) : G inst := *)
+(*   let vars := map_dom (snd rs) in *)
+(*   x <- elems_ "X0"%string vars;; *)
+(*   a <- gen_exp_wf 1 pl rs;; *)
+(*   ret <{ x := a }>. *)
+
+(* Definition gen_branch_wf (pl: nat) (rs: reg) : G inst := *)
+(*   e <- gen_exp_no_ptr 1 rs;; *)
+(*   l <- choose (0, pl);; *)
+(*   ret <{ branch e to l }>. *)
+
+(* Definition gen_jump_wf (pl: nat) : G inst := *)
+(*   l <- choose (0, pl);; *)
+(*   ret <{ jump l }>. *)
+
+(* (* memory length? *) *)
+(* Definition gen_load_wf (pl: nat) (rs: reg) : G inst := *)
+(*   let vars := map_dom (snd rs) in *)
+(*   e <- gen_exp_no_ptr 1 rs;; *)
+(*   x <- elems_ "X0"%string vars;; *)
+(*   ret <{ x <- load[e] }>. *)
+
+(* (* memory length? *) *)
+(* Definition gen_store_wf (pl: nat) (rs: reg) : G inst := *)
+(*   e1 <- gen_exp_no_ptr 1 rs;; *)
+(*   e2 <- gen_exp_wf 1 pl rs;; *)
+(*   ret <{ store[e1] <- e2 }>. *)
+
+(* Definition gen_exp_leaf_ptr (pl: nat) (rs : reg) : G exp := *)
+(*   oneOf (liftM FPtr (choose (0, pl));;; *)
+(*          (let ptrs := filter (fun s => negb (is_not_ptr rs s)) (map_dom (snd rs)) in *)
+(*           if seq.nilp ptrs then [] else *)
+(*           [liftM AId (elems_ "X0"%string ptrs)] )). *)
+
+(* Fixpoint gen_exp_ptr (sz : nat) (pl: nat) (rs : reg) : G exp := *)
+(*   match sz with *)
+(*   | O => gen_exp_leaf_ptr pl rs *)
+(*   | S sz' => *)
+(*           freq [ *)
+(*              (2, gen_exp_leaf_ptr pl rs); *)
+(*              (sz, liftM3 ACTIf (gen_exp_no_ptr sz' rs) (gen_exp_ptr sz' pl rs) (gen_exp_ptr sz' pl rs)) *)
+(*           ] *)
+(*   end. *)
+
+(* (* SOONER: fix -> # of procedure is needed. *) *)
+(* Definition gen_call_wf (pl: nat) (rs: reg) : G inst := *)
+(*   l <- gen_exp_ptr 2 pl rs;; *)
+(*   ret <{ call l }>. *)
+
+(* Definition gen_inst (gen_asgn : nat -> reg -> G inst) *)
+(*                     (gen_branch : nat -> reg -> G inst) *)
+(*                     (gen_jump : nat -> G inst) *)
+(*                     (gen_load : nat -> reg -> G inst) *)
+(*                     (gen_store : nat -> reg -> G inst) *)
+(*                     (gen_call : nat -> reg -> G inst) *)
+(*                     (sz:nat) (pl: nat) (c: reg) : G inst := *)
+(*   freq [ (1, ret ISkip); *)
+(*          (1, ret IRet); *)
+(*          (sz, gen_asgn pl c); *)
+(*          (sz, gen_branch pl c); *)
+(*          (sz, gen_jump pl); *)
+(*          (sz, gen_load pl c); *)
+(*          (sz, gen_store pl c); *)
+(*          (sz, gen_call pl c)]. *)
+
+(* Definition gen_inst_wf (sz pl: nat) (rs: reg) : G inst := *)
+(*   gen_inst gen_asgn_wf gen_branch_wf gen_jump_wf *)
+(*            gen_load_wf gen_store_wf gen_call_wf sz pl rs. *)
+
+(* (* bsz: # of instruction in blk *) *)
+(* Definition gen_blk_wf (bsz pl: nat) (rs: reg) : G (list inst) := *)
+(*   vectorOf bsz (gen_inst_wf bsz pl rs). *)
+
+(* (* fsz: # of blocks in procedure *) *)
+(* (* TODO: block length *) *)
+(* Fixpoint _gen_proc_wf (fsz pl: nat) (rs: reg) : G (list (list inst * bool)) := *)
+(*   match fsz with *)
+(*   | O => ret [] *)
+(*   | S fsz' => blk <- gen_blk_wf 8 pl rs;; *)
+(*              rest <- _gen_proc_wf fsz' pl rs;; *)
+(*              ret ((blk, false) :: rest) *)
+(*   end. *)
+
+(* Definition gen_proc_wf (fsz pl: nat) (rs: reg) : G (list (list inst * bool)) := *)
+(*   match fsz with *)
+(*   | O => ret [] (* unreachable *) *)
+(*   | S fsz' => blk <- gen_blk_wf 8 pl rs;; *)
+(*              rest <- _gen_proc_wf fsz' pl rs;; *)
+(*              ret ((blk, true) :: rest) *)
+(*   end. *)
+
+(* Fixpoint _gen_partition (fuel n: nat) : G (list nat) := *)
+(*   match fuel with *)
+(*   | 0 => ret [n] *)
+(*   | S fuel' => *)
+(*       match n with *)
+(*       | O => ret [] *)
+(*       | S O => ret [1] *)
+(*       | S (S n') => (k <- choose(1, n - 1);; *)
+(*                      rest <- _gen_partition fuel' (n - k);; *)
+(*                      ret (k :: rest)) *)
+(*       end *)
+(*   end. *)
+
+(* Definition gen_partition (n: nat) := _gen_partition n n. *)
+
+(* (* Sample (gen_partition 8). *) *)
+
+(* Definition gen_val_bounded (pl: nat) (sz: nat) : G val := *)
+(*   match sz with *)
+(*   | O => oneOf [liftM N arbitrary ; liftM FP (choose (0, pl))] *)
+(*   | S sz' => *)
+(*       freq [ (sz, liftM N arbitrary); *)
+(*              (1, liftM FP (choose (0, pl)))] *)
+(*   end. *)
+
+(* (* register set *) *)
+(* Definition gen_total_map_bounded (pl: nat) : G (total_map val) := *)
+(*   (d <- arbitrary;; *)
+(*    v0 <- gen_val_bounded pl 4;; *)
+(*    v1 <- gen_val_bounded pl 4;; *)
+(*    v2 <- gen_val_bounded pl 4;; *)
+(*    v3 <- gen_val_bounded pl 4;; *)
+(*    v4 <- gen_val_bounded pl 4;; *)
+(*    v5 <- gen_val_bounded pl 4;; *)
+(*    ret (d,[("X0",v0); ("X1",v1); ("X2",v2); *)
+(*            ("X3",v3); ("X4",v4); ("X5",v5)])%string). *)
+
+(* (* Sample (rs <- gen_total_map_bounded 8;; *) *)
+(* (*         i <- gen_inst_wf 8 8 rs;;  *) *)
+(* (*         ret (rs, i)). *) *)
+
+(* Fixpoint _gen_prog_wf (pl: nat) (pst: list nat) (rs: reg) : G (list (list inst * bool)) := *)
+(*   match pst with *)
+(*   | [] => ret [] *)
+(*   | hd :: tl => hd_proc <- gen_proc_wf hd pl rs;; *)
+(*               tl_proc <- _gen_prog_wf pl tl rs;; *)
+(*               ret (hd_proc ++ tl_proc) *)
+(*   end. *)
+
+(* Definition gen_prog_wf := *)
+(*   pl <- choose(1, 10);; *)
+(*   pst <- gen_partition pl;; *)
+(*   rs <- gen_total_map_bounded pl;; *)
+(*   _gen_prog_wf pl pst rs. *)
