@@ -955,16 +955,19 @@ Definition gen_prog_wf :=
   pst <- gen_partition pl;;
   _gen_prog_wf ex_vars pl pst pst.
 
-Definition find_failing_block : G (option (nat * (list inst * bool) * prog)) :=
-  prog <- gen_prog_wf_example;;
-  let indexed_blocks := combine (seq 0 (Datatypes.length prog)) prog in
-  let failing := filter (fun '(i, blk) => negb (wf_blk prog blk)) indexed_blocks in
-  match failing with
-  | [] => ret None
-  | (i, blk) :: _ => ret (Some (i, blk, prog))
-  end.
+QuickChick (forAll (gen_prog_wf) (fun (p : prog) =>
+            implication (wf p) true)).
 
-Sample find_failing_block.
+(* Definition find_failing_block : G (option (nat * (list inst * bool) * prog)) := *)
+(*   prog <- gen_prog_wf_example;; *)
+(*   let indexed_blocks := combine (seq 0 (Datatypes.length prog)) prog in *)
+(*   let failing := filter (fun '(i, blk) => negb (wf_blk prog blk)) indexed_blocks in *)
+(*   match failing with *)
+(*   | [] => ret None *)
+(*   | (i, blk) :: _ => ret (Some (i, blk, prog)) *)
+(*   end. *)
+
+(* Sample find_failing_block. *)
 
 (* (* pl: program langth *) *)
 (* Definition gen_exp_leaf_wf (pl: nat) (state : reg) : G exp := *)
