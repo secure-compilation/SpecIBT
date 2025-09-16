@@ -958,6 +958,12 @@ Definition gen_prog_wf :=
 QuickChick (forAll (gen_prog_wf) (fun (p : prog) =>
             implication (wf p) true)).
 
+(* PROPERTY: uslh produces well-formed programs from well-formed programs
+   probably need generator for well-formed programs *)
+
+QuickChick (forAll (gen_prog_wf) (fun (p : prog) =>
+            implication (wf (uslh_prog p)) true)).
+
 (* Definition find_failing_block : G (option (nat * (list inst * bool) * prog)) := *)
 (*   prog <- gen_prog_wf_example;; *)
 (*   let indexed_blocks := combine (seq 0 (Datatypes.length prog)) prog in *)
