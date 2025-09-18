@@ -12,6 +12,7 @@ From Coq Require Import Arith.EqNat.
 From Coq Require Import Arith.PeanoNat. Import Nat.
 From Coq Require Import Lia.
 From Coq Require Import List. Import ListNotations.
+From SECF Require Import ListMaps.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
@@ -259,7 +260,7 @@ Export MonadNotation. Open Scope monad_scope.
 From Coq Require Import String.
 
 Notation label := TestingSpecCT.label.
-Notation apply := TestingSpecCT.apply.
+Notation apply := ListMaps.apply.
 Notation join := TestingSpecCT.join.
 
 Fixpoint wt_typechecker (P PA:pub_vars) (pc:label) (c:com) : bool :=

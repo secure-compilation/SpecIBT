@@ -250,7 +250,11 @@ Check <{ true && ~(false && true) }>.
 (* Check <{{ if true && true then skip; skip else skip; X:=X+1 end }}>. *)
 (* Check <{{ while Z <> 0 do Y := Y * Z; Z := Z - 1 end }}>. *)
 Check <{{ call 0 }}>.
-
+Check <{{ ctarget }}>.
+Check <{{ ret }}>.
+Check <{{ branch 42 to 42 }}>.
+Check <{{X<-load[8]}}>.
+Check <{{store[X + Y]<- (Y + 42)}}>.
 
 Definition cptr : Type := nat * nat. (* label(=(basic) block identifier) and offset *)
 
@@ -634,6 +638,8 @@ Derive (Arbitrary, Shrink) for val.
 Derive (Arbitrary, Shrink) for binop.
 Derive (Arbitrary, Shrink) for exp.
 
+(** The first unit test *)
+
 (* The first property I test is the one proposed by Catalin, which shows how sane our
   generators are: *)
 (* "forAll e st, is_some (eval st e) ==> True" *)
@@ -754,7 +760,7 @@ Fixpoint gen_exp (sz : nat) (state : reg) : G exp :=
 (* Now we generate expressions, where we only branch on numbers and identifiers evaluating to numbers,
   and a binary operation allowed for function pointers is only equality. *)
 
-(* Wf Generator *)
+(** Wf Program Generator *)
 
 Fixpoint _gen_partition (fuel n: nat) : G (list nat) :=
   match fuel with
@@ -815,7 +821,6 @@ Definition gen_asgn_wf (vars: list string) (pst: list nat) : G inst :=
 Definition nat_list_minus (l1 l2 : list nat) : list nat :=
   filter (fun x => negb (existsb (Nat.eqb x) l2)) l1.
 
-(* YH: TODO *)
 Definition gen_branch_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
   e <- gen_exp_wf vars 1 pst;;
   l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
@@ -949,7 +954,6 @@ Definition test_wf_example' : G bool :=
 
 Sample (vectorOf 1 test_wf_example').
 
-
 Definition gen_prog_wf :=
   pl <- choose(1, 8);;
   pst <- gen_partition pl;;
@@ -975,182 +979,409 @@ QuickChick (forAll (gen_prog_wf) (fun (p : prog) =>
 
 (* Sample find_failing_block. *)
 
-(* (* pl: program langth *) *)
-(* Definition gen_exp_leaf_wf (pl: nat) (state : reg) : G exp := *)
-(*   oneOf (liftM ANum arbitrary ;;; *)
-(*          liftM FPtr (choose (0, pl));;; *)
-(*          (let vars := map_dom (snd state) in *)
-(*           if seq.nilp vars then [] else *)
-(*           [liftM AId (elems_ "X0"%string vars)] )). *)
+(** Relative Security *)
 
-(* Fixpoint gen_exp_wf (sz : nat) (pl: nat) (state : reg) : G exp := *)
-(*   match sz with *)
-(*   | O => gen_exp_leaf_wf pl state *)
-(*   | S sz' => *)
-(*           freq [ *)
-(*              (2, gen_exp_leaf_wf pl state); *)
-(*              (sz, binop <- arbitrary;; match binop with *)
-(*                 | BinEq => eitherOf *)
-(*                     (liftM2 (ABin BinEq) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state)) *)
-(*                     (liftM2 (ABin BinEq) (liftM FPtr (choose (0, pl))) (liftM FPtr (choose (0, pl)))) *)
-(*                 | _ => liftM2 (ABin binop) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state) *)
-(*               end); *)
-(*              (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp_wf sz' pl state) (gen_exp_wf sz' pl state)) *)
-(*           ] *)
-(*   end. *)
+(* YH: Unlike non-interference, the relative security property is formally defined for all input pairs. It does not require input pairs to be public-equivalent.
 
-(* (* YH: 8 sec in my machine *) *)
-(* (* QuickChick (forAll arbitrary (fun (state : reg) => *) *)
-(* (*             forAll (gen_exp_wf 4 4 state) (fun (exp : exp) => *) *)
-(* (*             implication (is_some (eval state exp)) true))). *) *)
+ However, for the test to be meaningful, the premise of the property must hold.
+ This means we must select input pairs for which the original program produces
+ identical observations under sequential execution.
+
+  => the taint analysis of TestingFlexSLH will be useful.
+ *)
+
+Notation label := bool.
+Notation apply := ListMaps.apply.
+(* Notation join := TestingSpecCT.join. *)
+Definition join (l1 l2 : label) : label := l1 && l2.
+
+Definition pub_vars := total_map label.
+Definition pub_arrs := list bool. (* true: public, false: secret *)
+
+(* Copied from TestingFlexSLH.v *)
+
+(* For testing relative security we do taint tracking of sequential executions
+   (as a variant of Lucie's interpreter). We use this to track which initial
+   values of variables and arrays affect CT observations. *)
+
+Definition taint : Type := list (var_id + arr_id).
+
+#[export] Instance showTaint : Show (var_id + arr_id) :=
+  {show := fun x =>
+     match x with
+     | inl x => show x
+     | inr a => show a
+     end}.
+
+Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
+  match t with
+  | [] => []
+  | x :: xs => if existsb (eqb x) xs
+               then      remove_dupes eqb xs
+               else x :: remove_dupes eqb xs
+  end.
+
+Definition sum_eqb (s1 s2 : (var_id + arr_id)) : bool :=
+  match s1, s2 with
+  | inl x1, inl x2
+  | inr x1, inr x2 => String.eqb x1 x2
+  | _, _ => false
+  end.
+
+Definition join_taints t1 t2 := remove_dupes sum_eqb (t1 ++ t2).
+
+Module TaintTracking.
+
+Definition tstate := total_map taint.
+Definition tastate := total_map taint.
+
+Definition input_st : Type := state * astate * tstate * tastate * taint.
+Inductive output_st (A : Type) : Type :=
+  | ROutOfFuel : obs -> input_st -> output_st A
+  | ROutOfBounds : obs -> input_st -> output_st A
+  | ROk : A -> obs -> input_st -> output_st A.
+
+(* An 'evaluator A'. This is the monad.
+   It transforms an input state into an output state, returning an A. *)
+Record evaluator (A : Type) : Type := mkEvaluator
+  { evaluate : input_st -> output_st A }.
+(* An interpreter is a special kind of evaluator *)
+Definition interpreter: Type := evaluator unit.
+
+(* Generic monad operators *)
+#[export] Instance monadEvaluator: Monad evaluator :=
+  { ret := fun A value => mkEvaluator A (fun (ist : input_st) => ROk A value [] ist);
+    bind := fun A B e f =>
+      mkEvaluator B (fun (ist : input_st) =>
+        match evaluate A e ist with
+        | ROk _ value os1 ist'  =>
+            match evaluate B (f value) ist' with
+            | ROk _ value os2 ist'' => ROk B value (os1 ++ os2) ist''
+            | ROutOfFuel _ os2 ist'' => ROutOfFuel B (os1 ++ os2) ist''
+            | ROutOfBounds _ os2 ist'' => ROutOfBounds B (os1 ++ os2) ist''
+            end
+        | ROutOfFuel _ os ist' => ROutOfFuel B os ist'
+        | ROutOfBounds _ os ist' => ROutOfBounds B os ist'
+        end
+      )
+   }.
+
+(* specialized operators *)
+Definition finish : interpreter := ret tt.
+
+Definition get_var (name : string): evaluator nat :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, _, _, _, _) := ist in
+    evaluate _ (ret (apply st name)) ist
+  ).
+Definition get_arr (name : string): evaluator (list nat) :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(_, ast, _, _, _) := ist in
+    evaluate _ (ret (apply ast name)) ist
+  ).
+Definition set_var (name : string) (value : nat) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, ast, tst, tast, tobs) := ist in
+    let new_st := (name !-> value ; st) in
+    evaluate _ finish (new_st, ast, tst, tast, tobs)
+  ).
+Definition set_arr (name : string) (value : list nat) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, ast, tst, tast, tobs) := ist in
+    let new_ast := (name !-> value ; ast) in
+    evaluate _ finish (st, new_ast, tst, tast, tobs)
+  ).
+Definition eval_aexp (a : aexp) : evaluator nat :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, _, _, _, _) := ist in
+    let v := aeval st a in
+    evaluate _ (ret v) ist
+  ).
+Definition eval_bexp (b : bexp) : evaluator bool :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, _, _, _, _) := ist in
+    let v := beval st b in
+    evaluate _ (ret v) ist
+  ).
+Definition raise_out_of_bounds {a:Type} : evaluator a :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    ROutOfBounds _ [] ist
+  ).
+Definition raise_out_of_fuel {a:Type} : evaluator a :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    ROutOfFuel _ [] ist
+  ).
+Definition observe (o : observation) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    ROk _ tt [o] ist
+  ).
+
+Definition get_taint_of_vars (xs:list string) : evaluator taint :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(_, _, tst, _, _) := ist in
+    evaluate _ (ret (remove_dupes sum_eqb (List.concat (map (apply tst) xs)))) ist).
+
+Definition get_taint_of_arr (a:string) : evaluator taint :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(_, _, _, tast, _) := ist in
+    evaluate _ (ret (apply tast a)) ist).
+
+Definition set_var_taint (x : string) (t : taint) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, ast, tst, tast, tobs) := ist in
+    let new_tst := (x !-> remove_dupes sum_eqb t ; tst) in
+    evaluate _ finish (st, ast, new_tst, tast, tobs)).
+
+Definition add_arr_taint (a : string) (t : taint) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, ast, tst, tast, tobs) := ist in
+    let new_tast := (a !-> (join_taints t (apply tast a)); tast) in
+    evaluate _ finish (st, ast, tst, new_tast, tobs)).
+
+Definition add_obs_taint (t : taint) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    (* trace ("add_obs_taint:"++show t++nl) ( *)
+    let '(st, ast, tst, tast, tobs) := ist in
+    let new_tobs := join_taints t tobs in
+    evaluate _ finish (st, ast, tst, tast, new_tobs)).
+
+Fixpoint taint_track (f : nat) (c : com) : interpreter :=
+  match f with
+  | O => raise_out_of_fuel
+  | S f =>
+
+  match c with
+  | <{ skip }> =>
+      finish
+  | <{ x := e }> =>
+      v <- eval_aexp e;;
+      set_var x v;;
+      t <- get_taint_of_vars (vars_aexp e);;
+      set_var_taint x t
+  | <{ c1 ; c2 }> =>
+      taint_track f c1;;
+      taint_track f c2
+  | <{ if b then ct else cf end }> =>
+      condition <- eval_bexp b;;
+      let next_c := if Bool.eqb condition true then ct else cf in
+      observe (OBranch condition);;
+      tb <- get_taint_of_vars (vars_bexp b);;
+      add_obs_taint tb;;
+      taint_track f next_c
+  | <{ while be do c end }> =>
+    taint_track f <{
+      if be then
+        c;
+        while be do c end
+      else
+        skip
+      end
+    }>
+  | <{ x <- a[[ie]] }> =>
+      i <- eval_aexp ie;;
+      l <- get_arr a;;
+      if (i <? List.length l) then
+        observe (OARead a i);;
+        set_var x (nth i l 0);;
+        ti <- get_taint_of_vars (vars_aexp ie);;
+        add_obs_taint ti;;
+        ta <- get_taint_of_arr a;;
+        set_var_taint x (join_taints ti ta)
+      else
+        raise_out_of_bounds
+  | <{ a[ie] <- e }> =>
+      n <- eval_aexp e;;
+      i <- eval_aexp ie;;
+      l <- get_arr a;;
+      if (i <? List.length l) then
+        observe (OAWrite a i);;
+        set_arr a (upd i l n);;
+        ti <- get_taint_of_vars (vars_aexp ie);;
+        add_obs_taint ti;;
+        te <- get_taint_of_vars (vars_aexp e);;
+        add_arr_taint a (join_taints ti te)
+      else
+        raise_out_of_bounds
+  end
+  end.
+
+End TaintTracking.
+
+(* pl: program langth *)
+Definition gen_exp_leaf_wf (pl: nat) (state : reg) : G exp :=
+  oneOf (liftM ANum arbitrary ;;;
+         liftM FPtr (choose (0, pl));;;
+         (let vars := map_dom (snd state) in
+          if seq.nilp vars then [] else
+          [liftM AId (elems_ "X0"%string vars)] )).
+
+Fixpoint gen_exp_wf (sz : nat) (pl: nat) (state : reg) : G exp :=
+  match sz with
+  | O => gen_exp_leaf_wf pl state
+  | S sz' =>
+          freq [
+             (2, gen_exp_leaf_wf pl state);
+             (sz, binop <- arbitrary;; match binop with
+                | BinEq => eitherOf
+                    (liftM2 (ABin BinEq) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state))
+                    (liftM2 (ABin BinEq) (liftM FPtr (choose (0, pl))) (liftM FPtr (choose (0, pl))))
+                | _ => liftM2 (ABin binop) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state)
+              end);
+             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp_wf sz' pl state) (gen_exp_wf sz' pl state))
+          ]
+  end.
+
+(* YH: 8 sec in my machine *)
+(* QuickChick (forAll arbitrary (fun (state : reg) => *)
+(*             forAll (gen_exp_wf 4 4 state) (fun (exp : exp) => *)
+(*             implication (is_some (eval state exp)) true))). *)
 
 
-(* (* Instruction Generator *) *)
+(* Instruction Generator *)
 
-(* (* forAll e st, is_some (step p cfg) ==> True *) *)
+(* forAll e st, is_some (step p cfg) ==> True *)
 
-(* Definition gen_asgn_wf (pl: nat) (rs: reg) : G inst := *)
-(*   let vars := map_dom (snd rs) in *)
-(*   x <- elems_ "X0"%string vars;; *)
-(*   a <- gen_exp_wf 1 pl rs;; *)
-(*   ret <{ x := a }>. *)
+Definition gen_asgn_wf (pl: nat) (rs: reg) : G inst :=
+  let vars := map_dom (snd rs) in
+  x <- elems_ "X0"%string vars;;
+  a <- gen_exp_wf 1 pl rs;;
+  ret <{ x := a }>.
 
-(* Definition gen_branch_wf (pl: nat) (rs: reg) : G inst := *)
-(*   e <- gen_exp_no_ptr 1 rs;; *)
-(*   l <- choose (0, pl);; *)
-(*   ret <{ branch e to l }>. *)
+Definition gen_branch_wf (pl: nat) (rs: reg) : G inst :=
+  e <- gen_exp_no_ptr 1 rs;;
+  l <- choose (0, pl);;
+  ret <{ branch e to l }>.
 
-(* Definition gen_jump_wf (pl: nat) : G inst := *)
-(*   l <- choose (0, pl);; *)
-(*   ret <{ jump l }>. *)
+Definition gen_jump_wf (pl: nat) : G inst :=
+  l <- choose (0, pl);;
+  ret <{ jump l }>.
 
-(* (* memory length? *) *)
-(* Definition gen_load_wf (pl: nat) (rs: reg) : G inst := *)
-(*   let vars := map_dom (snd rs) in *)
-(*   e <- gen_exp_no_ptr 1 rs;; *)
-(*   x <- elems_ "X0"%string vars;; *)
-(*   ret <{ x <- load[e] }>. *)
+(* memory length? *)
+Definition gen_load_wf (pl: nat) (rs: reg) : G inst :=
+  let vars := map_dom (snd rs) in
+  e <- gen_exp_no_ptr 1 rs;;
+  x <- elems_ "X0"%string vars;;
+  ret <{ x <- load[e] }>.
 
-(* (* memory length? *) *)
-(* Definition gen_store_wf (pl: nat) (rs: reg) : G inst := *)
-(*   e1 <- gen_exp_no_ptr 1 rs;; *)
-(*   e2 <- gen_exp_wf 1 pl rs;; *)
-(*   ret <{ store[e1] <- e2 }>. *)
+(* memory length? *)
+Definition gen_store_wf (pl: nat) (rs: reg) : G inst :=
+  e1 <- gen_exp_no_ptr 1 rs;;
+  e2 <- gen_exp_wf 1 pl rs;;
+  ret <{ store[e1] <- e2 }>.
 
-(* Definition gen_exp_leaf_ptr (pl: nat) (rs : reg) : G exp := *)
-(*   oneOf (liftM FPtr (choose (0, pl));;; *)
-(*          (let ptrs := filter (fun s => negb (is_not_ptr rs s)) (map_dom (snd rs)) in *)
-(*           if seq.nilp ptrs then [] else *)
-(*           [liftM AId (elems_ "X0"%string ptrs)] )). *)
+Definition gen_exp_leaf_ptr (pl: nat) (rs : reg) : G exp :=
+  oneOf (liftM FPtr (choose (0, pl));;;
+         (let ptrs := filter (fun s => negb (is_not_ptr rs s)) (map_dom (snd rs)) in
+          if seq.nilp ptrs then [] else
+          [liftM AId (elems_ "X0"%string ptrs)] )).
 
-(* Fixpoint gen_exp_ptr (sz : nat) (pl: nat) (rs : reg) : G exp := *)
-(*   match sz with *)
-(*   | O => gen_exp_leaf_ptr pl rs *)
-(*   | S sz' => *)
-(*           freq [ *)
-(*              (2, gen_exp_leaf_ptr pl rs); *)
-(*              (sz, liftM3 ACTIf (gen_exp_no_ptr sz' rs) (gen_exp_ptr sz' pl rs) (gen_exp_ptr sz' pl rs)) *)
-(*           ] *)
-(*   end. *)
+Fixpoint gen_exp_ptr (sz : nat) (pl: nat) (rs : reg) : G exp :=
+  match sz with
+  | O => gen_exp_leaf_ptr pl rs
+  | S sz' =>
+          freq [
+             (2, gen_exp_leaf_ptr pl rs);
+             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' rs) (gen_exp_ptr sz' pl rs) (gen_exp_ptr sz' pl rs))
+          ]
+  end.
 
-(* (* SOONER: fix -> # of procedure is needed. *) *)
-(* Definition gen_call_wf (pl: nat) (rs: reg) : G inst := *)
-(*   l <- gen_exp_ptr 2 pl rs;; *)
-(*   ret <{ call l }>. *)
+(* SOONER: fix -> # of procedure is needed. *)
+Definition gen_call_wf (pl: nat) (rs: reg) : G inst :=
+  l <- gen_exp_ptr 2 pl rs;;
+  ret <{ call l }>.
 
-(* Definition gen_inst (gen_asgn : nat -> reg -> G inst) *)
-(*                     (gen_branch : nat -> reg -> G inst) *)
-(*                     (gen_jump : nat -> G inst) *)
-(*                     (gen_load : nat -> reg -> G inst) *)
-(*                     (gen_store : nat -> reg -> G inst) *)
-(*                     (gen_call : nat -> reg -> G inst) *)
-(*                     (sz:nat) (pl: nat) (c: reg) : G inst := *)
-(*   freq [ (1, ret ISkip); *)
-(*          (1, ret IRet); *)
-(*          (sz, gen_asgn pl c); *)
-(*          (sz, gen_branch pl c); *)
-(*          (sz, gen_jump pl); *)
-(*          (sz, gen_load pl c); *)
-(*          (sz, gen_store pl c); *)
-(*          (sz, gen_call pl c)]. *)
+Definition gen_inst (gen_asgn : nat -> reg -> G inst)
+                    (gen_branch : nat -> reg -> G inst)
+                    (gen_jump : nat -> G inst)
+                    (gen_load : nat -> reg -> G inst)
+                    (gen_store : nat -> reg -> G inst)
+                    (gen_call : nat -> reg -> G inst)
+                    (sz:nat) (pl: nat) (c: reg) : G inst :=
+  freq [ (1, ret ISkip);
+         (1, ret IRet);
+         (sz, gen_asgn pl c);
+         (sz, gen_branch pl c);
+         (sz, gen_jump pl);
+         (sz, gen_load pl c);
+         (sz, gen_store pl c);
+         (sz, gen_call pl c)].
 
-(* Definition gen_inst_wf (sz pl: nat) (rs: reg) : G inst := *)
-(*   gen_inst gen_asgn_wf gen_branch_wf gen_jump_wf *)
-(*            gen_load_wf gen_store_wf gen_call_wf sz pl rs. *)
+Definition gen_inst_wf (sz pl: nat) (rs: reg) : G inst :=
+  gen_inst gen_asgn_wf gen_branch_wf gen_jump_wf
+           gen_load_wf gen_store_wf gen_call_wf sz pl rs.
 
-(* (* bsz: # of instruction in blk *) *)
-(* Definition gen_blk_wf (bsz pl: nat) (rs: reg) : G (list inst) := *)
-(*   vectorOf bsz (gen_inst_wf bsz pl rs). *)
+(* bsz: # of instruction in blk *)
+Definition gen_blk_wf (bsz pl: nat) (rs: reg) : G (list inst) :=
+  vectorOf bsz (gen_inst_wf bsz pl rs).
 
-(* (* fsz: # of blocks in procedure *) *)
-(* (* TODO: block length *) *)
-(* Fixpoint _gen_proc_wf (fsz pl: nat) (rs: reg) : G (list (list inst * bool)) := *)
-(*   match fsz with *)
-(*   | O => ret [] *)
-(*   | S fsz' => blk <- gen_blk_wf 8 pl rs;; *)
-(*              rest <- _gen_proc_wf fsz' pl rs;; *)
-(*              ret ((blk, false) :: rest) *)
-(*   end. *)
+(* fsz: # of blocks in procedure *)
+Fixpoint _gen_proc_wf (fsz pl: nat) (rs: reg) : G (list (list inst * bool)) :=
+  match fsz with
+  | O => ret []
+  | S fsz' => blk <- gen_blk_wf 8 pl rs;;
+             rest <- _gen_proc_wf fsz' pl rs;;
+             ret ((blk, false) :: rest)
+  end.
 
-(* Definition gen_proc_wf (fsz pl: nat) (rs: reg) : G (list (list inst * bool)) := *)
-(*   match fsz with *)
-(*   | O => ret [] (* unreachable *) *)
-(*   | S fsz' => blk <- gen_blk_wf 8 pl rs;; *)
-(*              rest <- _gen_proc_wf fsz' pl rs;; *)
-(*              ret ((blk, true) :: rest) *)
-(*   end. *)
+Definition gen_proc_wf (fsz pl: nat) (rs: reg) : G (list (list inst * bool)) :=
+  match fsz with
+  | O => ret [] (* unreachable *)
+  | S fsz' => blk <- gen_blk_wf 8 pl rs;;
+             rest <- _gen_proc_wf fsz' pl rs;;
+             ret ((blk, true) :: rest)
+  end.
 
-(* Fixpoint _gen_partition (fuel n: nat) : G (list nat) := *)
-(*   match fuel with *)
-(*   | 0 => ret [n] *)
-(*   | S fuel' => *)
-(*       match n with *)
-(*       | O => ret [] *)
-(*       | S O => ret [1] *)
-(*       | S (S n') => (k <- choose(1, n - 1);; *)
-(*                      rest <- _gen_partition fuel' (n - k);; *)
-(*                      ret (k :: rest)) *)
-(*       end *)
-(*   end. *)
+Fixpoint _gen_partition (fuel n: nat) : G (list nat) :=
+  match fuel with
+  | 0 => ret [n]
+  | S fuel' =>
+      match n with
+      | O => ret []
+      | S O => ret [1]
+      | S (S n') => (k <- choose(1, n - 1);;
+                     rest <- _gen_partition fuel' (n - k);;
+                     ret (k :: rest))
+      end
+  end.
 
-(* Definition gen_partition (n: nat) := _gen_partition n n. *)
+Definition gen_partition (n: nat) := _gen_partition n n.
 
-(* (* Sample (gen_partition 8). *) *)
+(* Sample (gen_partition 8). *)
 
-(* Definition gen_val_bounded (pl: nat) (sz: nat) : G val := *)
-(*   match sz with *)
-(*   | O => oneOf [liftM N arbitrary ; liftM FP (choose (0, pl))] *)
-(*   | S sz' => *)
-(*       freq [ (sz, liftM N arbitrary); *)
-(*              (1, liftM FP (choose (0, pl)))] *)
-(*   end. *)
+Definition gen_val_bounded (pl: nat) (sz: nat) : G val :=
+  match sz with
+  | O => oneOf [liftM N arbitrary ; liftM FP (choose (0, pl))]
+  | S sz' =>
+      freq [ (sz, liftM N arbitrary);
+             (1, liftM FP (choose (0, pl)))]
+  end.
 
-(* (* register set *) *)
-(* Definition gen_total_map_bounded (pl: nat) : G (total_map val) := *)
-(*   (d <- arbitrary;; *)
-(*    v0 <- gen_val_bounded pl 4;; *)
-(*    v1 <- gen_val_bounded pl 4;; *)
-(*    v2 <- gen_val_bounded pl 4;; *)
-(*    v3 <- gen_val_bounded pl 4;; *)
-(*    v4 <- gen_val_bounded pl 4;; *)
-(*    v5 <- gen_val_bounded pl 4;; *)
-(*    ret (d,[("X0",v0); ("X1",v1); ("X2",v2); *)
-(*            ("X3",v3); ("X4",v4); ("X5",v5)])%string). *)
+(* register set *)
+Definition gen_total_map_bounded (pl: nat) : G (total_map val) :=
+  (d <- arbitrary;;
+   v0 <- gen_val_bounded pl 4;;
+   v1 <- gen_val_bounded pl 4;;
+   v2 <- gen_val_bounded pl 4;;
+   v3 <- gen_val_bounded pl 4;;
+   v4 <- gen_val_bounded pl 4;;
+   v5 <- gen_val_bounded pl 4;;
+   ret (d,[("X0",v0); ("X1",v1); ("X2",v2);
+           ("X3",v3); ("X4",v4); ("X5",v5)])%string).
 
-(* (* Sample (rs <- gen_total_map_bounded 8;; *) *)
-(* (*         i <- gen_inst_wf 8 8 rs;;  *) *)
-(* (*         ret (rs, i)). *) *)
+(* Sample (rs <- gen_total_map_bounded 8;; *)
+(*         i <- gen_inst_wf 8 8 rs;;  *)
+(*         ret (rs, i)). *)
 
-(* Fixpoint _gen_prog_wf (pl: nat) (pst: list nat) (rs: reg) : G (list (list inst * bool)) := *)
-(*   match pst with *)
-(*   | [] => ret [] *)
-(*   | hd :: tl => hd_proc <- gen_proc_wf hd pl rs;; *)
-(*               tl_proc <- _gen_prog_wf pl tl rs;; *)
-(*               ret (hd_proc ++ tl_proc) *)
-(*   end. *)
+Fixpoint _gen_prog_wf (pl: nat) (pst: list nat) (rs: reg) : G (list (list inst * bool)) :=
+  match pst with
+  | [] => ret []
+  | hd :: tl => hd_proc <- gen_proc_wf hd pl rs;;
+              tl_proc <- _gen_prog_wf pl tl rs;;
+              ret (hd_proc ++ tl_proc)
+  end.
 
-(* Definition gen_prog_wf := *)
-(*   pl <- choose(1, 10);; *)
-(*   pst <- gen_partition pl;; *)
-(*   rs <- gen_total_map_bounded pl;; *)
-(*   _gen_prog_wf pl pst rs. *)
+Definition gen_prog_wf :=
+  pl <- choose(1, 10);;
+  pst <- gen_partition pl;;
+  rs <- gen_total_map_bounded pl;;
+  _gen_prog_wf pl pst rs.
