@@ -1272,7 +1272,11 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
   end.
 
 
-(* pl: program langth *)
+(** Better wf program generator *)
+(* 1. public/secret
+   2. ptr/not ptr
+   3. wf          *)
+
 Definition gen_exp_leaf_wf (pl: nat) (state : reg) : G exp :=
   oneOf (liftM ANum arbitrary ;;;
          liftM FPtr (choose (0, pl));;;
