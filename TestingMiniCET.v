@@ -818,6 +818,14 @@ Definition gen_asgn_wf (vars: list string) (pst: list nat) : G inst :=
   a <- gen_exp_wf vars 1 pst;;
   ret <{ x := a }>.
 
+Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
+  match t with
+  | [] => []
+  | x :: xs => if existsb (eqb x) xs
+               then      remove_dupes eqb xs
+               else x :: remove_dupes eqb xs
+  end.
+
 Definition nat_list_minus (l1 l2 : list nat) : list nat :=
   filter (fun x => negb (existsb (Nat.eqb x) l2)) l1.
 
@@ -990,13 +998,18 @@ QuickChick (forAll (gen_prog_wf) (fun (p : prog) =>
   => the taint analysis of TestingFlexSLH will be useful.
  *)
 
+(* From SECF Require Import TestingSpecCT. *)
+
+(* Notation label := TestingSpecCT.label. *)
+(* Notation apply := ListMaps.apply. *)
+(* Notation join := TestingSpecCT.join. *)
+
 Notation label := bool.
 Notation apply := ListMaps.apply.
-(* Notation join := TestingSpecCT.join. *)
 Definition join (l1 l2 : label) : label := l1 && l2.
 
 Definition pub_vars := total_map label.
-Definition pub_arrs := list bool. (* true: public, false: secret *)
+Definition pub_arrs := list label. (* true: public, false: secret *)
 
 (* Copied from TestingFlexSLH.v *)
 
@@ -1004,27 +1017,22 @@ Definition pub_arrs := list bool. (* true: public, false: secret *)
    (as a variant of Lucie's interpreter). We use this to track which initial
    values of variables and arrays affect CT observations. *)
 
-Definition taint : Type := list (var_id + arr_id).
+Definition reg_id := string.
+Definition mem_addr := nat.
 
-#[export] Instance showTaint : Show (var_id + arr_id) :=
+Definition taint : Type := list (reg_id + mem_addr).
+
+#[export] Instance showTaint : Show (reg_id + mem_addr) :=
   {show := fun x =>
      match x with
      | inl x => show x
      | inr a => show a
      end}.
 
-Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
-  match t with
-  | [] => []
-  | x :: xs => if existsb (eqb x) xs
-               then      remove_dupes eqb xs
-               else x :: remove_dupes eqb xs
-  end.
-
-Definition sum_eqb (s1 s2 : (var_id + arr_id)) : bool :=
+Definition sum_eqb (s1 s2 : (reg_id + mem_addr)) : bool :=
   match s1, s2 with
-  | inl x1, inl x2
-  | inr x1, inr x2 => String.eqb x1 x2
+  | inl x1, inl x2 => String.eqb x1 x2
+  | inr x1, inr x2 => Nat.eqb x1 x2
   | _, _ => false
   end.
 
@@ -1032,180 +1040,237 @@ Definition join_taints t1 t2 := remove_dupes sum_eqb (t1 ++ t2).
 
 Module TaintTracking.
 
-Definition tstate := total_map taint.
-Definition tastate := total_map taint.
+Definition tcptr := taint.
+Definition treg := total_map taint.
+Definition tmem := list taint.
+Definition tstk := list tcptr.
 
-Definition input_st : Type := state * astate * tstate * tastate * taint.
-Inductive output_st (A : Type) : Type :=
-  | ROutOfFuel : obs -> input_st -> output_st A
-  | ROutOfBounds : obs -> input_st -> output_st A
-  | ROk : A -> obs -> input_st -> output_st A.
+Definition tcfg := (tcptr * treg * tmem * tstk)%type.
+Definition input_st : Type := cfg * tcfg * taint.
+
+Variant output_st (A : Type) : Type :=
+  | RStep : A -> obs -> input_st -> output_st A
+  | RError : obs -> input_st -> output_st A
+  | RTerm : obs -> input_st -> output_st A.
+
+Record evaluator (A : Type) : Type := mkEvaluator
+  { evaluate : input_st -> output_st A }.
 
 (* An 'evaluator A'. This is the monad.
    It transforms an input state into an output state, returning an A. *)
-Record evaluator (A : Type) : Type := mkEvaluator
-  { evaluate : input_st -> output_st A }.
 (* An interpreter is a special kind of evaluator *)
 Definition interpreter: Type := evaluator unit.
 
 (* Generic monad operators *)
 #[export] Instance monadEvaluator: Monad evaluator :=
-  { ret := fun A value => mkEvaluator A (fun (ist : input_st) => ROk A value [] ist);
+  { ret := fun A value => mkEvaluator A (fun (ist : input_st) => RStep A value [] ist);
     bind := fun A B e f =>
       mkEvaluator B (fun (ist : input_st) =>
         match evaluate A e ist with
-        | ROk _ value os1 ist'  =>
+        | RStep _ value os1 ist'  =>
             match evaluate B (f value) ist' with
-            | ROk _ value os2 ist'' => ROk B value (os1 ++ os2) ist''
-            | ROutOfFuel _ os2 ist'' => ROutOfFuel B (os1 ++ os2) ist''
-            | ROutOfBounds _ os2 ist'' => ROutOfBounds B (os1 ++ os2) ist''
+            | RStep _ value os2 ist'' => RStep B value (os1 ++ os2) ist''
+            | RError _ os2 ist'' => RError B (os1 ++ os2) ist''
+            | RTerm _ os2 ist'' => RTerm B (os1 ++ os2) ist''
             end
-        | ROutOfFuel _ os ist' => ROutOfFuel B os ist'
-        | ROutOfBounds _ os ist' => ROutOfBounds B os ist'
+        | RError _ os ist' => RError B os ist'
+        | RTerm _ os ist' => RTerm B os ist'
         end
       )
-   }.
+  }.
 
-(* specialized operators *)
-Definition finish : interpreter := ret tt.
+(* Definition get_id_val (name : string): evaluator val := *)
+(*   mkEvaluator _ (fun (ist : input_st) => *)
+(*     let '(c, _, _) := ist in *)
+(*     let '(_, regs, _, _) := c in *)
+(*     evaluate _ (ret (apply regs name)) ist *)
+(*     ). *)
 
-Definition get_var (name : string): evaluator nat :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, _, _, _, _) := ist in
-    evaluate _ (ret (apply st name)) ist
-  ).
-Definition get_arr (name : string): evaluator (list nat) :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    let '(_, ast, _, _, _) := ist in
-    evaluate _ (ret (apply ast name)) ist
-  ).
-Definition set_var (name : string) (value : nat) : interpreter :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, ast, tst, tast, tobs) := ist in
-    let new_st := (name !-> value ; st) in
-    evaluate _ finish (new_st, ast, tst, tast, tobs)
-  ).
-Definition set_arr (name : string) (value : list nat) : interpreter :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, ast, tst, tast, tobs) := ist in
-    let new_ast := (name !-> value ; ast) in
-    evaluate _ finish (st, new_ast, tst, tast, tobs)
-  ).
-Definition eval_aexp (a : aexp) : evaluator nat :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, _, _, _, _) := ist in
-    let v := aeval st a in
-    evaluate _ (ret v) ist
-  ).
-Definition eval_bexp (b : bexp) : evaluator bool :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, _, _, _, _) := ist in
-    let v := beval st b in
-    evaluate _ (ret v) ist
-  ).
-Definition raise_out_of_bounds {a:Type} : evaluator a :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    ROutOfBounds _ [] ist
-  ).
-Definition raise_out_of_fuel {a:Type} : evaluator a :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    ROutOfFuel _ [] ist
-  ).
-Definition observe (o : observation) : interpreter :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    ROk _ tt [o] ist
-  ).
+(* Definition get_mem_val (n : nat): evaluator val := *)
+(*   mkEvaluator _ (fun (ist : input_st) => *)
+(*     let '(c, _, _) := ist in *)
+(*     let '(_, _, m, _) := c in *)
+(*     v <- nth_error m n;; *)
+(*     evaluate _ (ret v) ist *)
+(*   ). *)
 
-Definition get_taint_of_vars (xs:list string) : evaluator taint :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    let '(_, _, tst, _, _) := ist in
-    evaluate _ (ret (remove_dupes sum_eqb (List.concat (map (apply tst) xs)))) ist).
-
-Definition get_taint_of_arr (a:string) : evaluator taint :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    let '(_, _, _, tast, _) := ist in
-    evaluate _ (ret (apply tast a)) ist).
-
-Definition set_var_taint (x : string) (t : taint) : interpreter :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, ast, tst, tast, tobs) := ist in
-    let new_tst := (x !-> remove_dupes sum_eqb t ; tst) in
-    evaluate _ finish (st, ast, new_tst, tast, tobs)).
-
-Definition add_arr_taint (a : string) (t : taint) : interpreter :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, ast, tst, tast, tobs) := ist in
-    let new_tast := (a !-> (join_taints t (apply tast a)); tast) in
-    evaluate _ finish (st, ast, tst, new_tast, tobs)).
-
-Definition add_obs_taint (t : taint) : interpreter :=
-  mkEvaluator _ (fun (ist : input_st) =>
-    (* trace ("add_obs_taint:"++show t++nl) ( *)
-    let '(st, ast, tst, tast, tobs) := ist in
-    let new_tobs := join_taints t tobs in
-    evaluate _ finish (st, ast, tst, tast, new_tobs)).
-
-Fixpoint taint_track (f : nat) (c : com) : interpreter :=
-  match f with
-  | O => raise_out_of_fuel
-  | S f =>
-
-  match c with
-  | <{ skip }> =>
-      finish
-  | <{ x := e }> =>
-      v <- eval_aexp e;;
-      set_var x v;;
-      t <- get_taint_of_vars (vars_aexp e);;
-      set_var_taint x t
-  | <{ c1 ; c2 }> =>
-      taint_track f c1;;
-      taint_track f c2
-  | <{ if b then ct else cf end }> =>
-      condition <- eval_bexp b;;
-      let next_c := if Bool.eqb condition true then ct else cf in
-      observe (OBranch condition);;
-      tb <- get_taint_of_vars (vars_bexp b);;
-      add_obs_taint tb;;
-      taint_track f next_c
-  | <{ while be do c end }> =>
-    taint_track f <{
-      if be then
-        c;
-        while be do c end
-      else
-        skip
-      end
-    }>
-  | <{ x <- a[[ie]] }> =>
-      i <- eval_aexp ie;;
-      l <- get_arr a;;
-      if (i <? List.length l) then
-        observe (OARead a i);;
-        set_var x (nth i l 0);;
-        ti <- get_taint_of_vars (vars_aexp ie);;
-        add_obs_taint ti;;
-        ta <- get_taint_of_arr a;;
-        set_var_taint x (join_taints ti ta)
-      else
-        raise_out_of_bounds
-  | <{ a[ie] <- e }> =>
-      n <- eval_aexp e;;
-      i <- eval_aexp ie;;
-      l <- get_arr a;;
-      if (i <? List.length l) then
-        observe (OAWrite a i);;
-        set_arr a (upd i l n);;
-        ti <- get_taint_of_vars (vars_aexp ie);;
-        add_obs_taint ti;;
-        te <- get_taint_of_vars (vars_aexp e);;
-        add_arr_taint a (join_taints ti te)
-      else
-        raise_out_of_bounds
-  end
+Fixpoint _calc_taint_exp (e: exp) (treg: total_map taint) : taint :=
+  match e with
+  | ANum _ | FPtr _ => []
+  | AId x => apply treg x
+  | ABin _ e1 e2 => join_taints (_calc_taint_exp e1 treg) (_calc_taint_exp e2 treg)
+  | ACTIf e1 e2 e3 => join_taints (_calc_taint_exp e1 treg)
+                                 (join_taints (_calc_taint_exp e2 treg) (_calc_taint_exp e3 treg))
   end.
 
+Variant taint_ctx :=
+| CMem (n: nat)
+| CDefault.
+
+(* None cases are unreachable. *)
+Definition taint_step (i: inst) (c: cfg) (tc: tcfg) (tobs: taint) (tctx: taint_ctx) : option (tcfg * taint) :=
+  let '(pc, rs, m, s) := c in
+  let '(tpc, trs, tm, ts) := tc in
+  match i with
+  | <{ skip }> | <{ ctarget }> | <{ jump _ }> =>
+      match tctx with
+      | CDefault => Some (tc, tobs)
+      | _ => None
+      end
+  | <{ x := e }> =>
+      match tctx with
+      | CDefault =>
+          let te := (_calc_taint_exp e trs) in
+          let tx := join_taints te tpc in
+          let tc' := (tpc, (x !-> tx; trs), tm, ts) in
+          Some (tc', tobs)
+      | _ => None
+      end
+  | <{ branch e to l }> =>
+      match tctx with
+      | CDefault =>
+          let te := (_calc_taint_exp e trs) in
+          let tpc' := join_taints te tpc in
+          let tc' := (tpc', trs, tm, ts) in
+          let tobs' := join_taints tobs tpc' in
+          Some (tc', tobs')
+      | _ => None
+      end
+  | <{ x <- load[e] }> =>
+      match tctx with
+      | CMem n =>
+          let te := (_calc_taint_exp e trs) in
+          let tv := nth n tm [] in (* default case is unreachable: step already checked. *)
+          let tx := (join_taints (join_taints te tv) tpc) in
+          let tc' := (tpc, (x !-> tx; trs), tm, ts) in
+          let tobs' := (join_taints (join_taints te tpc) tobs) in
+          Some (tc', tobs')
+      | _ => None
+      end
+  | <{ store[e] <- e' }> =>
+      match tctx with
+      | CMem n =>
+          let te := (_calc_taint_exp e trs) in
+          let te' := (_calc_taint_exp e' trs) in
+          let tm_val := join_taints (join_taints te te') tpc in
+          let tc' := (tpc, trs, upd n tm tm_val, ts) in
+          let tobs' := join_taints (join_taints te tpc) tobs in
+          Some (tc', tobs')
+      | _ => None
+      end
+  | <{ call e }> =>
+      match tctx with
+      | CDefault =>
+          let te := (_calc_taint_exp e trs) in
+          let ts' := tpc :: ts in
+          let tpc' := join_taints te tpc in
+          let tc' := (tpc', trs, tm, ts') in
+          let tobs' := join_taints tobs tpc' in
+          Some (tc', tobs')
+      | _ => None
+      end
+  | <{ ret }> =>
+      match tctx with
+      | CDefault =>
+          let tpc' := hd [] ts in (* default case is unreachable: step already checked. *)
+          let ts' := tl ts in
+          let tc' := (tpc', trs, tm, ts') in
+          Some (tc', tobs)
+      | _ => None
+      end
+  end.
+
+Definition get_ctx (rs: reg) (i: inst) : option taint_ctx  :=
+  match i with
+  | <{ x <- load[e] }> =>  v <- eval rs e;;
+                         n <- to_nat v;;
+                         Some (CMem n)
+  | <{ store[e] <- e' }> => v <- (eval rs e);;
+                          n <- to_nat v;;
+                          Some (CMem n)
+  | _ => Some CDefault
+  end.
+
+Definition final_cfg (p: prog) (pc: cptr) : bool :=
+  match fetch p (inc pc) with
+  | Some _ => false
+  | None => true
+  end.
+
+Definition step_taint_track (p: prog) : evaluator unit :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(c, tc, tobs) := ist in
+    let '(pc, rs, m, s) := c in
+    let '(tpc, trs, tm, ts) := tc in
+    match step p c with
+    | Some (c', os) =>
+        match (fetch p pc) with
+        | Some i => match get_ctx rs i with
+                   | Some tctx => match taint_step i c tc tobs tctx with
+                                 | Some (tc', tobs') => RStep _ tt os (c', tc', tobs')
+                                 | _ => RError _ [] ist (* context is inconsistent. *)
+                                 end
+                   | _ => RError _ [] ist
+                   end
+        | _ => RError _ [] ist
+        end
+    | None => if final_cfg p pc
+             then RTerm _ [] ist
+             else RError _ [] ist
+    end
+    ).
+
+Variant exec_result : Type :=
+  | ETerm (st: input_st) (os: obs)
+  | EError (st: input_st) (os: obs)
+  | EOutOfFuel (st: input_st) (os: obs).
+
+Fixpoint steps_taint_track (f: nat) (p: prog) (ist: input_st) (os: obs) : exec_result :=
+  match f with
+  | O => EOutOfFuel ist os
+  | S f' =>
+      match evaluate unit (step_taint_track p) ist with
+      | RTerm _ os' ist' => ETerm ist' (os ++ os')
+      | RError _ os' ist' => EError ist' (os ++ os')
+      | RStep _ _ os' ist' => steps_taint_track f' p ist' (os ++ os')
+      end
+  end.
+
+Fixpoint _init_taint_mem (m: mem) (n: nat) : tmem :=
+  match m with
+  | [] => []
+  | h :: m' => ([inr n]) :: _init_taint_mem m' (S n)
+  end.
+
+Definition init_taint_mem (m: mem) : tmem :=
+  _init_taint_mem m 0.
+
 End TaintTracking.
+
+Fixpoint split_sum_list {A B : Type} (l : list (A + B)) : (list A * list B) :=
+  match l with
+  | [] => ([], [])
+  | inl a :: xs => let (la, lb) := split_sum_list xs in (a :: la, lb)
+  | inr b :: xs => let (la, lb) := split_sum_list xs in (la, b :: lb)
+  end.
+
+Definition taint_tracking (f : nat) (p : prog) (c: cfg)
+  : option (obs * list string * list nat) :=
+  let '(pc, rs, m, ts) := c in
+  let tpc := [] in
+  let trs := ([], map (fun x => (x,[@inl reg_id mem_addr x])) (map_dom (snd rs))) in
+  let tm := TaintTracking.init_taint_mem m in
+  let ts := [] in
+  let tc := (tpc, trs, tm, ts) in
+  let ist := (c, tc, []) in
+  match (TaintTracking.steps_taint_track f p ist []) with
+  | TaintTracking.ETerm (_, _, tobs) os =>
+      let (ids, mems) := split_sum_list tobs in
+      Some (os, remove_dupes String.eqb ids,
+                remove_dupes Nat.eqb mems)
+  | _ => None
+  end.
+
 
 (* pl: program langth *)
 Definition gen_exp_leaf_wf (pl: nat) (state : reg) : G exp :=
