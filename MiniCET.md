@@ -214,19 +214,16 @@ TODO: What happens if a code pointer is stored at address 0
 p[pc]=call e   n=eval r e
 ———————————————————————————————————————————————————————————————————————
 p |- (pc,r,m,sk,⊥,⊤) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,⊤)
-    *
-    * What I can more easily implement as single rule has a different semantics
-      (allows attacker to also take over sequential jumps to non-labels),
-      and it's unclear if this is reasonable:
 
-p[pc]=call e      ms'=ms\/(l=eval r e /\ (l,0)≠pc')
+The single rule corresponding to the two ones looks something like this:
+
+p[pc]=call e     n=eval r e ==> ms=⊤     ms'=ms\/(l=eval r e /\ (l,0)≠pc')
 ——————————————————————————————————————————————————————————————————————————
 p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
 
-      let ms' := ms || match to_fp v with
-                       | Some l => negb ((fst pc' =? l) && (snd pc' =? 0))
-                       | None => true
-                       end in
+      is_true (if_some (to_nat v) (fun _ => ms));;
+      let ms' := ms || (if_some (to_fp v)
+                          (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
 
 uslh (branch e l) =
   let e' = "ms"=0 && e in                           masking branch condition

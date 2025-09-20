@@ -357,6 +357,12 @@ Definition is_dcall (d:direction) : option cptr :=
   | _ => None
   end.
 
+Definition if_some {a:Type} (o:option a) (f:a->bool) : bool :=
+  match o with
+  | Some x => f x
+  | None => true
+  end.
+
 Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs * obs) :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
@@ -377,10 +383,12 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       d <- hd_error ds;;
       pc' <- is_dcall d;;
       v <- eval r e;;
-      let ms' := ms || match to_fp v with
-                       | Some l => negb ((fst pc' =? l) && (snd pc' =? 0))
-                       | None => true
-                       end in
+      (* l <- to_fp v;; *)
+      (* let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in  *)
+      (* See explanation in MiniCET.md (Spectre 1.1): *)
+      is_true (if_some (to_nat v) (fun _ => ms));;
+      let ms' := ms || (if_some (to_fp v)
+                          (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
       ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall (fst pc')])
   | <{{ctarget}}> =>
       is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
