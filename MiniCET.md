@@ -192,10 +192,17 @@ uslh (ctarget) = return [skip]    these inserted by transformation of basic bloc
 uslh (ret) = return [ret]         nothing to do here because of CET
 uslh (x<-load[e]) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
-  return [x<-load[e']]            - fine if this is valid data memory, right?
+  return [x<-load[e']]            - fine that 0 is a valid data memory address? Seems so.
 uslh (store[e] <- e) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
-  return [store[e'] <- e]         - fine if this is valid data memory, right?
+  return [store[e'] <- e]         - fine that 0 is a valid data memory address?
+                                    not so simple! (see below)
+
+TODO: What happens if a code pointer is stored at address 0
+      and speculatively overwritten? Spectre 1.1?
+      https://secure-compilation.zulipchat.com/#narrow/channel/436285-speculation/topic/Spectre1.2E1/near/459448106
+- Our semantics would "get stuck", but at a lower level when the code pointer
+  is loaded and jumped to, we do a jump to an address that's attacker influenced
 
 uslh (branch e l) =
   let e' = "ms"=0 && e in                           masking branch condition
