@@ -225,6 +225,9 @@ p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
       let ms' := ms || (if_some (to_fp v)
                           (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
 
+TODO: Is the `n=eval r e ==> ms=⊤` condition needed/helpful/reasonable?
+
+
 uslh (branch e l) =
   let e' = "ms"=0 && e in                           masking branch condition
   bind l' <- add-block ["ms" := ~e'?1:"ms"; jump l] updating flag when actually branching
