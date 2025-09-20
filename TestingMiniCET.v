@@ -377,8 +377,10 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       d <- hd_error ds;;
       pc' <- is_dcall d;;
       v <- eval r e;;
-      l <- to_fp v;; 
-      let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in 
+      let ms' := ms || match to_fp v with
+                       | Some l => negb ((fst pc' =? l) && (snd pc' =? 0))
+                       | None => true
+                       end in
       ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall (fst pc')])
   | <{{ctarget}}> =>
       is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)

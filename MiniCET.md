@@ -196,13 +196,37 @@ uslh (x<-load[e]) =
 uslh (store[e] <- e) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
   return [store[e'] <- e]         - fine that 0 is a valid data memory address?
-                                    not so simple! (see below)
+                                    Seems our defense of calls can deal with this,
+                                    but the attack is more difficult to model:
 
 TODO: What happens if a code pointer is stored at address 0
-      and speculatively overwritten? Spectre 1.1?
+      and speculatively overwritten? Spectre 1.1:
       https://secure-compilation.zulipchat.com/#narrow/channel/436285-speculation/topic/Spectre1.2E1/near/459448106
-- Our semantics would "get stuck", but at a lower level when the code pointer
-  is loaded and jumped to, we do a jump to an address that's attacker influenced
+- At a lower level, when the overwritten code pointer is loaded and jumped to,
+  we do a jump to an address that's attacker influenced
+  + Our current speculative semantics of call would get stuck on `l=eval r e`,
+    which doesn't seem like a secure overapproximation of lower-level attacker behavior
+  + We can fix this by allowing the attacker to also choose an arbitrary address
+    when we are already misspeculating (ms=⊤) and `n=eval r e`?
+    * Maybe this can be done with a single complex rule, but the effect I want
+      is the same as adding this extra Call rule to the speculative semantics:
+
+p[pc]=call e   n=eval r e
+———————————————————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,⊤) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,⊤)
+    *
+    * What I can more easily implement as single rule has a different semantics
+      (allows attacker to also take over sequential jumps to non-labels),
+      and it's unclear if this is reasonable:
+
+p[pc]=call e      ms'=ms\/(l=eval r e /\ (l,0)≠pc')
+——————————————————————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
+
+      let ms' := ms || match to_fp v with
+                       | Some l => negb ((fst pc' =? l) && (snd pc' =? 0))
+                       | None => true
+                       end in
 
 uslh (branch e l) =
   let e' = "ms"=0 && e in                           masking branch condition
