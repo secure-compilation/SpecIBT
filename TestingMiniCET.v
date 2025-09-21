@@ -383,13 +383,9 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       d <- hd_error ds;;
       pc' <- is_dcall d;;
       v <- eval r e;;
-      (* Old code: *)
-      (* l <- to_fp v;; *)
-      (* let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in  *)
-      (* New code (see explanation in MiniCET.md; Spectre 1.1): *)
-      let ms' := ms || (if_some (to_fp v)
-                          (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
-      ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall (fst pc')])
+      l <- to_fp v;;
+      let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+      ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall l])
   | <{{ctarget}}> =>
       is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
       ret (((pc+1, r, m, sk), false, ms), ds, [])

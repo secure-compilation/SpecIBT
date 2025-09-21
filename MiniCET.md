@@ -193,9 +193,9 @@ uslh (ret) = return [ret]         nothing to do here because of CET
 uslh (x<-load[e]) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
   return [x<-load[e']]            - fine that 0 is a valid data memory address? Seems so.
-uslh (store[e] <- e) =
+uslh (store[e] <- e1) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
-  return [store[e'] <- e]         - fine that 0 is a valid data memory address?
+  return [store[e'] <- e1]        - fine that 0 is a valid data memory address?
                                     Seems our defense of calls can deal with this,
                                     but the attack is more difficult to model:
 
