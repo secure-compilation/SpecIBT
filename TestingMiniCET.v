@@ -329,7 +329,7 @@ Fixpoint steps (f:nat) (p:prog) (c:cfg) : option (cfg * obs) :=
   | 0 => ret (c,[])
   end.
 
-(** SOONER: write down speculative semantics *)
+(** Speculative semantics *)
 
 Inductive direction : Type :=
   | DBranch (b':bool)
@@ -387,7 +387,6 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       (* l <- to_fp v;; *)
       (* let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in  *)
       (* New code (see explanation in MiniCET.md; Spectre 1.1): *)
-      is_true (if_some (to_nat v) (fun _ => ms));;
       let ms' := ms || (if_some (to_fp v)
                           (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
       ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall (fst pc')])

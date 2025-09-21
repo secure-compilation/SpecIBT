@@ -208,16 +208,16 @@ TODO: What happens if a code pointer is stored at address 0
     which doesn't seem like a secure overapproximation of lower-level attacker behavior
   + We can fix this by allowing the attacker to also choose an arbitrary address
     when we are already misspeculating (ms=⊤) and `n=eval r e`?
-    * Maybe this can be done with a single complex rule, but the effect I want
-      is the same as adding this extra Call rule to the speculative semantics:
+    * In theory, we can add an extra Call rule to the speculative semantics
+      (about the ms=⊤ precondition see below though):
 
 p[pc]=call e   n=eval r e
 ———————————————————————————————————————————————————————————————————————
 p |- (pc,r,m,sk,⊥,⊤) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,⊤)
 
-The single rule corresponding to the two ones looks something like this:
+In practice, the single rule corresponding to the two ones looks something like this:
 
-p[pc]=call e     n=eval r e ==> ms=⊤     ms'=ms\/(l=eval r e /\ (l,0)≠pc')
+p[pc]=call e     n=eval r e ==> ms=⊤    ms'=ms\/(l=eval r e ==> (l,0)≠pc')
 ——————————————————————————————————————————————————————————————————————————
 p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
 
@@ -225,7 +225,15 @@ p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
       let ms' := ms || (if_some (to_fp v)
                           (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
 
-TODO: Is the `n=eval r e ==> ms=⊤` condition needed/helpful/reasonable?
+Is the `n=eval r e ==> ms=⊤` condition needed/helpful/reasonable though?
+- It doesn't seem needed or helpful to me, so I removed it
+
+p[pc]=call e     ms'=ms\/(l=eval r e ==> (l,0)≠pc')
+——————————————————————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
+
+      let ms' := ms || (if_some (to_fp v)
+                          (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
 
 
 uslh (branch e l) =
