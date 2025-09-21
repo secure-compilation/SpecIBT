@@ -260,13 +260,13 @@ Definition cptr : Type := nat * nat. (* label(=(basic) block identifier) and off
 
 Definition mem := list val.
 
-Definition cfg : Type := ((cptr*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
+Definition cfg : Type := (((option cptr)*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
 
 Inductive observation : Type :=
   | OBranch (b:bool)
   | OLoad (n:nat)
   | OStore (n:nat)
-  | OCall (l:nat).
+  | OCall (v:val).
 
 Definition obs := list observation.
 
@@ -283,38 +283,38 @@ Definition inc (pc:cptr) : cptr :=
 Notation "pc '+' '1'" := (inc pc).
 
 Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
-  let '(pc, r, m, sk) := c in
+  let '(opc, r, m, sk) := c in
+  pc <- opc;;
   i <- p[[pc]];;
   match i with
   | <{{skip}}> | <{{ctarget}}> =>
-      ret ((pc+1, r, m, sk), [])
+      ret ((ret (pc+1), r, m, sk), [])
   | <{{x:=e}}> =>
       v <- eval r e;;
-      ret ((pc+1, (x !-> v; r), m, sk), [])
+      ret ((ret (pc+1), (x !-> v; r), m, sk), [])
   | <{{branch e to l}}> =>
       v <- eval r e;;
       n <- to_nat v;;
       let b := not_zero n in
-      ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
+      ret ((if b then ret (l,0) else ret (pc+1), r, m, sk), [OBranch b])
   | <{{jump l}}> =>
-      ret (((l,0), r, m, sk), [])
+      ret ((ret (l,0), r, m, sk), [])
   | <{{x<-load[e]}}> =>
       v <- eval r e;;
       n <- to_nat v;;
       v' <- nth_error m n;;
-      ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])      
+      ret ((ret (pc+1), (x !-> v'; r), m, sk), [OLoad n])
   | <{{store[e]<-e'}}> =>
       v <- eval r e;;
       n <- to_nat v;;
       v' <- eval r e';;
-      ret ((pc+1, r, upd n m v', sk), [OStore n])
+      ret ((ret (pc+1), r, upd n m v', sk), [OStore n])
   | <{{call e}}> =>
       v <- eval r e;;
-      l <- to_fp v;;
-      ret (((l,0), r, m, (pc+1)::sk), [OCall l])
+      ret ((l <- to_fp v;; ret (l,0)), r, m, (pc+1::sk), [OCall v])
   | <{{ret}}> =>
       pc' <- hd_error sk;;
-      ret ((pc', r, m, tl sk), [])
+      ret ((ret pc', r, m, tl sk), [])
   end.
 
 (* Morally state+output monad hidden in here: step p >> steps f' p  *)
@@ -337,7 +337,7 @@ Inductive direction : Type :=
 
 Definition dirs := list direction.
 
-Definition spec_cfg : Type := ((cfg * bool) * bool).
+Definition spec_cfg : Type := ((((cptr*reg)*mem)*list cptr)*bool)*bool.
 
 Definition is_true (b:bool) : option unit :=
   if b then Some tt else None.
@@ -389,15 +389,15 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       (* New code (see explanation in MiniCET.md; Spectre 1.1): *)
       let ms' := ms || (if_some (to_fp v)
                           (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
-      ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall (fst pc')])
+      ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall v])
   | <{{ctarget}}> =>
       is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
       ret (((pc+1, r, m, sk), false, ms), ds, [])
   | _ =>
       is_false ct;;
-      co <- step p c;;
-      let '(c',o) := co in
-      ret ((c',false,ms), ds, o)
+      '(opc', r', m', sk',o) <- step p (ret pc, r, m, sk);;
+      pc' <- opc';; (* CH: at this point, this should always be Some *)
+      ret ((pc', r', m', sk',false,ms), ds, o)
   end.
 
 Fixpoint spec_steps (f:nat) (p:prog) (c:spec_cfg) (ds:dirs)

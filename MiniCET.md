@@ -207,19 +207,19 @@ TODO: What happens if a code pointer is stored at address 0
   + Our current speculative semantics of call would get stuck on `l=eval r e`,
     which doesn't seem like a secure overapproximation of lower-level attacker behavior
   + We can fix this by allowing the attacker to also choose an arbitrary address
-    when we are already misspeculating (ms=⊤) and `n=eval r e`?
+    when `n=eval r e`?
     * In theory, we can add an extra Call rule to the speculative semantics
       (about the ms=⊤ precondition see below though):
 
 p[pc]=call e   n=eval r e
 ———————————————————————————————————————————————————————————————————————
-p |- (pc,r,m,sk,⊥,⊤) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,⊤)
+p |- (pc,r,m,sk,⊥,⊤) -->_[DCall pc']^[OCall n] (pc',r,m,(pc+1)::sk,⊤,⊤)
 
 In practice, the single rule corresponding to the two ones looks something like this:
 
-p[pc]=call e     n=eval r e ==> ms=⊤    ms'=ms\/(l=eval r e ==> (l,0)≠pc')
+p[pc]=call e     v = eval r e    n=v ==> ms=⊤    ms'=ms\/(l=v ==> (l,0)≠pc')
 ——————————————————————————————————————————————————————————————————————————
-p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
+p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall v] (pc',r,m,(pc+1)::sk,⊤,ms')
 
       is_true (if_some (to_nat v) (fun _ => ms));;
       let ms' := ms || (if_some (to_fp v)
@@ -228,9 +228,9 @@ p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
 Is the `n=eval r e ==> ms=⊤` condition needed/helpful/reasonable though?
 - It doesn't seem needed or helpful to me, so I removed it
 
-p[pc]=call e     ms'=ms\/(l=eval r e ==> (l,0)≠pc')
+p[pc]=call e     v = eval r e    ms'=ms\/(l=v ==> (l,0)≠pc')
 ——————————————————————————————————————————————————————————————————————————
-p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
+p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall v] (pc',r,m,(pc+1)::sk,⊤,ms')
 
       let ms' := ms || (if_some (to_fp v)
                           (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
