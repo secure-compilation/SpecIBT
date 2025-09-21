@@ -33,6 +33,40 @@ Definition pub_arrs := total_map label.
 
 Notation apply := ListMaps.apply.
 
+Definition fold_extra {A : Type} {B : Type} (f : A -> list B -> B -> list B -> A) (l : list B) (v : A) : A :=
+  let fix aux (processed : list B) (incoming : list B) (acc : A) :=
+    match incoming with
+    | [] => acc
+    | h::t =>
+        let new_acc := f acc processed h t in
+        aux (processed ++ [h]) t new_acc
+    end
+  in aux [] l v.
+
+#[export] Instance shrinkTotalMap {X : Type} `{Shrink X}: Shrink (total_map X) :=
+  {shrink := fun '(d, m) =>
+      (* Shrinking the default value *)
+      (List.map (fun d' => (d', m)) (shrink d)) ++
+      (* Shrinking an entry in the map *)
+      (List.map
+         (fun m' => (d, m'))
+         (fold_extra (fun acc before '(k, v) after =>
+            let modified_entry := List.map (fun v' =>
+                before ++ [(k, v')] ++ after
+              ) (shrink v) in
+
+            modified_entry ++ acc
+         ) m [])
+      ) ++
+      (* Removing an entry in the map *)
+      (List.map
+         (fun m' => (d, m'))
+         (fold_extra (fun acc before '(k, v) after =>
+            (before ++ after) :: acc
+         ) m [])
+      )
+  }.
+
 Definition pub_equiv (P : total_map label) {X:Type} (s1 s2 : total_map X) :=
   forall x:string, apply P x = true -> apply s1 x = apply s2 x.
 
@@ -129,6 +163,8 @@ Definition val_eqb (v1 v2: val) : bool :=
   | _, _ => false
   end.
 
+Notation "x =v y" := (val_eqb x y) (at level 50).
+
 Lemma val_eqb_spec:
   forall v1 v2, val_eqb v1 v2 = true <-> v1 = v2.
 Proof.
@@ -202,4 +238,87 @@ QuickChick (forAll gen_pub_mem (fun P =>
     forAll gen_mem (fun s1 =>
     forAll (gen_pub_mem_equiv P s1) (fun s2 =>
       (checker (pub_equiv_listb P s1 s2))
-  )))).
+    )))).
+
+Definition shrink_pub_equiv_reg (P : total_map label) (s : total_map val) : total_map val -> list (total_map val) :=
+  fun '(d, m) =>
+    (* We can only shrink the default value iif nothing secret uses it.
+       If the default for P is "secret", then we can always find a variable not in m that is secret.
+       Otherwise, we can shrink if all public values in P are explicit in s *)
+    let can_shrink_default := (
+      let '(default_visiblity, visiblities) := P in
+
+      if default_visiblity
+      then false
+      else
+        let public_variables := List.filter (fun x =>
+          apply P x
+        ) (map_dom visiblities) in
+
+        forallb (fun v => List.existsb (fun '(v', _) => String.eqb v v') m) public_variables
+    ) in
+
+    let secret_entries_shrunk := (List.map
+         (fun m' => (d, m'))
+         (fold_extra (fun acc before '(k, v) after =>
+            let modified_entry := if apply P k
+              then []
+              else List.map (fun v' =>
+                  before ++ [(k, v')] ++ after
+                ) (shrink v) in
+
+            modified_entry ++ acc
+         ) m [])
+      ) in
+
+    (* We can only remove secret entries or public entries that have
+       the same value as the default value *)
+    let entries_removed := List.map
+        (fun m' => (d, m'))
+        (fold_extra (fun acc before '(k, v) after =>
+           let replacement :=
+             if negb (apply P k) || (v =v d)
+             then before ++ after (* secret or same value as default *)
+             else before ++ (k, v) :: after in
+
+           replacement :: acc
+        ) m []) in
+
+    if can_shrink_default
+    then (List.map (fun d' => (d', m)) (shrink d)) ++ (secret_entries_shrunk ++ entries_removed)
+    else secret_entries_shrunk ++ entries_removed.
+
+Fixpoint remove_one_secret (P: list label) {X: Type} (s: list X) : list (list X) :=
+    match P, s with
+    | [], [] => []
+    | hp::tp, hr::tr =>
+        let removed_one_items := (remove_one_secret tp tr) in
+        let add_hd := List.map (fun tl => hr :: tl) removed_one_items in
+        if hp
+        then add_hd
+        else tr :: removed_one_items
+    | _, _ => [] (* unreachable *)
+    end.
+
+Definition shrink_pub_equiv_mem (P: list label) (s: list val)
+  : list val -> list (list val) :=
+  fun s' =>
+    if negb (Datatypes.length P =? Datatypes.length s')%nat then []
+    else
+      (
+        let secret_values_shrunk :=
+          (fix secret_values_shrunk_aux (P: list label) (rs: list val) :=
+             match P, rs with
+             | [], [] => []
+             | hp::tp, hr::tr => if hp
+                              then (let shrunk_tl := secret_values_shrunk_aux tp tr in
+                                    List.map (fun tl => hr :: tl) shrunk_tl)
+                              else (let shrunk_hd := shrink hr in
+                                    List.map (fun hd => hd :: tr) shrunk_hd)
+             | _, _ => [] (* unreachable *)
+             end) P s' in
+        let secret_items_shrunk :=
+          remove_one_secret P s' in
+        secret_values_shrunk ++ secret_items_shrunk
+
+      ).

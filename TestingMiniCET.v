@@ -17,10 +17,12 @@ Require Import ExtLib.Structures.Traversable.
 Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
 Export MonadNotation. Open Scope monad_scope.
+From SECF Require Import PSlib.
 From Coq Require Import String.
 
 From SECF Require Import Utils.
 From SECF Require Import ListMaps.
+
 
 (** The factoring of expressions is taken from the latest SpecCT chapter *)
 
@@ -137,9 +139,9 @@ Open Scope com_scope.
 
 (** Now to the first interesting part, values instead of just numbers: *)
 
-Inductive val : Type :=
-  | N (n:nat)
-  | FP (l:nat). (* <- NEW: function pointer to procedure at label [l] *)
+(* Inductive val : Type := *)
+(*   | N (n:nat) *)
+(*   | FP (l:nat). (* <- NEW: function pointer to procedure at label [l] *) *)
 
 (** Since type mismatches are now possible, evaluation of expressions can now
     fail, so the [eval] function is in the option monad. *)
@@ -1276,7 +1278,6 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
                 remove_dupes Nat.eqb mems)
   | _ => None
   end.
-
 
 (** Better wf program generator *)
 (* 1. public/secret
