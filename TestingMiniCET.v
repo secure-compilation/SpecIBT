@@ -268,7 +268,8 @@ Inductive observation : Type :=
   | OBranch (b:bool)
   | OLoad (n:nat)
   | OStore (n:nat)
-  | OCall (l:nat).
+  | OCall (v:val). (* we allow speculative calls to arbitrary values;
+                      see Spectre 1.1 discussion in MiniCET.md *)
 
 Definition obs := list observation.
 
@@ -313,7 +314,7 @@ Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
   | <{{call e}}> =>
       v <- eval r e;;
       l <- to_fp v;;
-      ret (((l,0), r, m, (pc+1)::sk), [OCall l])
+      ret (((l,0), r, m, (pc+1)::sk), [OCall (FP l)])
   | <{{ret}}> =>
       pc' <- hd_error sk;;
       ret ((pc', r, m, tl sk), [])
@@ -385,9 +386,12 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       d <- hd_error ds;;
       pc' <- is_dcall d;;
       v <- eval r e;;
-      l <- to_fp v;;
-      let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
-      ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall l])
+      (* we allow speculative calls to arbitrary values;
+         see Spectre 1.1 discussion in MiniCET.md *)
+      is_true (if_some (to_nat v) (fun _ => ms));;
+      let ms' := ms || (if_some (to_fp v)
+                          (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
+      ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall v])
   | <{{ctarget}}> =>
       is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
       ret (((pc+1, r, m, sk), false, ms), ds, [])
