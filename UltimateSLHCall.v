@@ -1052,39 +1052,12 @@ Ltac com_step :=
   | |- _ => now constructor
   end).
 
-(** TODO replace with standard library lemmas *)
-
-Lemma app_cons : forall {A} (x : A) (l : list A), 
-  x :: l = [x] ++ l.
-Proof. simpl. auto. Qed.
+(** TODO replace with standard library lemma? *)
 
 Lemma add_neq : forall (i j n : nat), 
   ((i =? j)%nat = false) -> ((n + i =? n + j)%nat = false).
 Proof.
   intros. induction n; auto.
-Qed.
-
-Lemma plus_eq_0 : forall n m,
-  n + m = 0 -> n = 0 /\ m = 0.
-Proof.
-  induction n; intros; try (simpl in H; rewrite H; tauto); discriminate.
-Qed.
-
-
-Lemma nat_True: forall (n : nat), 
-  (n = n) <-> True.
-Proof.
-  split; intros; auto.
-Qed.
-
-Lemma j_not_zero: forall (j : nat),
-  (0 <> j) -> (match j with
-              | 0 => true
-              | S _ => false 
-              end) = false.
-Proof.
-  induction j; intros;
-  [unfold not in H; rewrite nat_True in H; contradiction|auto].
 Qed.
 
 (** End todo *)
@@ -1215,7 +1188,10 @@ Proof.
   induction p. 
   - intros. unfold ultimate_slh_prog_gen, add_index_gen in H. simpl in H.
     rewrite nth_error_nil in H. discriminate.
-  - intros. rewrite uslh_prog_cons in H. rewrite app_cons in H.
+  - intros. rewrite uslh_prog_cons in H. 
+    change (<{{ "b" := ("callee" = n) ? "b" : 1; (ultimate_slh a) }}> :: ultimate_slh_prog_gen p (S n))
+    with ([<{{ "b" := ("callee" = n) ? "b" : 1; (ultimate_slh a) }}>] ++ ultimate_slh_prog_gen p (S n))
+    in H.
     rewrite nth_error_app in H. simpl in H. 
     destruct e; simpl in *.
     + rewrite add_0_r. injection H. intros. rewrite <- H0. exists a. auto.
@@ -1397,7 +1373,7 @@ Proof.
                 + clean_goal st_b. exists c_src. split; [|split; discriminate].
                   eapply multi_ideal_trans_nil_r; econstructor; [rewrite Hf|eapply H3|]; eauto.
                 + inv H; [inv H14|]. apply IH in H0; try measure1;
-                  try (eapply unused_vars); eauto; [|rewrite t_update_eq; simpl; rewrite j_not_zero; auto].
+                  try (eapply unused_vars); eauto; [|rewrite t_update_eq; simpl; try (induction j); auto].
                   simpl in H0. rewrite j_not_zero in H0; auto.
                   rewrite t_update_eq in H0. rewrite t_update_neq in H0; [|discriminate].
                   rewrite t_update_eq in H0. rewrite t_update_permute in H0; [|discriminate].
