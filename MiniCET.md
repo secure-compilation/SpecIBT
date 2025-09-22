@@ -230,11 +230,12 @@ p |- (pc, r, m, pc'::sk, ⊥, ms) -->_[]^[] (pc', r, m, sk, ⊥, ms)
 
 Should we add step directives for jump? and/or even ret?
 - this may help doing induction on directives
-- alternatively: could do like Gilles et al always do nad
+- alternatively: could do like Gilles et al always do and
   add step directives so that |ds|=length of the execution?
   + this would give us something simple to do induction on, but then need to
     account for the fact that the compiler / SLH transformation can change the
-    length of the execution
+    silent directives
+  + New idea is to directly do induction on the length of the execution
 
 Notes:
 - no (mis-)speculation on returns; assuming protected stack
