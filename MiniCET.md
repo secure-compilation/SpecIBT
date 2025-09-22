@@ -144,7 +144,7 @@ i ::= skip
 o := OBranch b
    | OLoad n
    | OStore n
-   | OCall l           offset 0 is implicit
+   | OCall v
 
 d := DBranch b'
    | DCall (l',o')
@@ -213,7 +213,9 @@ p[pc]=store[e]<-e'   n=eval r e   n'=eval r e'   m'=m[n<-n']
 ———————————————————————————————————————————————————————————
 p |- (pc,r,m,sk,⊥,ms) -->_[]^[OStore n] (pc+1,r,m',sk,⊥,ms)
 
-
+p[pc]=call e     v = eval r e    n=v ==> ms=⊤    ms'=ms\/(l=v ==> (l,0)≠pc')
+————————————————————————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall v] (pc',r,m,(pc+1)::sk,⊤,ms')
 
 p[pc] = ctarget
 ———————————————————————————————————————————————
