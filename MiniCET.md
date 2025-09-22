@@ -1,3 +1,90 @@
+# Modelling Spectre 1.1 attacks
+
+Our previous speculative semantics rule for calls didn't allow calls to
+speculatively overwritten code pointers because of the `l=eval r e` premise:
+
+p[pc]=call e   l=eval r e   ms'=ms\/(l,0)≠pc'
+——————————————————————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
+
+Two issues with this:
+- our language couldn't model these interesting attacks (Spectre 1.1),
+  which would be nice to model even irrespective of the next point
+- from our discussion it seems this will cause problems when
+  going to a lower level where we cannot distinguish `l` from `n`.
+
+TODO: What happens if a code pointer is stored at address 0
+      and speculatively overwritten? Spectre 1.1:
+      https://secure-compilation.zulipchat.com/#narrow/channel/436285-speculation/topic/Spectre1.2E1/near/459448106
+- At a lower level, when the overwritten code pointer is loaded and jumped to,
+  we do a jump to an address that's attacker influenced
+  + Our current speculative semantics of call would get stuck on `l=eval r e`,
+    which doesn't seem like a secure overapproximation of lower-level attacker behavior
+  + We can fix this by allowing the attacker to also choose an arbitrary address
+    when `n=eval r e`?
+    * In theory, we can add an extra Call rule to the speculative semantics
+      (about the ms=⊤ precondition see below though):
+
+## Alternative #1 -- we went for this variant, since it's actually simpler (sequential sem)
+
+p[pc]=call e   n=eval r e
+———————————————————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,⊤) -->_[DCall pc']^[OCall n] (pc',r,m,(pc+1)::sk,⊤,⊤)
+
+In practice, the single rule corresponding to the two ones looks something like this:
+
+p[pc]=call e     v = eval r e    n=v ==> ms=⊤    ms'=ms\/(l=v ==> (l,0)≠pc')
+——————————————————————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall v] (pc',r,m,(pc+1)::sk,⊤,ms')
+
+      is_true (if_some (to_nat v) (fun _ => ms));;
+      let ms' := ms || (if_some (to_fp v)
+                          (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
+
+No relative security issue: sequentially both things are stuck
+Advantage: Simpler sequential semantics (no extra failure state needed)
+Potential issues with this:
+- when we move to lower level: we will no longer get stuck
+  when ms=⊥ – but this seems fine
+  + we're okay with allowing the extra sequential leakage because of UB
+    (otherwise we're anyway allowing it in Alternative #2
+     below by changing the sequential semantics)
+
+Extra property to potentially check later:
+- Program with uslh applied, run in the speculative semantics
+- Once ms=⊤ if the execution gets stuck then
+  the source execution has to get stuck earlier
+  (producing shorter trace?)
+- Sanity check that our relative security property
+  is still reasonable(?) after refinement of UB (which can introduce leakage)
+  + Jonathan: Our relative security doesn't compose well with UB?
+  + TODO: Still need to (properly) define relative security
+    for passes that refine UB; current definition too strong:
+    UB refinement can add sequential leakage,
+    and speculation defenses normally don't stop that
+
+## Alternative #2
+
+Is the `n=v ==> ms=⊤` condition needed/helpful/reasonable though?
+- It didn't seem needed or helpful to me, so I tried removing it:
+
+p[pc]=call e     v = eval r e    ms'=ms\/(l=v ==> (l,0)≠pc')
+——————————————————————————————————————————————————————————————————————————
+p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall v] (pc',r,m,(pc+1)::sk,⊤,ms')
+
+      let ms' := ms || (if_some (to_fp v)
+                          (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
+
+Potential issues with this:
+- for relative security need to make sequential semantics more complex
+  (extra step on call with `n=v` going to an error state)
+- is it hard to update the mispeculation flag when `n=v`? – this actually seems fine
+  + we save callee=n and then check on the other side, as usual
+    * this would lead to undefined behavior in our check on the callee side,
+      but that's undefined behavior in the sequential source too
+    * at an even lower level the callee check can succeed (pc'=n),
+      but that seems fine
+
 # Second attempt
 
 Main ideas:
@@ -126,9 +213,7 @@ p[pc]=store[e]<-e'   n=eval r e   n'=eval r e'   m'=m[n<-n']
 ———————————————————————————————————————————————————————————
 p |- (pc,r,m,sk,⊥,ms) -->_[]^[OStore n] (pc+1,r,m',sk,⊥,ms)
 
-p[pc]=call e   l=eval r e   ms'=ms\/(l,0)≠pc'
-——————————————————————————————————————————————————————————————————————————
-p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
+
 
 p[pc] = ctarget
 ———————————————————————————————————————————————
@@ -197,73 +282,8 @@ uslh (store[e] <- e) =
   let e' := "ms"=1 ? 0 : e in     masking the whole address
   return [store[e'] <- e]         - fine that 0 is a valid data memory address?
                                     Seems our defense of calls can deal with this,
-                                    but the attack is more difficult to model:
-
-TODO: What happens if a code pointer is stored at address 0
-      and speculatively overwritten? Spectre 1.1:
-      https://secure-compilation.zulipchat.com/#narrow/channel/436285-speculation/topic/Spectre1.2E1/near/459448106
-- At a lower level, when the overwritten code pointer is loaded and jumped to,
-  we do a jump to an address that's attacker influenced
-  + Our current speculative semantics of call would get stuck on `l=eval r e`,
-    which doesn't seem like a secure overapproximation of lower-level attacker behavior
-  + We can fix this by allowing the attacker to also choose an arbitrary address
-    when `n=eval r e`?
-    * In theory, we can add an extra Call rule to the speculative semantics
-      (about the ms=⊤ precondition see below though):
-
-p[pc]=call e   n=eval r e
-———————————————————————————————————————————————————————————————————————
-p |- (pc,r,m,sk,⊥,⊤) -->_[DCall pc']^[OCall n] (pc',r,m,(pc+1)::sk,⊤,⊤)
-
-In practice, the single rule corresponding to the two ones looks something like this:
-
-p[pc]=call e     v = eval r e    n=v ==> ms=⊤    ms'=ms\/(l=v ==> (l,0)≠pc')
-——————————————————————————————————————————————————————————————————————————
-p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall v] (pc',r,m,(pc+1)::sk,⊤,ms')
-
-      is_true (if_some (to_nat v) (fun _ => ms));;
-      let ms' := ms || (if_some (to_fp v)
-                          (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
-
-No relative security issue: sequentially both things are stuck
-Advantage: Simpler sequential semantics (no extra failure state needed)
-Potential issues with this:
-- when we move to lower level: we will no longer get stuck – seems fine
-  + but we're okay with allowing the extra leakage because of UB
-    (otherwise we're anyway allowing it by changing the sequential semantics)
-
-Extra property to potentially check:
-- Program with uslh applied, run in the speculative semantics
-- Once ms=⊤ if the execution gets stuck then
-  the source execution has to get stuck earlier
-  (producing shorter trace?)
-- Sanity check that our relative security property
-  is still reasonable(?) after refinement of UB (which can introduce leakage)
-  + Jonathan: Our relative security doesn't compose well with UB?
-  + TODO: Still need to (properly) define relative security
-    for passes that refine UB; current definition too strong:
-    UB refinement can add sequential leakage,
-    and speculation defenses normally don't stop that
-
-Is the `n=v ==> ms=⊤` condition needed/helpful/reasonable though?
-- It doesn't seem needed or helpful to me, so I removed it
-
-p[pc]=call e     v = eval r e    ms'=ms\/(l=v ==> (l,0)≠pc')
-——————————————————————————————————————————————————————————————————————————
-p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall v] (pc',r,m,(pc+1)::sk,⊤,ms')
-
-      let ms' := ms || (if_some (to_fp v)
-                          (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
-
-Potential issues with this:
-- for relative security need to make sequential semantics more complex
-  (extra step on call with `n=v`)
-- is it hard to update the mispeculation flag when `n=v`? seems fine
-  + we save callee=n and then check on the other side, as usual
-    * this would lead to undefined behavior in our check on the callee side,
-      but that's undefined behavior in the sequential source too
-    * at a lower level the callee check can succeed (pc'=n),
-      but that's fine
+                                    in particular because the called address
+                                    gets masked if "ms"=1
 
 uslh (branch e l) =
   let e' = "ms"=0 && e in                           masking branch condition
