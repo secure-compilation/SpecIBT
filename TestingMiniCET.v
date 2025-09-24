@@ -22,7 +22,7 @@ From Coq Require Import String.
 
 From SECF Require Import Utils.
 From SECF Require Import ListMaps.
-
+Require Import Coq.Classes.EquivDec.
 
 (** The factoring of expressions is taken from the latest SpecCT chapter *)
 
@@ -1287,6 +1287,186 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
 (* 1. public/secret
    2. ptr/not ptr
    3. wf          *)
+
+Definition gen_pub_exp_leaf (P : pub_vars) : G exp :=
+  oneOf (liftM ANum arbitrary ;;;
+         liftM FPtr arbitrary ;;;
+         (let pubs := (filter (apply P) (map_dom (snd P))) in
+         if seq.nilp pubs then []
+         else [liftM AId (elems_ ("X0"%string) pubs)])).
+
+Sample (P <- arbitrary ;;
+       exp <- gen_pub_exp_leaf P;;
+       ret (P, exp)).
+
+(* move to somewhere *)
+Definition string_eq_dec := Map.E.eq_dec.
+
+Definition list_inter {A: Type} (eq_dec: forall x y, {x = y} + {x <> y}) (l1 l2: list A) : list A :=
+  filter (fun x => if (in_dec eq_dec x l2) then true else false) l1.
+
+Definition gen_pub_exp_leaf_no_ptr (P : pub_vars) (rs : reg) : G exp :=
+  oneOf (liftM ANum arbitrary ;;;
+         (let not_ptrs := filter (is_not_ptr rs) (map_dom (snd rs)) in
+          let pubs := (filter (apply P) (map_dom (snd P))) in
+          let s := list_inter string_eq_dec not_ptrs pubs in
+          if seq.nilp s then [] else
+            [liftM AId (elems_ "X0"%string s)] ) ).
+
+Sample (P <- arbitrary ;;
+        rs <- arbitrary ;;
+        exp <- gen_pub_exp_leaf_no_ptr P rs;;
+        ret (P, rs, exp)).
+
+Fixpoint gen_pub_exp_no_ptr (sz : nat) (P: pub_vars) (rs: reg) : G exp :=
+  match sz with
+  | O => gen_pub_exp_leaf_no_ptr P rs
+  | S sz' =>
+      freq [ (2, gen_pub_exp_leaf_no_ptr P rs);
+             (sz, liftM3 ABin arbitrary (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs));
+             (sz, liftM3 ACTIf (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs))
+          ]
+  end.
+
+(* Better, but we still get discards. These cases are when the equality is generated between pointer
+  and non-pointer. The following generator accounts for that: *)
+
+(* Definition eitherOf {A} (a : G A) (b : G A) : G A := freq [(1, a); (1, b)]. *)
+
+Fixpoint gen_pub_exp (sz : nat) (P: pub_vars) (rs : reg) : G exp :=
+  match sz with
+  | O => gen_pub_exp_leaf P
+  | S sz' =>
+          freq [
+             (2, gen_pub_exp_leaf P);
+             (sz, binop <- arbitrary;; match binop with
+                | BinEq => eitherOf
+                    (liftM2 (ABin BinEq) (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs))
+                    (liftM2 (ABin BinEq) (liftM FPtr arbitrary) (liftM FPtr arbitrary))
+                | _ => liftM2 (ABin binop) (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs)
+              end);
+             (sz, liftM3 ACTIf (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp sz' P rs) (gen_pub_exp sz' P rs))
+          ]
+  end.
+
+Definition gen_secure_asgn (P:pub_vars) (rs: reg) : G inst :=
+  let vars := map_dom (snd P) in
+  x <- elems_ "X0"%string vars;;
+  e <- (if apply P x then gen_pub_exp 1 P rs else arbitrarySized 1);;
+  ret <{ x := e }>.
+
+Definition gen_name (P:pub_vars) (label:bool) : G (option string) :=
+  let names := filter (fun x => Bool.eqb label (apply P x))
+                      (map_dom (snd P)) in
+  match names with
+  | x0 :: _ => liftM Some (elems_ x0 names)
+  | [] => ret None
+  end.
+
+Definition get_addr (PA: pub_arrs) (label:bool) : G (option nat) :=
+  let indices := seq 0 (Datatypes.length PA) in
+  let idx_pa := combine indices PA in
+  let filtered := filter (fun '(idx, b) => Bool.eqb label b) idx_pa in
+  let indices' := map fst filtered in
+  match indices' with
+  | [] => ret None
+  | hd::tl => liftM Some (elems_ hd indices')
+  end.
+
+Definition gen_asgn_in_ctx (gen_asgn : pub_vars -> reg -> G inst)
+    (pc:label) (P:pub_vars) (rs: reg) : G inst :=
+  if pc then gen_asgn P rs
+  else
+    x <- gen_name P secret;; (* secret var *)
+    match x with
+    | Some x =>
+      e <- arbitrarySized 1;;
+      ret <{ x := e }>
+    | None => ret <{ skip }>
+    end.
+
+Definition gen_secure_aload (P:pub_vars) (PA:pub_arrs) (rs: reg) : G inst :=
+  let vars := map_dom (snd P) in
+  x <- elems_ "X0"%string vars;;
+  if apply P x then
+    i <- get_addr PA public;; (* public array *)
+    match i with
+    | Some i' =>
+        ret (ILoad x (ANum i'))
+    | None => ret <{ skip }>
+    end
+  else
+    a <- arbitrary;;
+    i <- arbitrarySized 1;;
+    ret (ILoad x i).
+
+Definition gen_aload_in_ctx (gen_aload : pub_vars -> pub_arrs -> reg -> G inst)
+    (pc:label) (P:pub_vars) (PA:pub_arrs) (rs: reg) : G inst :=
+  if pc then gen_aload P PA rs
+  else
+    x <- gen_name P secret;; (* secret var *)
+    match x with
+    | Some x =>
+      a <- arbitrary;;
+      i <- arbitrarySized 1;;
+      ret (ILoad x i)
+    | None => ret <{ skip }>
+    end.
+
+Definition gen_secure_aread (PA:pub_arrs) : G inst :=
+  let indices := seq 0 (Datatypes.length PA) in
+  x <- elems_ 0%nat vars;;
+  if apply P x then
+    a <- gen_name PA public;; (* public array *)
+    match a with
+    | Some a =>
+        i <- gen_pub_aexp 1 P;; (* public index *)
+        ret <{ x <- a[[i]] }>
+    | None => ret <{ skip }>
+    end
+  else
+    a <- arbitrary;;
+    i <- arbitrarySized 1;;
+    ret <{ x <- a[[i]] }>.
+
+Definition gen_aread_in_ctx (gen_aread : pub_vars -> pub_arrs -> G com)
+    (pc:label) (P:pub_vars) (PA:pub_arrs) : G com :=
+  if pc then gen_aread P PA
+  else
+    x <- gen_name P secret;; (* secret var *)
+    match x with
+    | Some x =>
+      a <- arbitrary;;
+      i <- arbitrarySized 1;;
+      ret <{ x <- a[[i]] }>
+    | None => ret <{ skip }>
+    end.
+
+Definition gen_secure_awrite (P:pub_vars) (PA:pub_arrs) : G com :=
+  let arrs := map_dom (snd PA) in
+  a <- elems_ "A0"%string arrs;;
+  if apply PA a then
+    i <- gen_pub_aexp 1 P;; (* public index *)
+    e <- gen_pub_aexp 1 P;; (* public expression *)
+    ret <{ a[i] <- e }>
+  else
+    i <- arbitrarySized 1;;
+    e <- arbitrarySized 1;;
+    ret <{ a[i] <- e }>.
+
+Definition gen_awrite_in_ctx (gen_awrite : pub_vars -> pub_arrs -> G com)
+    (pc:label) (P:pub_vars) (PA:pub_arrs) : G com :=
+  if pc then gen_awrite P PA
+  else
+    a <- gen_name PA secret;; (* secret array *)
+    match a with
+    | Some a =>
+      i <- arbitrarySized 1;;
+      e <- arbitrarySized 1;;
+      ret <{ a[i] <- e }>
+    | None => ret <{ skip }>
+    end.
+
 
 Definition gen_exp_leaf_wf (pl: nat) (state : reg) : G exp :=
   oneOf (liftM ANum arbitrary ;;;
