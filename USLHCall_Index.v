@@ -236,70 +236,53 @@ Proof.
   intros. rewrite <- app_nil_l with (l:=os). rewrite <- app_nil_l with (l:=ds). eapply multi_spec_trans; eassumption.
 Qed.
 
-Lemma multi_spec_trans_nil_r p c st ast b c' st' ast' b' ct stt astt bt ds os k:
+Lemma multi_spec_trans_nil_r p c st ast b c' st' ast' b' ct stt astt bt ds os n:
   p |- <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
-  p |- <((c', st', ast', b'))> -->*_[]^^[]^^0 <((ct, stt, astt, bt))> ->
-  p |- <((c, st, ast, b))> -->*_ds^^os^^(S k) <((ct, stt, astt, bt))>.
+  p |- <((c', st', ast', b'))> -->*_[]^^[]^^n <((ct, stt, astt, bt))> ->
+  p |- <((c, st, ast, b))> -->*_ds^^os^^(S n) <((ct, stt, astt, bt))>.
 Proof.
   intros. rewrite <- app_nil_r with (l:=os). rewrite <- app_nil_r with (l:=ds).
-  eapply multi_spec_trans; [eassumption|].
-  (* this doesn't work
-
-     H : p |- <(( c, st, ast, b ))> -->_ ds ^^ os <(( c', st', ast', b' ))>
-     H0 : p |- <(( c', st', ast', b' ))> -->*_ [] ^^ [] ^^ 0 <(( ct, stt, astt, bt ))>
-
-    ========================= (1 / 1)
-
-     p |- <(( c', st', ast', b' ))> -->*_ [] ^^ [] ^^ k <(( ct, stt, astt, bt ))>
-
-   *)
-Abort.
-
-(* ==> previous proof no longer works
-  Proof.
-  intros. rewrite <- app_nil_r with (l:=os). rewrite <- app_nil_r with (l:=ds). 
   eapply multi_spec_trans; eassumption.
-   Qed. *)
-
-Lemma multi_spec_combined_executions : forall p c st ast cm stm astm osm ct stt astt ost ds ds' b b' b'',
-  p |- <((c, st, ast, b))> -->*_ds^^osm <((cm, stm, astm, b'))> ->
-  p |- <((cm, stm, astm, b'))> -->*_ds'^^ost <((ct, stt, astt, b''))> ->
-  p |- <((c, st, ast, b))> -->*_(ds++ds')^^(osm++ost) <((ct, stt, astt, b''))>.
+Qed.
+  
+Lemma multi_spec_combined_executions : forall p c st ast cm stm astm osm ct stt astt ost ds ds' b b' b'' n1 n2,
+  p |- <((c, st, ast, b))> -->*_ds^^osm^^n1 <((cm, stm, astm, b'))> ->
+  p |- <((cm, stm, astm, b'))> -->*_ds'^^ost^^n2 <((ct, stt, astt, b''))> ->
+  p |- <((c, st, ast, b))> -->*_(ds++ds')^^(osm++ost)^^(n1 + n2) <((ct, stt, astt, b''))>.
 Proof.
   intros.
   induction H.
   - rewrite app_nil_l. apply H0.
-  - rewrite <- !app_assoc. eapply multi_spec_trans.
-    + eapply H.
-    + apply IHmulti_spec. apply H0.
+  - rewrite <- !app_assoc. eapply multi_spec_trans; [eapply H|].
+  apply IHmulti_spec. apply H0.
 Qed.
 
-Lemma multi_spec_add_snd_com : forall p c st ast ct stt astt ds os c2 b bt,
-  p |- <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))> ->
-  p |- <((c;c2, st, ast, b))> -->*_ds^^os <((ct;c2, stt, astt, bt))>.
+Lemma multi_spec_add_snd_com : forall p c st ast ct stt astt ds os c2 b bt n,
+  p |- <((c, st, ast, b))> -->*_ds^^os^^n <((ct, stt, astt, bt))> ->
+  p |- <((c;c2, st, ast, b))> -->*_ds^^os^^n <((ct;c2, stt, astt, bt))>.
 Proof.
   intros. induction H; repeat econstructor; eauto.
 Qed.
 
-Lemma multi_spec_seq : forall p c1 c2 cm st ast b stm astm bm ds os,
-  p |- <((c1; c2, st, ast, b))> -->*_ds^^os <((cm, stm, astm, bm))> ->
-  (exists st' ast' b' ds1 ds2 os1 os2,
-  os = os1 ++ os2 /\ ds = ds1 ++ ds2 /\
-  p |- <((c1, st, ast, b))> -->*_ds1^^os1 <((skip, st', ast', b'))> /\
-  p |- <((c2, st', ast', b'))> -->*_ds2^^os2 <((cm, stm, astm, bm))>) \/
-  (exists c', cm = <{{ c'; c2 }}> /\
-   p |- <((c1, st, ast, b))> -->*_ds^^os <((c', stm, astm, bm))>).
+Lemma multi_spec_seq : forall p c1 c2 cm st ast b stm astm bm ds os n,
+  p |- <((c1; c2, st, ast, b))> -->*_ds^^os^^n <((cm, stm, astm, bm))> ->
+  (exists st' ast' b' ds1 ds2 os1 os2 n1 n2,
+  os = os1 ++ os2 /\ ds = ds1 ++ ds2 /\ n = n1 + n2 /\
+  p |- <((c1, st, ast, b))> -->*_ds1^^os1^^n1 <((skip, st', ast', b'))> /\
+  p |- <((c2, st', ast', b'))> -->*_ds2^^os2^^n2 <((cm, stm, astm, bm))>) \/
+    (exists c', cm = <{{ c'; c2 }}> /\ p |- <((c1, st, ast, b))> -->*_ds^^os^^n <((c', stm, astm, bm))>).
 Proof.
   intros. remember <{{ c1; c2 }}> as c. revert c1 c2 Heqc.
   induction H; intros; subst.
   { right. repeat eexists. constructor. }
   invert H.
-  + edestruct IHmulti_spec; [reflexivity|..].
-    - do 8 destruct H. destruct H1, H2. subst. clear IHmulti_spec.
-      left. rewrite !app_assoc. repeat eexists; [econstructor|]; eassumption.
-    - do 2 destruct H. subst. clear IHmulti_spec.
+  - edestruct IHmulti_spec; [reflexivity|..].
+    + do 10 destruct H. destruct H1, H2, H3. subst. clear IHmulti_spec.
+      left. rewrite !app_assoc. repeat eexists; [|econstructor|];
+      try eassumption; eauto.
+    + do 2 destruct H. subst. clear IHmulti_spec.
       right. repeat eexists. econstructor; eassumption.
-  + left. repeat eexists; [constructor|eassumption].
+  - left. subst. repeat eexists; [|constructor|eassumption]. 
 Qed.
 
 Lemma multi_seq_seq : forall p c1 c2 cm st ast stm astm os,
