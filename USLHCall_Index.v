@@ -211,38 +211,55 @@ Inductive spec_eval_small_step (p:prog):
     (spec_eval_small_step p c st ast b ct stt astt bt ds os).
 
 Reserved Notation
-  "p '|-' '<((' c , st , ast , b '))>' '-->*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  "p '|-' '<((' c , st , ast , b '))>' '-->*_' ds '^^' os '^^' n '<((' ct , stt , astt , bt '))>'"
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive multi_spec (p:prog) (c:com) (st:state) (ast:astate) (b:bool) :
-    com -> state -> astate -> bool -> dirs -> obs -> Prop :=
-  | multi_spec_refl : p |- <((c, st, ast, b))> -->*_[]^^[] <((c, st, ast, b))>
+  com -> state -> astate -> bool -> dirs -> obs -> nat -> Prop :=
+  | multi_spec_refl : p |- <((c, st, ast, b))> -->*_[]^^[]^^0 <((c, st, ast, b))>
   | multi_spec_trans (c':com) (st':state) (ast':astate) (b':bool)
                 (c'':com) (st'':state) (ast'':astate) (b'':bool)
-                (ds1 ds2 : dirs) (os1 os2 : obs) :
+                (ds1 ds2 : dirs) (os1 os2 : obs) (n : nat) :
       p |- <((c, st, ast, b))> -->_ds1^^os1 <((c', st', ast', b'))> ->
-      p |- <((c', st', ast', b'))> -->*_ds2^^os2 <((c'', st'', ast'', b''))> ->
-      p |- <((c, st, ast, b))> -->*_(ds1++ds2)^^(os1++os2) <((c'', st'', ast'', b''))>
+      p |- <((c', st', ast', b'))> -->*_ds2^^os2^^n <((c'', st'', ast'', b''))> ->
+      p |- <((c, st, ast, b))> -->*_(ds1++ds2)^^(os1++os2)^^(S n) <((c'', st'', ast'', b''))>
 
-    where "p |- <(( c , st , ast , b ))> -->*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
-    (multi_spec p c st ast b ct stt astt bt ds os).
+    where "p |- <(( c , st , ast , b ))> -->*_ ds ^^ os ^^ n <(( ct ,  stt , astt , bt ))>" :=
+    (multi_spec p c st ast b ct stt astt bt ds os n).
 
-Lemma multi_spec_trans_nil_l p c st ast b c' st' ast' b' ct stt astt bt ds os :
+Lemma multi_spec_trans_nil_l p c st ast b c' st' ast' b' ct stt astt bt ds os n:
   p |- <((c, st, ast, b))> -->_[]^^[] <((c', st', ast', b'))> ->
-  p |- <((c', st', ast', b'))> -->*_ds^^os <((ct, stt, astt, bt))> ->
-  p |- <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))>.
+  p |- <((c', st', ast', b'))> -->*_ds^^os^^n <((ct, stt, astt, bt))> ->
+  p |- <((c, st, ast, b))> -->*_ds^^os^^(S n) <((ct, stt, astt, bt))>.
 Proof.
-  intros. rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds). eapply multi_spec_trans; eassumption.
+  intros. rewrite <- app_nil_l with (l:=os). rewrite <- app_nil_l with (l:=ds). eapply multi_spec_trans; eassumption.
 Qed.
 
-Lemma multi_spec_trans_nil_r p c st ast b c' st' ast' b' ct stt astt bt ds os :
+Lemma multi_spec_trans_nil_r p c st ast b c' st' ast' b' ct stt astt bt ds os k:
   p |- <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
-  p |- <((c', st', ast', b'))> -->*_[]^^[] <((ct, stt, astt, bt))> ->
-  p |- <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))>.
+  p |- <((c', st', ast', b'))> -->*_[]^^[]^^0 <((ct, stt, astt, bt))> ->
+  p |- <((c, st, ast, b))> -->*_ds^^os^^(S k) <((ct, stt, astt, bt))>.
 Proof.
-  intros. rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds). eapply multi_spec_trans; eassumption.
-Qed.
+  intros. rewrite <- app_nil_r with (l:=os). rewrite <- app_nil_r with (l:=ds).
+  eapply multi_spec_trans; [eassumption|].
+  (* this doesn't work
+
+     H : p |- <(( c, st, ast, b ))> -->_ ds ^^ os <(( c', st', ast', b' ))>
+     H0 : p |- <(( c', st', ast', b' ))> -->*_ [] ^^ [] ^^ 0 <(( ct, stt, astt, bt ))>
+
+    ========================= (1 / 1)
+
+     p |- <(( c', st', ast', b' ))> -->*_ [] ^^ [] ^^ k <(( ct, stt, astt, bt ))>
+
+   *)
+Abort.
+
+(* ==> previous proof no longer works
+  Proof.
+  intros. rewrite <- app_nil_r with (l:=os). rewrite <- app_nil_r with (l:=ds). 
+  eapply multi_spec_trans; eassumption.
+   Qed. *)
 
 Lemma multi_spec_combined_executions : forall p c st ast cm stm astm osm ct stt astt ost ds ds' b b' b'',
   p |- <((c, st, ast, b))> -->*_ds^^osm <((cm, stm, astm, b'))> ->
