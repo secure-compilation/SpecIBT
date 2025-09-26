@@ -1288,22 +1288,56 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
    2. ptr/not ptr
    3. wf          *)
 
-Definition gen_pub_exp_leaf (P : pub_vars) : G exp :=
+Definition gen_pub_exp_leaf (P : pub_vars) (pst :list nat) : G exp :=
   oneOf (liftM ANum arbitrary ;;;
-         liftM FPtr arbitrary ;;;
+         liftM FPtr (elems_ 0 (proc_hd pst)) ;;;
          (let pubs := (filter (apply P) (map_dom (snd P))) in
          if seq.nilp pubs then []
          else [liftM AId (elems_ ("X0"%string) pubs)])).
 
 Sample (P <- arbitrary ;;
-       exp <- gen_pub_exp_leaf P;;
+       exp <- gen_pub_exp_leaf P [3; 3; 1; 1];;
        ret (P, exp)).
+
+Definition gen_exp_leaf_in_ctx (pc: label) (P : pub_vars) (pst :list nat) : G exp :=
+  if pc then gen_pub_exp_leaf P pst
+  else
+    oneOf (liftM ANum arbitrary ;;;
+             liftM FPtr (elems_ 0 (proc_hd pst)) ;;;
+             (let vars := (map_dom (snd P)) in
+              if seq.nilp vars then []
+              else [liftM AId (elems_ ("X0"%string) vars)])).
 
 (* move to somewhere *)
 Definition string_eq_dec := Map.E.eq_dec.
 
 Definition list_inter {A: Type} (eq_dec: forall x y, {x = y} + {x <> y}) (l1 l2: list A) : list A :=
   filter (fun x => if (in_dec eq_dec x l2) then true else false) l1.
+
+Definition gen_pub_exp_leaf_ptr (P : pub_vars) (pst :list nat) (rs : reg) : G exp :=
+  oneOf (liftM FPtr (elems_ 0 (proc_hd pst)) ;;;
+           (let ptrs := filter (fun x => negb (is_not_ptr rs x)) (map_dom (snd rs)) in
+            let pubs := (filter (apply P) (map_dom (snd P))) in
+            let s := list_inter string_eq_dec ptrs pubs in
+            if seq.nilp s then [] else
+              [liftM AId (elems_ "X0"%string s)] ) ).
+
+Sample (P <- arbitrary ;;
+        rs <- arbitrary ;;
+        exp <- gen_pub_exp_leaf_ptr P [3; 3; 1; 1] rs;;
+        ret (P, rs, exp)).
+
+Definition gen_exp_leaf_ptr_in_ctx (pc: label) (P : pub_vars) (pst :list nat) (rs : reg) : G exp :=
+  if pc then gen_pub_exp_leaf_ptr P pst rs
+  else
+    let ptrs := filter (fun x => negb (is_not_ptr rs x)) (map_dom (snd rs)) in
+    oneOf (liftM FPtr (elems_ 0 (proc_hd pst)) ;;;
+             if seq.nilp ptrs then [] else [liftM AId (elems_ "X0"%string ptrs)] ).
+
+Sample (P <- arbitrary ;;
+        rs <- arbitrary ;;
+        exp <- gen_exp_leaf_ptr_in_ctx false P [3; 3; 1; 1] rs;;
+        ret (P, rs, exp)).
 
 Definition gen_pub_exp_leaf_no_ptr (P : pub_vars) (rs : reg) : G exp :=
   oneOf (liftM ANum arbitrary ;;;
@@ -1318,6 +1352,18 @@ Sample (P <- arbitrary ;;
         exp <- gen_pub_exp_leaf_no_ptr P rs;;
         ret (P, rs, exp)).
 
+Definition gen_exp_leaf_no_ptr_in_ctx (pc: label) (P : pub_vars) (rs : reg) : G exp :=
+  if pc then gen_pub_exp_leaf_no_ptr P rs
+  else
+    oneOf (liftM ANum arbitrary ;;;
+           let not_ptrs := filter (is_not_ptr rs) (map_dom (snd rs)) in
+           if seq.nilp not_ptrs then [] else [liftM AId (elems_ "X0"%string not_ptrs)] ).
+
+Sample (P <- arbitrary ;;
+        rs <- arbitrary ;;
+        exp <- gen_exp_leaf_no_ptr_in_ctx false P rs;;
+        ret (P, rs, exp)).
+
 Fixpoint gen_pub_exp_no_ptr (sz : nat) (P: pub_vars) (rs: reg) : G exp :=
   match sz with
   | O => gen_pub_exp_leaf_no_ptr P rs
@@ -1328,31 +1374,103 @@ Fixpoint gen_pub_exp_no_ptr (sz : nat) (P: pub_vars) (rs: reg) : G exp :=
           ]
   end.
 
+Sample (P <- arbitrary ;;
+        rs <- arbitrary ;;
+        exp <- gen_pub_exp_no_ptr 2 P rs;;
+        ret (P, rs, exp)).
+
+Fixpoint gen_exp_no_ptr_in_ctx (pc: label) (sz : nat) (P: pub_vars) (rs: reg) : G exp :=
+  if pc then gen_pub_exp_no_ptr sz P rs
+  else
+    match sz with
+    | O => gen_exp_leaf_no_ptr_in_ctx pc P rs
+    | S sz' =>
+        freq [ (2, gen_exp_leaf_no_ptr_in_ctx pc P rs);
+               (sz, liftM3 ABin arbitrary (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_no_ptr_in_ctx pc sz' P rs));
+               (sz, liftM3 ACTIf (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_no_ptr_in_ctx pc sz' P rs))
+          ]
+  end.
+
+Sample (P <- arbitrary ;;
+        rs <- arbitrary ;;
+        exp <- gen_exp_no_ptr_in_ctx false 2 P rs;;
+        ret (P, rs, exp)).
+
+Fixpoint gen_pub_exp_ptr (sz : nat) (P: pub_vars) (pst: list nat) (rs: reg) : G exp :=
+  match sz with
+  | O => gen_pub_exp_leaf_ptr P pst rs
+  | S sz' =>
+      freq [ (2, gen_pub_exp_leaf_ptr P pst rs);
+             (sz, liftM3 ACTIf (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_ptr sz' P pst rs) (gen_pub_exp_ptr sz' P pst rs))
+          ]
+  end.
+
+Sample (P <- arbitrary ;;
+        rs <- arbitrary ;;
+        exp <- gen_pub_exp_ptr 2 P [3; 3; 1; 1] rs;;
+        ret (P, rs, exp)).
+
+Fixpoint gen_exp_ptr_in_ctx (pc: label) (sz : nat) (P: pub_vars) (pst: list nat) (rs: reg) : G exp :=
+  if pc then gen_pub_exp_ptr sz P pst rs
+  else
+    match sz with
+    | O => gen_exp_leaf_ptr_in_ctx false P pst rs
+    | S sz' =>
+        freq [ (2, gen_exp_leaf_ptr_in_ctx false P pst rs);
+               (sz, liftM3 ACTIf (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_ptr_in_ctx pc sz' P pst rs) (gen_exp_ptr_in_ctx pc sz' P pst rs))
+          ]
+    end.
+
+Sample (P <- arbitrary ;;
+        rs <- arbitrary ;;
+        exp <- gen_exp_ptr_in_ctx false 2 P [3; 3; 1; 1] rs;;
+        ret (P, rs, exp)).
+
+
 (* Better, but we still get discards. These cases are when the equality is generated between pointer
   and non-pointer. The following generator accounts for that: *)
 
 (* Definition eitherOf {A} (a : G A) (b : G A) : G A := freq [(1, a); (1, b)]. *)
 
-Fixpoint gen_pub_exp (sz : nat) (P: pub_vars) (rs : reg) : G exp :=
+Fixpoint gen_pub_exp (sz : nat) (P: pub_vars) (rs : reg) (pst: list nat) : G exp :=
   match sz with
-  | O => gen_pub_exp_leaf P
+  | O => gen_pub_exp_leaf P pst
   | S sz' =>
           freq [
-             (2, gen_pub_exp_leaf P);
+             (2, gen_pub_exp_leaf P pst);
              (sz, binop <- arbitrary;; match binop with
                 | BinEq => eitherOf
                     (liftM2 (ABin BinEq) (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs))
                     (liftM2 (ABin BinEq) (liftM FPtr arbitrary) (liftM FPtr arbitrary))
                 | _ => liftM2 (ABin binop) (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs)
               end);
-             (sz, liftM3 ACTIf (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp sz' P rs) (gen_pub_exp sz' P rs))
+             (sz, liftM3 ACTIf (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp sz' P rs pst) (gen_pub_exp sz' P rs pst))
           ]
   end.
 
-Definition gen_secure_asgn (P:pub_vars) (rs: reg) : G inst :=
+Fixpoint gen_exp_in_ctx (pc: label) (sz : nat) (P: pub_vars) (rs : reg) (pst: list nat) : G exp :=
+  if pc then gen_pub_exp sz P rs pst
+  else
+    match sz with
+    | O => gen_exp_leaf_in_ctx false P pst
+    | S sz' =>
+        freq [
+            (2, gen_exp_leaf_in_ctx pc P pst);
+            (sz, binop <- arbitrary;;
+                 match binop with
+                 | BinEq => eitherOf
+                             (liftM2 (ABin BinEq) (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_no_ptr_in_ctx pc sz' P rs))
+                             (liftM2 (ABin BinEq) (liftM FPtr arbitrary) (liftM FPtr arbitrary))
+                 | _ => liftM2 (ABin binop) (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_no_ptr_in_ctx pc sz' P rs)
+                 end);
+            (sz, liftM3 ACTIf (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_in_ctx pc sz' P rs pst) (gen_exp_in_ctx pc sz' P rs pst))
+          ]
+  end.
+
+Definition gen_secure_asgn (P:pub_vars) (rs: reg) (pst: list nat) : G inst :=
   let vars := map_dom (snd P) in
   x <- elems_ "X0"%string vars;;
-  e <- (if apply P x then gen_pub_exp 1 P rs else arbitrarySized 1);;
+  e <- (if apply P x then gen_pub_exp 1 P rs pst else gen_pub_exp 1 P rs pst);;
   ret <{ x := e }>.
 
 Definition gen_name (P:pub_vars) (label:bool) : G (option string) :=
@@ -1373,14 +1491,14 @@ Definition get_addr (PA: pub_arrs) (label:bool) : G (option nat) :=
   | hd::tl => liftM Some (elems_ hd indices')
   end.
 
-Definition gen_asgn_in_ctx (gen_asgn : pub_vars -> reg -> G inst)
-    (pc:label) (P:pub_vars) (rs: reg) : G inst :=
-  if pc then gen_asgn P rs
+Definition gen_asgn_in_ctx (gen_asgn : pub_vars -> reg -> list nat -> G inst)
+    (pc:label) (P:pub_vars) (rs: reg) (pst: list nat) : G inst :=
+  if pc then gen_asgn P rs pst
   else
     x <- gen_name P secret;; (* secret var *)
     match x with
     | Some x =>
-      e <- arbitrarySized 1;;
+      e <- gen_exp_in_ctx false 1 P rs pst;;
       ret <{ x := e }>
     | None => ret <{ skip }>
     end.
@@ -1404,7 +1522,7 @@ Definition gen_exp_for_offset (n: nat) (P: pub_vars) (rs: reg) (label: bool) : G
     ].
 
 (* TODO: more complicate expression for address *)
-Definition gen_secure_aload (P:pub_vars) (PA:pub_arrs) (rs: reg) : G inst :=
+Definition gen_secure_load (P:pub_vars) (PA:pub_arrs) (rs: reg) : G inst :=
   let vars := map_dom (snd P) in
   x <- elems_ "X0"%string vars;;
   if apply P x then
@@ -1420,9 +1538,9 @@ Definition gen_secure_aload (P:pub_vars) (PA:pub_arrs) (rs: reg) : G inst :=
     i <- arbitrarySized 1;;
     ret (ILoad x i).
 
-Definition gen_aload_in_ctx (gen_aload : pub_vars -> pub_arrs -> reg -> G inst)
+Definition gen_load_in_ctx (gen_load : pub_vars -> pub_arrs -> reg -> G inst)
     (pc:label) (P:pub_vars) (PA:pub_arrs) (rs: reg) : G inst :=
-  if pc then gen_aload P PA rs
+  if pc then gen_load P PA rs
   else
     x <- gen_name P secret;; (* secret var *)
     match x with
@@ -1432,22 +1550,22 @@ Definition gen_aload_in_ctx (gen_aload : pub_vars -> pub_arrs -> reg -> G inst)
     | None => ret <{ skip }>
     end.
 
-Definition gen_secure_awrite (P:pub_vars) (PA:pub_arrs) (rs: reg) : G inst :=
+Definition gen_secure_store (P:pub_vars) (PA:pub_arrs) (rs: reg) (pst: list nat) : G inst :=
   let indices := seq 0 (Datatypes.length PA) in
   i <- elems_ 0 indices;;
   if nth i PA true then
     (* PA is always larger than []. *)
     e <- gen_exp_for_offset i P rs true;;
-    e' <- gen_pub_exp 1 P rs;;
+    e' <- gen_pub_exp 1 P rs pst;;
     ret (IStore e e')
   else
     e <- gen_pub_exp_no_ptr 1 P rs;;
     e' <- arbitrarySized 1;;
     ret (IStore e e').
 
-Definition gen_awrite_in_ctx (gen_awrite : pub_vars -> pub_arrs -> reg -> G inst)
-    (pc:label) (P:pub_vars) (PA:pub_arrs) (rs: reg) : G inst :=
-  if pc then gen_awrite P PA rs
+Definition gen_store_in_ctx (gen_store : pub_vars -> pub_arrs -> reg -> list nat -> G inst)
+    (pc:label) (P:pub_vars) (PA:pub_arrs) (rs: reg) (pst: list nat) : G inst :=
+  if pc then gen_store P PA rs pst
   else
     i <- get_addr PA secret;; (* secret location *)
     match i with
@@ -1457,4 +1575,125 @@ Definition gen_awrite_in_ctx (gen_awrite : pub_vars -> pub_arrs -> reg -> G inst
         ret (IStore e e')
     | None => ret <{ skip }>
     end.
+
+Definition gen_pub_branch (P: pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst :=
+  let vars := map_dom (snd rs) in
+  e <- gen_pub_exp_no_ptr 1 P rs;;
+  l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
+  ret <{ branch e to l }>.
+
+(* ex_vars = <{{ i[ ("X0"%string); ("X1"%string); ("X2"%string); ("X3"%string); ("X4"%string)] }}> *)
+Definition ex_pub_vars : total_map label := (true,[("X0",true); ("X1",true); ("X2",true);
+                                                   ("X3",false); ("X4",false)])%string.
+
+Definition ex_pub_vars' : total_map label := (true,[("X0",false); ("X1",false); ("X2",false);
+                                                   ("X3",true); ("X4",false)])%string.
+
+Definition ex_rs : total_map val := (N 0,[("X0",N 42); ("X1",N 33); ("X2",FP 0);
+                                          ("X3",FP 0); ("X4",FP 3)])%string.
+
+Sample (gen_pub_branch ex_pub_vars 8 [3; 3; 1; 1] ex_rs).
+
+Definition gen_branch_in_ctx (gen_branch: pub_vars -> nat -> list nat -> reg -> G inst)
+  (pc:label) (P:pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst :=
+  if pc then gen_branch P pl pst rs
+  else
+    e <- gen_exp_leaf_no_ptr rs;;
+    l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));;
+    ret <{ branch e to l }>.
+
+Sample (gen_branch_in_ctx gen_pub_branch secret ex_pub_vars' 8 [3; 3; 1; 1] ex_rs).
+
+Definition gen_pub_call (P:pub_vars) (pst: list nat) (rs: reg) : G inst :=
+  l <- gen_pub_exp_ptr 1 P pst rs;;
+  ret <{ call l }>.
+
+Sample (gen_pub_call ex_pub_vars [3; 3; 1; 1] ex_rs).
+
+Definition gen_call_in_ctx (gen_call: pub_vars -> list nat -> reg -> G inst)
+  (pc: label) (P:pub_vars) (pst: list nat) (rs: reg) : G inst :=
+  if pc then gen_call P pst rs
+  else
+    l <- gen_exp_ptr_in_ctx false 1 P pst rs;;
+    ret <{ call l }>.
+
+Sample (gen_call_in_ctx gen_pub_call false ex_pub_vars' [3; 3; 1; 1] ex_rs).
+  (* | IBranch : exp -> nat -> inst *)
+  (* | IJump : nat -> inst *)
+  (* | ICall : exp -> inst *)
+  (* | IRet : inst. *)
+
+Definition gen_inst2 (gen_asgn : label -> pub_vars -> reg -> G inst)
+                     (gen_load : label -> pub_vars -> pub_arrs -> reg -> G inst)
+                     (gen_store : label -> pub_vars -> pub_arrs -> reg -> G inst)
+                     (gen_branch: label -> pub_vars -> nat -> list nat -> reg -> G inst)
+                     (gen_jump: nat -> list nat -> G inst)
+                     (gen_call: label -> pub_vars -> list nat -> reg -> G inst)
+                     (P:pub_vars) (PA:pub_arrs) (rs: reg) (sz:nat) : G inst :=
+  match sz with
+  | O => freq [(1, ret ISkip);
+               (4, thunkGen (fun _ => gen_asgn P rs));
+               (4, thunkGen (fun _ => gen_load P PA rs));
+               (4, thunkGen (fun _ => gen_store P PA rs))]
+  | S sz' => freq [ (1, ret ISkip);
+                   (1, ret IRet);
+                   (sz, gen_asgn vars c);
+                   (sz, gen_branch vars pl c);
+                   (sz, gen_jump pl c);
+                   (sz, gen_load vars pl c);
+                   (sz, gen_store vars pl c);
+                   (sz, gen_call c)]
+  end.
+
+
+
+
+                (1, ret ISkip);
+                  (sz, thunkGen (fun _ => gen_asgn P rs));
+                  (sz, thunkGen (fun _ => gen_load P PA rs));
+                  (sz, thunkGen (fun _ => gen_store P PA rs))
+
+
+              ]
+  end.
+  | S sz' =>
+      freq [ (1, ret Skip);
+             (sz, thunkGen (fun _ => gen_asgn P));
+             (sz, thunkGen (fun _ => gen_aread P PA));
+             (sz, thunkGen (fun _ => gen_awrite P PA));
+             (2*sz, thunkGen (fun _ =>
+                    liftM2 Seq (gen_com_rec gen_asgn gen_aread gen_awrite P PA sz')
+                               (gen_com_rec gen_asgn gen_aread gen_awrite P PA sz')));
+             (sz, thunkGen (fun _ =>
+                  b <- arbitrarySized 2;;
+                  liftM3 If (ret b)
+                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
+                                 (gen_aread_in_ctx gen_aread (label_of_bexp P b))
+                                 (gen_awrite_in_ctx gen_awrite (label_of_bexp P b))
+                                 P PA sz')
+                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
+                                 (gen_aread_in_ctx gen_aread (label_of_bexp P b))
+                                 (gen_awrite_in_ctx gen_awrite (label_of_bexp P b))
+                                 P PA sz')));
+             (sz, thunkGen (fun _ =>
+                  b <- arbitrarySized 2;;
+                  (* Trying to generate assignment to one of the loop variables *)
+                  casgn <- gen_asgn_in_ctx gen_asgn (label_of_bexp P b) P;;
+                  cend <- match casgn with
+                  | <{y := e}> =>
+                      if existsb (String.eqb y) (vars_bexp b) then ret casgn
+                      else
+                        match find (fun x => Bool.eqb (apply P y)
+                                                      (apply P x)) (vars_bexp b) with
+                        | Some x => ret <{x := e}>
+                        | None => ret <{skip}>
+                        end
+                  | _ => ret <{skip}>
+                  end;;
+                  c <- gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
+                                   (gen_aread_in_ctx gen_aread (label_of_bexp P b))
+                                   (gen_awrite_in_ctx gen_aread (label_of_bexp P b))
+                                   P PA sz';;
+                  ret (While b <{c;cend}>)))]
+  end.
 
