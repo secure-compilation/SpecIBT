@@ -303,6 +303,29 @@ Proof.
       right. repeat eexists. econstructor; eassumption.
   + left. repeat eexists; [constructor|eassumption].
 Qed.
+
+Lemma multi_spec_seq' : forall p c1 c2 cm st ast b stm astm bm ds os,
+  p |- <((c1; c2, st, ast, b))> -->*_ds^^os <((cm, stm, astm, bm))> ->
+  ({st':_ & {ast':_ & {b':_ & {ds1:_ & {ds2:_ & {os1:_ & {os2:_ &
+    (os = os1 ++ os2) *
+       (ds = ds1 ++ ds2) *
+        (p |- <((c1, st, ast, b))> -->*_ds1^^os1 <((skip, st', ast', b'))>) *
+        (p |- <((c2, st', ast', b'))> -->*_ds2^^os2 <((cm, stm, astm, bm))>)
+    }}}}}}})%type
+    +
+    ({c':_ & ((cm = <{{ c'; c2 }}>) * (p |- <((c1, st, ast, b))> -->*_ds^^os <((c', stm, astm, bm))>))})%type.
+Proof.
+  intros. remember <{{ c1; c2 }}> as c. revert c1 c2 Heqc.
+  induction X; intros; subst.
+  { right. repeat eexists. constructor. }
+  invert s.
+  - edestruct IHX; [reflexivity|..].
+    + do 8 destruct s as [? s]. do 2 destruct p0. subst. clear IHX.
+      left. rewrite !app_assoc. repeat eexists; [econstructor|]; eassumption.
+    + do 2 destruct s as [? s]. subst. clear IHX.
+      right. repeat eexists. econstructor; eassumption.
+  - left. repeat eexists; [constructor|eassumption].
+Qed.
  
 Lemma multi_seq_seq : forall p c1 c2 cm st ast stm astm os,
   p |- <((c1; c2, st, ast))> -->*^os <((cm, stm, astm))> ->
