@@ -215,7 +215,7 @@ Reserved Notation
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive multi_spec (p:prog) (c:com) (st:state) (ast:astate) (b:bool) :
+Inductive multi_spec (p:prog) (c:com) (st:state) (ast:astate) (b:bool) : 
     com -> state -> astate -> bool -> dirs -> obs -> Type :=
   | multi_spec_refl : p |- <((c, st, ast, b))> -->*_[]^^[] <((c, st, ast, b))>
   | multi_spec_trans (c':com) (st':state) (ast':astate) (b':bool)
@@ -228,14 +228,6 @@ Inductive multi_spec (p:prog) (c:com) (st:state) (ast:astate) (b:bool) :
     where "p |- <(( c , st , ast , b ))> -->*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (multi_spec p c st ast b ct stt astt bt ds os).
 
-Fixpoint exec_len (p:prog) (c:com) (st:state) (ast:astate) (b:bool) (ct:com)
-  (stt:state) (astt:astate) (bt:bool) (ds : dirs) (os : obs)
-  (m:multi_spec p c st ast b ct stt astt bt ds os) : nat :=
-  match m with
-  | multi_spec_refl _ _ _ _ _ => 0
-  | multi_spec_trans _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ rest =>
-      S (exec_len _ _ _ _ _ _ _ _ _ _ _ rest)
-  end.
 
 Lemma multi_spec_trans_nil_l p c st ast b c' st' ast' b' ct stt astt bt ds os :
   p |- <((c, st, ast, b))> -->_[]^^[] <((c', st', ast', b'))> ->
@@ -1120,12 +1112,51 @@ Fixpoint exec_len (p:prog) (c:com) (st:state) (ast:astate) (b:bool) (ct:com)
   | multi_spec_trans _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ rest => 
       S (exec_len _ _ _ _ _ _ _ _ _ _ _ rest)
   end.
+
+Inductive
+multi_spec (p : prog) (c : com) (st : state) (ast : astate) 
+(b : bool) : com -> state -> astate -> bool -> dirs -> obs -> Type :=
+    multi_spec_refl : p |- <(( c, st, ast, b ))> -->*_ [] ^^ [] <(( c, st,
+                      ast, b ))>
+  | multi_spec_trans : forall (c' : com) (st' : state) 
+                         (ast' : astate) (b' : bool) 
+                         (c'' : com) (st'' : state) 
+                         (ast'' : astate) (b'' : bool) 
+                         (ds1 ds2 : dirs) (os1 os2 : obs),
+                       p |- <(( c, st, ast, b ))> -->_ ds1 ^^ os1 <(( c',
+                       st', ast', b' ))> ->
+                       p |- <(( c', st', ast', b' ))> -->*_ ds2 ^^ os2 <((
+                       c'', st'', ast'', b'' ))> ->
+                       p |- <(( c, st, ast, b ))> -->*_ 
+                       ds1 ++ ds2 ^^ os1 ++ os2 <(( c'', st'', ast'', b'' ))>.
+
+
 *)
 
-Definition prog1 := [<{{call 1}}>; <{{skip}}>].
+Fixpoint exec_len (p:prog) (c:com) (st:state) (ast:astate) (b:bool) (ct:com)
+  (stt:state) (astt:astate) (bt:bool) (ds : dirs) (os : obs)
+  (m:multi_spec p c st ast b ct stt astt bt ds os) : nat :=
+  match m with
+  | multi_spec_refl _ _ _ _ _ => 0
+  | multi_spec_trans _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ rest =>
+      S (exec_len _ _ _ _ _ _ _ _ _ _ _ rest)
+  end.
 
-Compute (exec_len prog1). (* do I also need to define every other argument? *)
+Print direction.
+Definition prog1 := [<{{call X}}>; <{{Y := 42}}>].
+Definition com1 := <{{call X}}>.
+Definition st1 := ("X" !-> 1; "Y" !-> 2; _ !-> 0).
+Definition ast1 := ("a" !-> [1;2]; _ !-> [3;4]). (* don't care, just need something *)
+Definition b1 := false.
+Definition ct1 := <{{Y := 42}}>.
+Definition stt1 := ("X" !-> 1; "Y" !-> 42; _ !-> 0).
+Definition astt1 := ("a" !-> [1;2]; _ !-> [3;4]).
+Definition bt1 := false.
+Definition dirs1 := [DStep].
+Definition obs1 := [OCall 1].
 
+Compute (exec_len prog1 com1 st1 ast1 b1 ct1 stt1 astt1 bt1 dirs1 obs1 multi_spec_trans).
+                  
 (*Definition measure (c : com) (ds : dirs) : nat * nat :=
   (length ds, com_size c).
 
