@@ -979,8 +979,7 @@ Definition gen_prog_wf :=
   pst <- gen_partition pl;;
   _gen_prog_wf ex_vars pl pst pst.
 
-QuickChick (forAll (gen_prog_wf) (fun (p : prog) =>
-            implication (wf p) true)).
+QuickChick (forAll (gen_prog_wf) (fun (p : prog) => (wf p))).
 
 (* PROPERTY: uslh produces well-formed programs from well-formed programs
    probably need generator for well-formed programs *)
@@ -1003,6 +1002,7 @@ Inductive ty : Type :=
 | TNum | TPtr.
 
 Derive (Arbitrary, Shrink) for ty.
+Derive Show for ty.
 
 Definition rctx := total_map ty.
 
@@ -1020,7 +1020,7 @@ Definition is_ptr (c : rctx) (var : string) :=
   | _ => false
   end.
 
-Definition gen_exp_leaf_typed (t: ty) (c: rctx) (pst: list nat) : G exp :=
+Definition gen_exp_leaf_wt (t: ty) (c: rctx) (pst: list nat) : G exp :=
   match t with
   | TNum =>
       oneOf (liftM ANum arbitrary ;;;
@@ -1034,35 +1034,51 @@ Definition gen_exp_leaf_typed (t: ty) (c: rctx) (pst: list nat) : G exp :=
                   [liftM AId (elems_ "X0"%string ptrs)] ) )
   end.
 
-Fixpoint gen_exp_no_ptr_typed (sz : nat) (c : rctx) : G exp :=
+Fixpoint gen_exp_no_ptr_wt (sz : nat) (c : rctx) : G exp :=
   match sz with
-  | O => gen_exp_leaf_typed TNum c []
+  | O => gen_exp_leaf_wt TNum c []
+  | S sz' =>
+      freq [ (2, gen_exp_leaf_wt TNum c []);
+             (sz, eitherOf
+                    (liftM3 ABin arbitrary (gen_exp_no_ptr_wt sz' c) (gen_exp_no_ptr_wt sz' c))
+                    (liftM2 (ABin BinEq) (liftM FPtr arbitrary) (liftM FPtr arbitrary)));
+             (sz, liftM3 ACTIf (gen_exp_no_ptr_wt sz' c) (gen_exp_no_ptr_wt sz' c) (gen_exp_no_ptr_wt sz' c))
+          ]
+  end
+with gen_exp_ptr_wt (sz : nat) (c : rctx) (pst: list nat) : G exp :=
+  match sz with
+  | O => gen_exp_leaf_wt TPtr c pst
   | S sz' => 
-      freq [ (2, gen_exp_leaf_typed TNum c []);
-             (sz, liftM3 ABin arbitrary (gen_exp_no_ptr_typed sz' c) (gen_exp_no_ptr_typed sz' c));
-             (sz, liftM3 ACTIf (gen_exp_no_ptr_typed sz' c) (gen_exp_no_ptr_typed sz' c) (gen_exp_no_ptr_typed sz' c))
+      freq [ (2, gen_exp_leaf_wt TPtr c pst);
+             (sz, liftM3 ACTIf (gen_exp_no_ptr_wt sz' c) (gen_exp_ptr_wt sz' c pst) (gen_exp_ptr_wt sz' c pst))
           ]
   end.
 
-Fixpoint gen_exp_typed (sz: nat)(c: rctx) (pst: list nat) : G exp :=
+Fixpoint gen_exp_wt (sz: nat)(c: rctx) (pst: list nat) : G exp :=
   match sz with 
   | O =>
       t <- arbitrary;;
-      gen_exp_leaf_typed t c pst
+      gen_exp_leaf_wt t c pst
   | S sz' => 
       freq [
-          (2, t <- arbitrary;; gen_exp_leaf_typed t c pst);
+          (2, t <- arbitrary;; gen_exp_leaf_wt t c pst);
           (sz, binop <- arbitrary;; match binop with
                 | BinEq => eitherOf
-                    (liftM2 (ABin BinEq) (gen_exp_no_ptr_typed sz' c) (gen_exp_no_ptr_typed sz' c))
-                    (liftM2 (ABin BinEq) (gen_exp_leaf_typed TPtr c pst) (gen_exp_leaf_typed TPtr c pst))
-                | _ => liftM2 (ABin binop) (gen_exp_no_ptr_typed sz' c) (gen_exp_no_ptr_typed sz' c)
+                    (liftM2 (ABin BinEq) (gen_exp_no_ptr_wt sz' c) (gen_exp_no_ptr_wt sz' c))
+                    (liftM2 (ABin BinEq) (gen_exp_leaf_wt TPtr c pst) (gen_exp_leaf_wt TPtr c pst))
+                | _ => liftM2 (ABin binop) (gen_exp_no_ptr_wt sz' c) (gen_exp_no_ptr_wt sz' c)
               end);
-             (sz, liftM3 ACTIf (gen_exp_no_ptr_typed sz' c) (gen_exp_typed sz' c pst) (gen_exp_typed sz' c pst))
+             (sz, liftM3 ACTIf (gen_exp_no_ptr_wt sz' c) (gen_exp_wt sz' c pst) (gen_exp_wt sz' c pst))
           ]
   end.
 
-Definition typed_val (t: ty) (pst: list nat) : G val :=
+Fixpoint gen_exp_wt2 (t: ty) (sz: nat) (c: rctx) (pst: list nat) : G exp :=
+  match t with
+  | TNum => gen_exp_no_ptr_wt sz c
+  | TPtr => gen_exp_ptr_wt sz c pst
+  end.
+
+Definition wt_val (t: ty) (pst: list nat) : G val :=
   match t with
   | TNum => liftM N arbitrary
   | TPtr => match pst with
@@ -1071,48 +1087,48 @@ Definition typed_val (t: ty) (pst: list nat) : G val :=
            end
   end.
 
-Definition gen_typed_reg (c: rctx) (pst: list nat) : G reg :=
-  let typed_vars := snd c in
-  let gen_binds := mapGen (fun '(s, t) =>  (v <- typed_val t pst;; ret (s, v))) typed_vars in
+Definition gen_wt_reg (c: rctx) (pst: list nat) : G reg :=
+  let wt_vars := snd c in
+  let gen_binds := mapGen (fun '(s, t) =>  (v <- wt_val t pst;; ret (s, v))) wt_vars in
   b <- gen_binds;;
   ret (N 0, b).
 
-Derive Show for ty.
-
 QuickChick (forAll arbitrary (fun (c : rctx) =>
-            forAll (gen_typed_reg c [3; 3; 1; 1]) (fun (state: reg) =>
-            forAll (gen_exp_typed 4 c [3; 3; 1; 1]) (fun (exp : exp) =>
+            forAll (gen_wt_reg c [3; 3; 1; 1]) (fun (state: reg) =>
+            forAll (gen_exp_wt 4 c [3; 3; 1; 1]) (fun (exp : exp) =>
             implication (is_some (eval state exp)) true)))).
+
+Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) : G inst :=
+  let vars := (map_dom (snd c)) in
+  e <- gen_exp_wt2 TNum 1 c pst;;
+  l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
+  ret <{ branch e to l }>.
+
+(* TODO *)
+(* Sample (gen_branch_wt ex_vars 8 [3; 3; 1; 1]). *)
+
+Definition gen_jump_wf (pl: nat) (pst: list nat) : G inst :=
+  l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
+  ret <{ jump l }>.
+
+Sample (gen_jump_wf 8 [3; 3; 1; 1]).
+
+Definition gen_load_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
+  e <- gen_exp_wf vars 1 pst;;
+  x <- elems_ "X0"%string vars;;
+  ret <{ x <- load[e] }>.
+
+Sample (gen_load_wf ex_vars 8 [3; 3; 1; 1]).
+
+Definition gen_store_wf  (vars: list string) (pl: nat) (pst: list nat) : G inst :=
+  e1 <- gen_exp_wf vars 1 pst;;
+  e2 <- gen_exp_wf vars 1 pst;;
+  ret <{ store[e1] <- e2 }>.
+
+Sample (gen_store_wf ex_vars 8 [3; 3; 1; 1]).
 
 (* "+++ Passed 10000 tests (0 discards)" *)
 
-Fixpoint gen_exp (sz : nat) (state : reg) : G exp :=
-  match sz with 
-  | O => gen_exp_leaf state
-  | S sz' => 
-          freq [
-             (2, gen_exp_leaf state);
-             (sz, binop <- arbitrary;; match binop with
-                | BinEq => eitherOf
-                    (liftM2 (ABin BinEq) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state))
-                    (liftM2 (ABin BinEq) (liftM FPtr arbitrary) (liftM FPtr arbitrary))
-                | _ => liftM2 (ABin binop) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state)
-              end);
-             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp sz' state) (gen_exp sz' state))
-          ]
-  end.
-
-
-(* Definition find_failing_block : G (option (nat * (list inst * bool) * prog)) := *)
-(*   prog <- gen_prog_wf_example;; *)
-(*   let indexed_blocks := combine (seq 0 (Datatypes.length prog)) prog in *)
-(*   let failing := filter (fun '(i, blk) => negb (wf_blk prog blk)) indexed_blocks in *)
-(*   match failing with *)
-(*   | [] => ret None *)
-(*   | (i, blk) :: _ => ret (Some (i, blk, prog)) *)
-(*   end. *)
-
-(* Sample find_failing_block. *)
 
 (** Relative Security *)
 

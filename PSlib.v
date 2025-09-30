@@ -310,11 +310,12 @@ Definition shrink_pub_equiv_mem (P: list label) (s: list val)
           (fix secret_values_shrunk_aux (P: list label) (rs: list val) :=
              match P, rs with
              | [], [] => []
-             | hp::tp, hr::tr => if hp
-                              then (let shrunk_tl := secret_values_shrunk_aux tp tr in
-                                    List.map (fun tl => hr :: tl) shrunk_tl)
-                              else (let shrunk_hd := shrink hr in
-                                    List.map (fun hd => hd :: tr) shrunk_hd)
+             | hp::tp, hr::tr =>
+                 if hp
+                 then (let shrunk_tl := secret_values_shrunk_aux tp tr in
+                       List.map (fun tl => hr :: tl) shrunk_tl)
+                 else (let shrunk_hd := shrink hr in
+                       List.map (fun hd => hd :: tr) shrunk_hd)
              | _, _ => [] (* unreachable *)
              end) P s' in
         let secret_items_shrunk :=
