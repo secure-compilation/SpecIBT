@@ -1100,38 +1100,10 @@ Qed.
 
 (** End todo *)
 
-(** New induction principle: on the execution length of the program, 
-    computed using speculative multisteps. *)
+(** We can no longer use the old induction principle on lexicographic
+    ordering of (com, dirs) (because ...?)
 
-(*
-Fixpoint exec_len (p:prog) (c:com) (st:state) (ast:astate) (b:bool) (ct:com) 
-  (stt:state) (astt:astate) (bt:bool) (ds : dirs) (os : obs)
-  (m:multi_spec p c st ast b ct stt astt bt ds os) : nat :=
-  match m with
-  | multi_spec_refl _ _ _ _ _ => 0
-  | multi_spec_trans _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ rest => 
-      S (exec_len _ _ _ _ _ _ _ _ _ _ _ rest)
-  end.
-
-Inductive
-multi_spec (p : prog) (c : com) (st : state) (ast : astate) 
-(b : bool) : com -> state -> astate -> bool -> dirs -> obs -> Type :=
-    multi_spec_refl : p |- <(( c, st, ast, b ))> -->*_ [] ^^ [] <(( c, st,
-                      ast, b ))>
-  | multi_spec_trans : forall (c' : com) (st' : state) 
-                         (ast' : astate) (b' : bool) 
-                         (c'' : com) (st'' : state) 
-                         (ast'' : astate) (b'' : bool) 
-                         (ds1 ds2 : dirs) (os1 os2 : obs),
-                       p |- <(( c, st, ast, b ))> -->_ ds1 ^^ os1 <(( c',
-                       st', ast', b' ))> ->
-                       p |- <(( c', st', ast', b' ))> -->*_ ds2 ^^ os2 <((
-                       c'', st'', ast'', b'' ))> ->
-                       p |- <(( c, st, ast, b ))> -->*_ 
-                       ds1 ++ ds2 ^^ os1 ++ os2 <(( c'', st'', ast'', b'' ))>.
-
-
-*)
+    New induction principle: on the execution length of the target prog *)
 
 Fixpoint exec_len (p:prog) (c:com) (st:state) (ast:astate) (b:bool) (ct:com)
   (stt:state) (astt:astate) (bt:bool) (ds : dirs) (os : obs)
@@ -1142,21 +1114,29 @@ Fixpoint exec_len (p:prog) (c:com) (st:state) (ast:astate) (b:bool) (ct:com)
       S (exec_len _ _ _ _ _ _ _ _ _ _ _ rest)
   end.
 
-Print direction.
-Definition prog1 := [<{{call X}}>; <{{Y := 42}}>].
-Definition com1 := <{{call X}}>.
-Definition st1 := ("X" !-> 1; "Y" !-> 2; _ !-> 0).
+Definition prog1 := [<{{call "X"}}>; <{{"Y" := 42}}>].
+Definition com1 := <{{call "X"}}>.
+Definition st1 := ("X" !-> 1; _ !-> 0).
 Definition ast1 := ("a" !-> [1;2]; _ !-> [3;4]). (* don't care, just need something *)
 Definition b1 := false.
-Definition ct1 := <{{Y := 42}}>.
-Definition stt1 := ("X" !-> 1; "Y" !-> 42; _ !-> 0).
+Definition ct1 := <{{skip}}>.
+Definition stt1 := ("Y" !-> 42; "X" !-> 1; _ !-> 0).
 Definition astt1 := ("a" !-> [1;2]; _ !-> [3;4]).
 Definition bt1 := false.
 Definition dirs1 := [DStep].
+Definition dirs2 : dirs := [].
 Definition obs1 := [OCall 1].
+Definition obs2 : obs := [].
+Definition m1 : multi_spec prog1 com1 st1 ast1 b1 ct1 stt1 astt1 bt1 (dirs1++dirs2) (obs1++obs2).
+Proof.
+  econstructor; [econstructor; simpl; eauto|].
+  rewrite <- app_nil_r with (l:=dirs2). rewrite <- app_nil_r with (l:=obs2).
+  econstructor; econstructor; eauto.
+Defined.
 
-Compute (exec_len prog1 com1 st1 ast1 b1 ct1 stt1 astt1 bt1 dirs1 obs1 multi_spec_trans).
-                  
+Compute (exec_len prog1 com1 st1 ast1 b1 ct1 stt1 astt1 bt1 
+  (dirs1++dirs2) (obs1++obs2) m1). 
+ 
 (*Definition measure (c : com) (ds : dirs) : nat * nat :=
   (length ds, com_size c).
 

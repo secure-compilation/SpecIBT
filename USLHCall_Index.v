@@ -261,16 +261,16 @@ Lemma multi_spec_add_snd_com : forall p c st ast ct stt astt ds os c2 b bt n,
   p |- <((c, st, ast, b))> -->*_ds^^os^^n <((ct, stt, astt, bt))> ->
   p |- <((c;c2, st, ast, b))> -->*_ds^^os^^n <((ct;c2, stt, astt, bt))>.
 Proof.
-  intros. induction H; repeat econstructor; eauto.
+  intros. induction H; repeat econstructor; eauto. 
 Qed.
 
 Lemma multi_spec_seq : forall p c1 c2 cm st ast b stm astm bm ds os n,
   p |- <((c1; c2, st, ast, b))> -->*_ds^^os^^n <((cm, stm, astm, bm))> ->
   (exists st' ast' b' ds1 ds2 os1 os2 n1 n2,
-  os = os1 ++ os2 /\ ds = ds1 ++ ds2 /\ n = n1 + n2 /\
+  os = os1 ++ os2 /\ ds = ds1 ++ ds2 /\ n = n1 + n2 + 1 /\
   p |- <((c1, st, ast, b))> -->*_ds1^^os1^^n1 <((skip, st', ast', b'))> /\
   p |- <((c2, st', ast', b'))> -->*_ds2^^os2^^n2 <((cm, stm, astm, bm))>) \/
-    (exists c', cm = <{{ c'; c2 }}> /\ p |- <((c1, st, ast, b))> -->*_ds^^os^^n <((c', stm, astm, bm))>).
+      (exists c', cm = <{{ c'; c2 }}> /\ p |- <((c1, st, ast, b))> -->*_ds^^os^^n <((c', stm, astm, bm))>).
 Proof.
   intros. remember <{{ c1; c2 }}> as c. revert c1 c2 Heqc.
   induction H; intros; subst.
@@ -282,7 +282,7 @@ Proof.
       try eassumption; eauto.
     + do 2 destruct H. subst. clear IHmulti_spec.
       right. repeat eexists. econstructor; eassumption.
-  - left. subst. repeat eexists; [|constructor|eassumption]. 
+  - left. subst. repeat eexists; [|constructor|eassumption]; lia.
 Qed.
 
 Lemma multi_seq_seq : forall p c1 c2 cm st ast stm astm os,
@@ -306,15 +306,60 @@ Proof.
   + left. repeat eexists; [constructor|eassumption].
 Qed.
 
-Lemma multi_spec_seq_assoc p c1 c2 c3 st ast b c' st' ast' b' ds os :
-  p |- <(((c1; c2); c3, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+(* Check multi_spec_combined_executions.
+
+multi_spec_combined_executions
+     : forall (p : prog) (c : com) (st : state) (ast : astate) 
+         (cm : com) (stm : state) (astm : astate) 
+         (osm : obs) (ct : com) (stt : state) (astt : astate) 
+         (ost : obs) (ds ds' : dirs) (b b' b'' : bool) 
+         (n1 n2 : nat),
+       p |- <(( c, st, ast, b ))> -->*_ ds ^^ osm ^^ n1 <(( cm, stm, astm, b'
+       ))> ->
+       p |- <(( cm, stm, astm, b' ))> -->*_ ds' ^^ ost ^^ n2 <(( ct, stt,
+       astt, b'' ))> ->
+       p |- <(( c, st, ast, b ))> -->*_ ds ++ ds' ^^ 
+   osm ++ ost ^^ n1 + n2 <(( ct, stt, astt, b'' ))> *)
+Definition x25 := 3.
+Definition x26 := 4.
+Definition x27 := 5.
+Definition sum_five := x25 + x26 + 1 + x27 + 1.
+Set Printing Parentheses.
+Print sum_five.
+
+Lemma multi_spec_seq_assoc p c1 c2 c3 st ast b c' st' ast' b' ds os n :
+  p |- <(((c1; c2); c3, st, ast, b))> -->*_ds^^os^^n <((c', st', ast', b'))> ->
   exists c'', 
-  p |- <((c1; c2; c3, st, ast, b))> -->*_ds^^os <((c'', st', ast', b'))> /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}>).
+  p |- <((c1; c2; c3, st, ast, b))> -->*_ds^^os^^n <((c'', st', ast', b'))> /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}>).
 Proof.
   intros. apply multi_spec_seq in H. destruct H.
-  + do 8 destruct H. destruct H0, H1. subst. apply multi_spec_seq in H1. destruct H1.
-    - do 8 destruct H. destruct H0, H1. subst. exists c'. split; [|tauto].
-      rewrite <- !app_assoc. eapply multi_spec_combined_executions; [apply multi_spec_add_snd_com, H1|].
+  - do 10 destruct H. destruct H0, H1, H2. (*subst.*) apply multi_spec_seq in H2. exists c'. split; auto.
+    destruct H2.
+    + do 10 destruct H2. destruct H4, H5, H6. subst.
+      rewrite <- add_assoc with (n:=x15) (m:=x16) (p:=1). 
+      rewrite (add_comm x16 1). 
+      rewrite <- add_assoc with (n:=(x15 + (1 + x16))) (m:=x7) (p:=1).
+      rewrite (add_comm x7 1).
+      rewrite add_assoc with (n:=(x15 + (1 + x16))) (m:=1) (p:=x7).
+      rewrite add_assoc with (n:=x15) (m:=1) (p:= x16).
+      (* add_shuffle0: forall n m p : nat, n + m + p = n + p + m
+
+         add_assoc: forall n m p : nat, n + (m + p) = n + m + p *)
+      apply multi_spec_combined_executions with (cm:=c3) (stm:=x) (astm:=x0) (b':=x1) 
+      (n1:=x15 + 1 + x16 + 1) (n2:=x7); auto. 
+      rewrite <- add_comm with 
+    + destruct H2 as (c'0&H2). destruct H2. discriminate.
+
+      (* Want: (((x15 + 1) + x16) + 1) + x7 *)
+      (* Have: ((x15 + (1 + x16)) + 1) + x7 *)
+
+    destruct H2.
+    + do 10 destruct H. destruct H0, H1, H2. subst. exists c'. split; [|tauto].
+      rewrite <- !app_assoc. eapply multi_spec_combined_executions.
+      * Check multi_spec_add_snd_com.
+
+
+        (*   ; [apply multi_spec_add_snd_com, H1|].
       eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|]. eapply multi_spec_combined_executions; [apply multi_spec_add_snd_com, H3|].
       eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|apply H2].
     - destruct H as (c''&abs&_). discriminate abs.
@@ -324,7 +369,7 @@ Proof.
       eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|]. apply multi_spec_add_snd_com, H2.
     - destruct H as (c'&->&H). exists <{{ c'; c2; c3 }}>. split; [|discriminate].
       apply multi_spec_add_snd_com, H.
-Qed.
+           Qed.*)
 
 (** * Definition of Relative Secure *)
 
