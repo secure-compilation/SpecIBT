@@ -1,4 +1,10 @@
-# Modelling Spectre 1.1 attacks
+# Modelling Spectre 1.1 attacks – new plan
+- Test that uslh pass guarantees relative security (for all inputs, not just safe ones)
+  and safety preservation
+- Introduce a compiler to a lower-level language like "First attempt" below
+  + Test relative security for speculatively safe inputs
+- Also test relative security for composition for sequentially safe inputs
+# Modelling Spectre 1.1 attacks – old discussion
 
 Our previous speculative semantics rule for calls didn't allow calls to
 speculatively overwritten code pointers because of the `l=eval r e` premise:
@@ -10,8 +16,12 @@ p |- (pc,r,m,sk,⊥,ms) -->_[DCall pc']^[OCall l] (pc',r,m,(pc+1)::sk,⊤,ms')
 Two issues with this:
 - our language couldn't model these interesting attacks (Spectre 1.1),
   which would be nice to model even irrespective of the next point
+  + but we can also model them in a lower-level language
 - from our discussion it seems this will cause problems when
   going to a lower level where we cannot distinguish `l` from `n`.
+  + LE: this will not be sequentially stuck
+  + LE: but it will break relative security when going to lower level?
+    - unless we have preservation of safety!
 
 TODO: What happens if a code pointer is stored at address 0
       and speculatively overwritten? Spectre 1.1:
@@ -62,6 +72,8 @@ Extra property to potentially check later:
     for passes that refine UB; current definition too strong:
     UB refinement can add sequential leakage,
     and speculation defenses normally don't stop that
+    + LE: This properly is just preservation of safety?
+      (is an input doesn't cause UB in source it shouldn't in the target)
 
 ## Alternative #2
 
@@ -286,7 +298,7 @@ uslh (store[e] <- e) =
   return [store[e'] <- e]         - fine that 0 is a valid data memory address?
                                     Seems our defense of calls can deal with this,
                                     in particular because the called address
-                                    gets masked if "ms"=1
+                                    gets masked later (on call) if "ms"=1
 
 uslh (branch e l) =
   let e' = "ms"=0 && e in                           masking branch condition
