@@ -1076,13 +1076,15 @@ Definition gen_typed_reg (c: rctx) (pst: list nat) : G reg :=
   let gen_binds := mapGen (fun '(s, t) =>  (v <- typed_val t pst;; ret (s, v))) typed_vars in
   b <- gen_binds;;
   ret (N 0, b).
-  
 
-QuickChick (forAll arbitrary (fun (state : rctx) =>
-            forAll (gen_typed_reg state [3; 3; 1; 1])
-            forAll (gen_exp_typed 4 state [3; 3; 1; 1]) (fun (exp : exp) =>
-            implication (is_some (eval state exp)) true))).
-"+++ Passed 10000 tests (0 discards)"
+Derive Show for ty.
+
+QuickChick (forAll arbitrary (fun (c : rctx) =>
+            forAll (gen_typed_reg c [3; 3; 1; 1]) (fun (state: reg) =>
+            forAll (gen_exp_typed 4 c [3; 3; 1; 1]) (fun (exp : exp) =>
+            implication (is_some (eval state exp)) true)))).
+
+(* "+++ Passed 10000 tests (0 discards)" *)
 
 Fixpoint gen_exp (sz : nat) (state : reg) : G exp :=
   match sz with 
