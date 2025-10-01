@@ -434,6 +434,7 @@ Definition uslh_bind {A B: Type} (m: M A) (f: A -> M B) : M B :=
   }.
 
 (* No mapM in ExtLib, seems it got removed: https://github.com/rocq-community/coq-ext-lib/commit/ef2e35f43b2d1db4cb64188e9521948fdd1e0527 *)
+(* YH: We can use mapGen from QuickChick library instead.  *)
 Definition mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
   sequence (List.map f l).
 
@@ -843,7 +844,7 @@ Definition nat_list_minus (l1 l2 : list nat) : list nat :=
 
 
 Definition gen_branch_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
-  let jlst := (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
+  let jlst := (nat_list_minus (seq 0 pl) (proc_hd pst)) in
   if seq.nilp jlst
   then
     ret <{ skip }>
@@ -855,7 +856,7 @@ Definition gen_branch_wf (vars: list string) (pl: nat) (pst: list nat) : G inst 
 Sample (gen_branch_wf ex_vars 8 [3; 3; 1; 1]).
 
 Definition gen_jump_wf (pl: nat) (pst: list nat) : G inst :=
-  let jlst := (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
+  let jlst := (nat_list_minus (seq 0 pl) (proc_hd pst)) in
   if seq.nilp jlst
   then
     ret <{ skip }>
@@ -995,8 +996,7 @@ QuickChick (forAll (gen_prog_wf) (fun (p : prog) => (wf p))).
 (* PROPERTY: uslh produces well-formed programs from well-formed programs
    probably need generator for well-formed programs *)
 
-QuickChick (forAll (gen_prog_wf) (fun (p : prog) =>
-            implication (wf (uslh_prog p)) true)).
+QuickChick (forAll (gen_prog_wf) (fun (p : prog) => (wf (uslh_prog p)))).
 
 
 (* YH: The current expression generator depends on a specific register set.
@@ -1016,6 +1016,7 @@ Derive (Arbitrary, Shrink) for ty.
 Derive Show for ty.
 
 Definition rctx := total_map ty.
+Definition tmem := list ty.
 
 Definition ty_eqb (x y: ty) := match x, y with
                                | TNum, TNum | TPtr, TPtr => true
@@ -1045,15 +1046,15 @@ Definition gen_exp_leaf_wt (t: ty) (c: rctx) (pst: list nat) : G exp :=
                   [liftM AId (elems_ "X0"%string ptrs)] ) )
   end.
 
-Fixpoint gen_exp_no_ptr_wt (sz : nat) (c : rctx) : G exp :=
+Fixpoint gen_exp_no_ptr_wt (sz : nat) (c : rctx) (pst: list nat) : G exp :=
   match sz with
   | O => gen_exp_leaf_wt TNum c []
   | S sz' =>
       freq [ (2, gen_exp_leaf_wt TNum c []);
              (sz, eitherOf
-                    (liftM3 ABin arbitrary (gen_exp_no_ptr_wt sz' c) (gen_exp_no_ptr_wt sz' c))
-                    (liftM2 (ABin BinEq) (liftM FPtr arbitrary) (liftM FPtr arbitrary)));
-             (sz, liftM3 ACTIf (gen_exp_no_ptr_wt sz' c) (gen_exp_no_ptr_wt sz' c) (gen_exp_no_ptr_wt sz' c))
+                    (liftM3 ABin arbitrary (gen_exp_no_ptr_wt sz' c pst) (gen_exp_no_ptr_wt sz' c pst))
+                    (liftM2 (ABin BinEq) (gen_exp_leaf_wt TPtr c pst)  (gen_exp_leaf_wt TPtr c pst)));
+             (sz, liftM3 ACTIf (gen_exp_no_ptr_wt sz' c pst) (gen_exp_no_ptr_wt sz' c pst) (gen_exp_no_ptr_wt sz' c pst))
           ]
   end
 with gen_exp_ptr_wt (sz : nat) (c : rctx) (pst: list nat) : G exp :=
@@ -1061,7 +1062,7 @@ with gen_exp_ptr_wt (sz : nat) (c : rctx) (pst: list nat) : G exp :=
   | O => gen_exp_leaf_wt TPtr c pst
   | S sz' => 
       freq [ (2, gen_exp_leaf_wt TPtr c pst);
-             (sz, liftM3 ACTIf (gen_exp_no_ptr_wt sz' c) (gen_exp_ptr_wt sz' c pst) (gen_exp_ptr_wt sz' c pst))
+             (sz, liftM3 ACTIf (gen_exp_no_ptr_wt sz' c pst) (gen_exp_ptr_wt sz' c pst) (gen_exp_ptr_wt sz' c pst))
           ]
   end.
 
@@ -1075,17 +1076,17 @@ Fixpoint gen_exp_wt (sz: nat)(c: rctx) (pst: list nat) : G exp :=
           (2, t <- arbitrary;; gen_exp_leaf_wt t c pst);
           (sz, binop <- arbitrary;; match binop with
                 | BinEq => eitherOf
-                    (liftM2 (ABin BinEq) (gen_exp_no_ptr_wt sz' c) (gen_exp_no_ptr_wt sz' c))
+                    (liftM2 (ABin BinEq) (gen_exp_no_ptr_wt sz' c pst) (gen_exp_no_ptr_wt sz' c pst))
                     (liftM2 (ABin BinEq) (gen_exp_leaf_wt TPtr c pst) (gen_exp_leaf_wt TPtr c pst))
-                | _ => liftM2 (ABin binop) (gen_exp_no_ptr_wt sz' c) (gen_exp_no_ptr_wt sz' c)
+                | _ => liftM2 (ABin binop) (gen_exp_no_ptr_wt sz' c pst) (gen_exp_no_ptr_wt sz' c pst)
               end);
-             (sz, liftM3 ACTIf (gen_exp_no_ptr_wt sz' c) (gen_exp_wt sz' c pst) (gen_exp_wt sz' c pst))
+             (sz, liftM3 ACTIf (gen_exp_no_ptr_wt sz' c pst) (gen_exp_wt sz' c pst) (gen_exp_wt sz' c pst))
           ]
   end.
 
 Fixpoint gen_exp_wt2 (t: ty) (sz: nat) (c: rctx) (pst: list nat) : G exp :=
   match t with
-  | TNum => gen_exp_no_ptr_wt sz c
+  | TNum => gen_exp_no_ptr_wt sz c pst
   | TPtr => gen_exp_ptr_wt sz c pst
   end.
 
@@ -1109,9 +1110,21 @@ QuickChick (forAll arbitrary (fun (c : rctx) =>
             forAll (gen_exp_wt 4 c [3; 3; 1; 1]) (fun (exp : exp) =>
             implication (is_some (eval state exp)) true)))).
 
+Definition gen_asgn_wt (t: ty) (c: rctx) (pst: list nat) : G inst :=
+  let tlst := filter (fun '(_, t') => ty_eqb t t') (snd c) in
+  let vars := map_dom tlst in
+  if seq.nilp vars
+  then ret <{ skip }>
+  else
+    x <- elems_ "X0"%string vars;;
+    a <- gen_exp_wt2 t 1 c pst;;
+    ret <{ x := a }>.
+
+Sample (c <- arbitrary;; i <- gen_asgn_wt TPtr c [3; 3; 1; 1];; ret (c, i)).
+
 Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) : G inst :=
   let vars := (map_dom (snd c)) in
-  let jlst := (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
+  let jlst := (nat_list_minus (seq 0 pl) (proc_hd pst)) in
   if seq.nilp jlst
   then ret <{ skip }>
   else e <- gen_exp_wt2 TNum 1 c pst;;
@@ -1126,19 +1139,170 @@ Definition gen_jump_wt (pl: nat) (pst: list nat) : G inst :=
 
 Sample (gen_jump_wt 8 [3; 3; 1; 1]).
 
-Definition gen_load_wt  (pl: nat) (pst: list nat) : G inst :=
-  e <- gen_exp_wf vars 1 pst;;
-  x <- elems_ "X0"%string vars;;
-  ret <{ x <- load[e] }>.
+Definition gen_load_wt (t: ty) (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
+  let tlst := filter (fun '(_, t') => ty_eqb t t') (snd c) in
+  let vars := map_dom tlst in
+  (* SOONER: YH: now it just supports numbers. extend this later. *)
+  let indices := seq 0 (Datatypes.length tm) in
+  let idx_tm := combine indices tm in
+  let idxt := fst (split (filter (fun '(_, t') => ty_eqb t t') idx_tm)) in
+  if (seq.nilp vars) || (seq.nilp idxt)
+  then ret <{ skip }>
+  else
+    n <- elems_ 0 idxt;;
+    x <- elems_ "X0"%string vars;;
+    ret <{ x <- load[ANum n] }>.
 
-Sample (gen_load_wf ex_vars 8 [3; 3; 1; 1]).
+Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_load_wt TPtr c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
 
-Definition gen_store_wf  (vars: list string) (pl: nat) (pst: list nat) : G inst :=
-  e1 <- gen_exp_wf vars 1 pst;;
-  e2 <- gen_exp_wf vars 1 pst;;
-  ret <{ store[e1] <- e2 }>.
+Definition gen_store_wt  (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
+  let indices := seq 0 (Datatypes.length tm) in
+  let idx_tm := combine indices tm in
+  if seq.nilp idx_tm
+  then ret <{ skip }>
+  else
+    '(n, t) <- elems_ (0, TNum) idx_tm;;
+    e2 <- gen_exp_wt2 t 1 c pst;;
+    ret <{ store[ANum n] <- e2 }>.
 
-Sample (gen_store_wf ex_vars 8 [3; 3; 1; 1]).
+Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_store_wt c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
+
+Definition gen_call_wt (pst: list nat) : G inst :=
+  gen_call_wf pst.
+
+Sample (gen_call_wt [3; 3; 1; 1]).
+
+Fixpoint _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
+                      (gen_branch : rctx -> nat -> list nat -> G inst)
+                      (gen_jump : nat -> list nat -> G inst)
+                      (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
+                      (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
+                      (gen_call : list nat -> G inst)
+                      (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
+  freq [ (1, ret ISkip);
+         (1, ret IRet);
+         (sz, t <- arbitrary;; gen_asgn t c pst);
+         (sz, gen_branch c pl pst);
+         (sz, gen_jump pl pst);
+         (sz, t <- arbitrary;; gen_load t c tm pl pst);
+         (sz, gen_store c tm pl pst);
+         (sz, gen_call pst)].
+
+Fixpoint gen_nonterm_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
+                        (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
+                        (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
+                        (gen_call : list nat -> G inst)
+                        (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
+  freq [ (1, ret ISkip);
+         (sz, t <- arbitrary;; gen_asgn t c pst);
+         (sz, t <- arbitrary;; gen_load t c tm pl pst);
+         (sz, gen_store c tm pl pst);
+         (sz, gen_call pst)].
+
+Fixpoint gen_term_wt (gen_branch : rctx -> nat -> list nat -> G inst)
+                     (gen_jump : nat -> list nat -> G inst)
+                     (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
+  freq [ (1, ret IRet);
+         (sz, gen_branch c pl pst);
+         (sz, gen_jump pl pst)].
+
+Definition gen_inst_wt (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
+  _gen_inst_wt gen_asgn_wt gen_branch_wt gen_jump_wt gen_load_wt gen_store_wt gen_call_wt
+               c tm sz pl pst.
+
+Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_inst_wt c tm 3 8 [3; 3; 1; 1];; ret (c, tm, i)).
+
+Definition gen_blk_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst: list nat) : G (list inst) :=
+  vectorOf bsz (gen_inst_wt c tm bsz pl pst).
+
+Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_blk_wt c tm 5 8 [3; 3; 1; 1];; ret (c, tm, i)).
+
+(* fsz: # of blocks in procedure *)
+(* blk: max # of instructions in blk *)
+Fixpoint _gen_proc_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
+  match fsz with
+  | O => ret []
+  | S fsz' => n <- choose (1, bsz);;
+             blk <- gen_blk_wt c tm n pl pst;;
+             rest <- _gen_proc_wt c tm fsz' bsz pl pst;;
+             ret ((blk, false) :: rest)
+  end.
+
+Sample (tm <- arbitrary;; c <- arbitrary;; proc <- _gen_proc_wt c tm 3 3 8 [3; 3; 1; 1];; ret (c, tm, proc)).
+
+(* fsz: # of blocks in procedure *)
+(* blk: max # of instructions in blk *)
+Definition gen_proc_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
+  match fsz with
+  | O => ret [] (* unreachable *)
+  | S fsz' => n <- choose (1, bsz);;
+             blk <- gen_blk_wt c tm n pl pst;;
+             rest <- _gen_proc_wt c tm fsz' bsz pl pst;;
+             ret ((blk, true) :: rest)
+  end.
+
+Sample (tm <- arbitrary;; c <- arbitrary;; proc <- gen_proc_wt c tm 3 3 8 [3; 3; 1; 1];; ret (c, tm, proc)).
+
+Fixpoint _gen_prog_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst pst': list nat) : G (list (list inst * bool)) :=
+  match pst' with
+  | [] => ret []
+  | hd :: tl => hd_proc <- gen_proc_wt c tm hd bsz pl pst;;
+               tl_proc <- _gen_prog_wt c tm bsz pl pst tl;;
+               ret (hd_proc ++ tl_proc)
+  end.
+
+Sample (tm <- arbitrary;; c <- arbitrary;; p <- _gen_prog_wt c tm 3 8 [3; 3; 1; 1] [3; 3; 1; 1];; ret  p).
+
+Definition gen_prog_wt_example (pl: nat) :=
+  c <- arbitrary;;
+  tm <- arbitrary;;
+  pst <- gen_partition pl;;
+  let bsz := 5%nat in
+  _gen_prog_wt c tm bsz pl pst pst.
+
+Sample (gen_prog_wt_example 5).
+
+Definition test_wt_example : G bool :=
+  prog <- gen_prog_wt_example 8;;
+  ret (wf prog).
+
+Sample (vectorOf 1 test_wt_example).
+
+Definition gen_prog_wt (bsz pl: nat) :=
+  c <- arbitrary;;
+  tm <- arbitrary;;
+  pst <- gen_partition pl;;
+  _gen_prog_wt c tm bsz pl pst pst.
+
+QuickChick (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf p))).
+
+(* PROPERTY: uslh produces well-formed programs from well-formed programs
+   probably need generator for well-formed programs *)
+
+QuickChick (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf (uslh_prog p)))).
+
+
+Definition gen_wt_com := gen_com_rec gen_secure_asgn gen_secure_aread gen_secure_awrite.
+
+Sample gen_pub_vars.
+
+Definition someP := (false, [("X0", false); ("X1", true); ("X2", true);
+                             ("X3", true); ("X4", false); ("X5", false)])%string.
+
+Sample gen_pub_arrs.
+
+Definition somePA := (true, [("A0", true); ("A1", true); ("A2", false)])%string.
+
+Sample (sized (gen_wt_com someP somePA)).
+
+(* Strange that we need such a big hack here, but if we use AllPub we don't get
+   public variables/arrays generated *)
+Definition gen_com := gen_wt_com
+                        (true, [("X0", true); ("X1", true); ("X2", true);
+                          ("X3", true); ("X4", true); ("X5", true)])%string
+                        (true, [("A0", true); ("A1", true); ("A2", true)])%string.
+
+Sample (sized gen_com).
 
 (* "+++ Passed 10000 tests (0 discards)" *)
 
