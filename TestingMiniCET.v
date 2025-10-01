@@ -273,6 +273,22 @@ Inductive observation : Type :=
 
 Definition obs := list observation.
 
+Definition observation_eqb (os1 : observation) (os2 : observation) : bool :=
+  match os1, os2 with
+  | OBranch b, OBranch b' => Bool.eqb b b'
+  | OLoad i, OLoad i' => (i =? i')
+  | OStore i, OStore i' => (i =? i')
+  | OCall v, OCall v' => match v, v' with
+                        | N n, N n' => (n =? n')
+                        | FP l, FP l' => (l =? l')
+                        | _, _ => false
+                        end
+  | _, _ => false
+  end.
+
+Definition obs_eqb (o1 : obs) (o2 : obs) : bool :=
+  forallb (fun '(os1, os2) => observation_eqb os1 os2) (List.combine o1 o2).
+
 Definition fetch (p:prog) (pc:cptr) : option inst :=
   let '(l,o) := pc in
   r <- nth_error p l;;
@@ -1369,149 +1385,9 @@ QuickChick (forAll (gen_prog_wt2 3 8) (fun '(c, tm, p) => (ty_prog c tm p) && (w
 
 (** Relative Security *)
 
-(** Better wf program generator - general program *)
+(* Taint Tracker for input pairs *)
 
-Definition gen_exp_ptr_wf (vars: list string) (pst: list nat) : G exp :=
-  oneOf [liftM FPtr (elems_ 0 (proc_hd pst))].
-
-Fixpoint gen_exp_wf2  (vars: list string) (sz : nat) (pst: list nat) (rs : reg) : G exp :=
-  match sz with 
-  | O => gen_exp_leaf_wf vars pst
-  | S sz' => 
-          freq [ 
-             (2, gen_exp_leaf_wf vars pst);
-             (sz, binop <- arbitrary;; match binop with
-                | BinEq => eitherOf
-                    (liftM2 (ABin BinEq) (gen_exp_no_ptr sz' rs) (gen_exp_no_ptr sz' rs))
-                    (liftM2 (ABin BinEq) (gen_exp_ptr_wf vars pst) (gen_exp_ptr_wf vars pst))
-                | _ => liftM2 (ABin binop) (gen_exp_no_ptr sz' rs) (gen_exp_no_ptr sz' rs)
-              end);
-             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' rs) (gen_exp_wf2 vars sz' pst rs) (gen_exp_wf2 vars sz' pst rs))
-          ]
-  end.
-
-Definition gen_exp_for_offset (n: nat) (rs: reg) : G exp :=
-  freq [(1, ret (ANum n));
-        (1, let regs := filter (fun '(_, v) => match v with
-                                            | N m => m <=? n
-                                            | _ => false
-                                            end) (snd rs) in
-            match regs with
-            | [] => ret (ANum n)
-            | _ => '(name, vm) <- elems_ ("X0"%string, N 0) regs;;
-                  match vm with
-                  | N m => let ofs := n - m in
-                          ret (ABin BinPlus (AId name) (ANum ofs))
-                  | _ => ret (ANum n)
-                  end
-            end)
-    ].
-
-Definition gen_asgn (rs: reg) (pst: list nat) : G inst :=
-  let vars := map_dom (snd rs) in
-  x <- elems_ "X0"%string vars;;
-  e <- gen_exp_wf2 vars 1 pst rs;;
-  ret <{ x := e }>.
-
-Definition get_addr (m: list val) : G  nat :=
-  choose (0, Datatypes.length m).
-
-Definition gen_load (m: list val) (rs: reg) : G inst :=
-  let vars := map_dom (snd rs) in
-  x <- elems_ "X0"%string vars;;
-  i <- get_addr m;;
-  i' <- gen_exp_for_offset i rs;;
-  ret (ILoad x i').
-
-Definition gen_store  (m:  (rs: reg) (pst: list nat) : G inst :=
-  let indices := seq 0 (Datatypes.length PA) in
-  i <- elems_ 0 indices;;
-  if nth i PA true then
-    (* PA is always larger than []. *)
-    (* public location *)
-    e <- gen_exp_for_offset i P rs true;;
-    e' <- gen_pub_exp 1 P rs pst;;
-    ret (IStore e e')
-  else
-    (* secret location *)
-    b <- arbitrary;;
-    e <- gen_exp_for_offset i P rs b;;
-    e' <- arbitrarySized 1;;
-    ret (IStore e e').
-
-(* Definition gen_store_in_ctx (gen_store : pub_vars -> pub_arrs -> reg -> list nat -> G inst) *)
-(*     (pc:label) (P:pub_vars) (PA:pub_arrs) (rs: reg) (pst: list nat) : G inst := *)
-(*   if pc then gen_store P PA rs pst *)
-(*   else *)
-(*     i <- get_addr PA secret;; (* secret location *) *)
-(*     match i with *)
-(*     | Some i => *)
-(*         b <- arbitrary;; *)
-(*         e <- gen_exp_for_offset i P rs b;; *)
-(*         e' <- arbitrarySized 1;; *)
-(*         ret (IStore e e') *)
-(*     | None => ret <{ skip }> *)
-(*     end. *)
-
-(* Definition gen_pub_branch (P: pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst := *)
-(*   let vars := map_dom (snd rs) in *)
-(*   e <- gen_pub_exp_no_ptr 1 P rs;; *)
-(*   l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *) *)
-(*   ret <{ branch e to l }>. *)
-
-(* (* ex_vars = <{{ i[ ("X0"%string); ("X1"%string); ("X2"%string); ("X3"%string); ("X4"%string)] }}> *) *)
-(* Definition ex_pub_vars : total_map label := (true,[("X0",true); ("X1",true); ("X2",true); *)
-(*                                                    ("X3",false); ("X4",false)])%string. *)
-
-(* Definition ex_pub_vars' : total_map label := (true,[("X0",false); ("X1",false); ("X2",false); *)
-(*                                                    ("X3",true); ("X4",false)])%string. *)
-
-(* Definition ex_rs : total_map val := (N 0,[("X0",N 42); ("X1",N 33); ("X2",FP 0); *)
-(*                                           ("X3",FP 0); ("X4",FP 3)])%string. *)
-
-(* Sample (gen_pub_branch ex_pub_vars 8 [3; 3; 1; 1] ex_rs). *)
-
-(* Definition gen_branch_in_ctx (gen_branch: pub_vars -> nat -> list nat -> reg -> G inst) *)
-(*   (pc:label) (P:pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst := *)
-(*   if pc then gen_branch P pl pst rs *)
-(*   else *)
-(*     e <- gen_exp_leaf_no_ptr rs;; *)
-(*     l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; *)
-(*     ret <{ branch e to l }>. *)
-
-(* Sample (gen_branch_in_ctx gen_pub_branch secret ex_pub_vars' 8 [3; 3; 1; 1] ex_rs). *)
-
-(* Definition gen_pub_call (P:pub_vars) (pst: list nat) (rs: reg) : G inst := *)
-(*   l <- gen_pub_exp_ptr 1 P pst rs;; *)
-(*   ret <{ call l }>. *)
-
-(* Sample (gen_pub_call ex_pub_vars [3; 3; 1; 1] ex_rs). *)
-
-(* Definition gen_call_in_ctx (gen_call: pub_vars -> list nat -> reg -> G inst) *)
-(*   (pc: label) (P:pub_vars) (pst: list nat) (rs: reg) : G inst := *)
-(*   if pc then gen_call P pst rs *)
-(*   else *)
-(*     l <- gen_exp_ptr_in_ctx false 1 P pst rs;; *)
-(*     ret <{ call l }>. *)
-
-(* YH: Unlike non-interference, the relative security property is formally defined for all input pairs. It does not require input pairs to be public-equivalent.
-
- However, for the test to be meaningful, the premise of the property must hold.
- This means we must select input pairs for which the original program produces
- identical observations under sequential execution.
-
-  => the taint analysis of TestingFlexSLH will be useful.
- *)
-
-(* From SECF Require Import TestingSpecCT. *)
-
-(* Notation label := TestingSpecCT.label. *)
-(* Notation apply := ListMaps.apply. *)
-(* Notation join := TestingSpecCT.join. *)
-
-
-
-Notation label := bool.
+Notation label := PSlib.label.
 Notation apply := ListMaps.apply.
 Definition join (l1 l2 : label) : label := l1 && l2.
 
@@ -1561,10 +1437,10 @@ Module TaintTracking.
 
 Definition tcptr := taint.
 Definition treg := total_map taint.
-Definition tmem := list taint.
+Definition tamem := list taint.
 Definition tstk := list tcptr.
 
-Definition tcfg := (tcptr * treg * tmem * tstk)%type.
+Definition tcfg := (tcptr * treg * tamem * tstk)%type.
 Definition input_st : Type := cfg * tcfg * taint.
 
 Variant output_st (A : Type) : Type :=
@@ -1597,21 +1473,6 @@ Definition interpreter: Type := evaluator unit.
         end
       )
   }.
-
-(* Definition get_id_val (name : string): evaluator val := *)
-(*   mkEvaluator _ (fun (ist : input_st) => *)
-(*     let '(c, _, _) := ist in *)
-(*     let '(_, regs, _, _) := c in *)
-(*     evaluate _ (ret (apply regs name)) ist *)
-(*     ). *)
-
-(* Definition get_mem_val (n : nat): evaluator val := *)
-(*   mkEvaluator _ (fun (ist : input_st) => *)
-(*     let '(c, _, _) := ist in *)
-(*     let '(_, _, m, _) := c in *)
-(*     v <- nth_error m n;; *)
-(*     evaluate _ (ret v) ist *)
-(*   ). *)
 
 Fixpoint _calc_taint_exp (e: exp) (treg: total_map taint) : taint :=
   match e with
@@ -1755,13 +1616,13 @@ Fixpoint steps_taint_track (f: nat) (p: prog) (ist: input_st) (os: obs) : exec_r
       end
   end.
 
-Fixpoint _init_taint_mem (m: mem) (n: nat) : tmem :=
+Fixpoint _init_taint_mem (m: mem) (n: nat) : tamem :=
   match m with
   | [] => []
   | h :: m' => ([inr n]) :: _init_taint_mem m' (S n)
   end.
 
-Definition init_taint_mem (m: mem) : tmem :=
+Definition init_taint_mem (m: mem) : tamem :=
   _init_taint_mem m 0.
 
 End TaintTracking.
@@ -1789,6 +1650,138 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
                 remove_dupes Nat.eqb mems)
   | _ => None
   end.
+
+Definition gen_prog_wt3 (bsz pl: nat) : G (rctx * tmem * list nat * prog) :=
+  c <- arbitrary;;
+  tm <- arbitrary;;
+  pst <- gen_partition pl;;
+  p <- _gen_prog_wt c tm bsz pl pst pst;;
+  ret (c, tm, pst, p).
+
+Definition gen_wt_mem (tm: tmem) (pst: list nat) : G mem :=
+  let indices := seq 0 (Datatypes.length tm) in
+  let idx_tm := combine indices tm in
+  let gen_binds := mapGen (fun '(idx, t) => (v <- wt_val t pst;; ret (idx, v))) idx_tm in
+  r <- gen_binds;;
+  ret (snd (split r)).
+
+Definition ipc : cptr := (0 , 0).
+Definition istk : list cptr := [].
+
+Fixpoint member (n: nat) (l: list nat) : bool :=
+  match l with
+  | [] => false
+  | hd::tl => if (hd =? n) then true else member n tl
+  end.
+
+Fixpoint _tms_to_pm (tms: list nat) (len: nat) (cur: nat) : list label :=
+  match len with
+  | 0 => []
+  | S len' => member cur tms :: _tms_to_pm tms len' (S cur)
+  end.
+
+Definition tms_to_pm (tms: list nat) : list label :=
+  let len := S (list_max tms) in
+  _tms_to_pm tms len 0.
+
+Compute (tms_to_pm [3; 4; 5]).
+
+(* YH: Sanity Check *)
+
+QuickChick (
+  forAll (gen_prog_wt3 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_wt_reg c pst) (fun rs =>
+  forAll (gen_wt_mem tm pst) (fun m =>
+  let icfg := (ipc, rs, m, istk) in
+  let r1 := taint_tracking 1557 p icfg in
+  match r1 with
+  | Some (os1', tvars, tms) =>
+      let P := (false, map (fun x => (x,true)) tvars) in
+      let PM := tms_to_pm tms in
+      forAll (gen_pub_equiv P rs) (fun rs' =>
+      forAll (gen_pub_mem_equiv PM m) (fun m' =>
+      let icfg' := (ipc, rs', m', istk) in
+      let r2 := steps 1557 p icfg' in
+      match r2 with
+      | Some (_, os2') => checker (obs_eqb os1' os2')
+      | None => checker false (* fail *)
+      end))
+   | None => checker tt (* discard *)
+  end)))).
+
+
+(* Definition gen_store_in_ctx (gen_store : pub_vars -> pub_arrs -> reg -> list nat -> G inst) *)
+(*     (pc:label) (P:pub_vars) (PA:pub_arrs) (rs: reg) (pst: list nat) : G inst := *)
+(*   if pc then gen_store P PA rs pst *)
+(*   else *)
+(*     i <- get_addr PA secret;; (* secret location *) *)
+(*     match i with *)
+(*     | Some i => *)
+(*         b <- arbitrary;; *)
+(*         e <- gen_exp_for_offset i P rs b;; *)
+(*         e' <- arbitrarySized 1;; *)
+(*         ret (IStore e e') *)
+(*     | None => ret <{ skip }> *)
+(*     end. *)
+
+(* Definition gen_pub_branch (P: pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst := *)
+(*   let vars := map_dom (snd rs) in *)
+(*   e <- gen_pub_exp_no_ptr 1 P rs;; *)
+(*   l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *) *)
+(*   ret <{ branch e to l }>. *)
+
+(* (* ex_vars = <{{ i[ ("X0"%string); ("X1"%string); ("X2"%string); ("X3"%string); ("X4"%string)] }}> *) *)
+(* Definition ex_pub_vars : total_map label := (true,[("X0",true); ("X1",true); ("X2",true); *)
+(*                                                    ("X3",false); ("X4",false)])%string. *)
+
+(* Definition ex_pub_vars' : total_map label := (true,[("X0",false); ("X1",false); ("X2",false); *)
+(*                                                    ("X3",true); ("X4",false)])%string. *)
+
+(* Definition ex_rs : total_map val := (N 0,[("X0",N 42); ("X1",N 33); ("X2",FP 0); *)
+(*                                           ("X3",FP 0); ("X4",FP 3)])%string. *)
+
+(* Sample (gen_pub_branch ex_pub_vars 8 [3; 3; 1; 1] ex_rs). *)
+
+(* Definition gen_branch_in_ctx (gen_branch: pub_vars -> nat -> list nat -> reg -> G inst) *)
+(*   (pc:label) (P:pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst := *)
+(*   if pc then gen_branch P pl pst rs *)
+(*   else *)
+(*     e <- gen_exp_leaf_no_ptr rs;; *)
+(*     l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; *)
+(*     ret <{ branch e to l }>. *)
+
+(* Sample (gen_branch_in_ctx gen_pub_branch secret ex_pub_vars' 8 [3; 3; 1; 1] ex_rs). *)
+
+(* Definition gen_pub_call (P:pub_vars) (pst: list nat) (rs: reg) : G inst := *)
+(*   l <- gen_pub_exp_ptr 1 P pst rs;; *)
+(*   ret <{ call l }>. *)
+
+(* Sample (gen_pub_call ex_pub_vars [3; 3; 1; 1] ex_rs). *)
+
+(* Definition gen_call_in_ctx (gen_call: pub_vars -> list nat -> reg -> G inst) *)
+(*   (pc: label) (P:pub_vars) (pst: list nat) (rs: reg) : G inst := *)
+(*   if pc then gen_call P pst rs *)
+(*   else *)
+(*     l <- gen_exp_ptr_in_ctx false 1 P pst rs;; *)
+(*     ret <{ call l }>. *)
+
+(* YH: Unlike non-interference, the relative security property is formally defined for all input pairs. It does not require input pairs to be public-equivalent.
+
+ However, for the test to be meaningful, the premise of the property must hold.
+ This means we must select input pairs for which the original program produces
+ identical observations under sequential execution.
+
+  => the taint analysis of TestingFlexSLH will be useful.
+ *)
+
+(* From SECF Require Import TestingSpecCT. *)
+
+(* Notation label := TestingSpecCT.label. *)
+(* Notation apply := ListMaps.apply. *)
+(* Notation join := TestingSpecCT.join. *)
+
+
+
 
 (** Better wf program generator - constant time *)
 (* 1. public/secret
