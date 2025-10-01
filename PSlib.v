@@ -323,3 +323,15 @@ Definition shrink_pub_equiv_mem (P: list label) (s: list val)
         secret_values_shrunk ++ secret_items_shrunk
 
       ).
+
+Definition list_minus {X : Type} `{EqDec X} (l1 l2 : list X) : list X :=
+  filter (fun x => negb (existsb (fun y => x ==b y) l2)) l1.
+
+#[export] Instance EqDec_nat : EqDec nat eq.
+Proof.
+  red. intros.
+  destruct (Nat.eqb x y) eqn:Heb.
+  - rewrite Nat.eqb_eq in Heb. left. subst. reflexivity.
+  - rewrite Nat.eqb_neq in Heb. right. red. intros. apply Heb.
+    apply H.
+Qed.

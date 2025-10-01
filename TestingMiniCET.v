@@ -855,32 +855,18 @@ Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
                else x :: remove_dupes eqb xs
   end.
 
-Definition nat_list_minus (l1 l2 : list nat) : list nat :=
-  filter (fun x => negb (existsb (Nat.eqb x) l2)) l1.
+Definition gen_branch_wf (vars: list string) (pl: nat) (pst: list nat) (default: nat) : G inst :=
+  e <- gen_exp_wf vars 1 pst;;
+  l <- elems_ default (list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
+  ret <{ branch e to l }>.
 
+Sample (gen_branch_wf ex_vars 8 [3; 3; 1; 1] 2).
 
-Definition gen_branch_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
-  let jlst := (nat_list_minus (seq 0 pl) (proc_hd pst)) in
-  if seq.nilp jlst
-  then
-    ret <{ skip }>
-  else
-    e <- gen_exp_wf vars 1 pst;;
-    l <- elems_ 0 jlst;; (* 0 is unreachable *)
-    ret <{ branch e to l }>.
+Definition gen_jump_wf (pl: nat) (pst: list nat) (default: nat): G inst :=
+  l <- elems_ default (list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
+  ret <{ jump l }>.
 
-Sample (gen_branch_wf ex_vars 8 [3; 3; 1; 1]).
-
-Definition gen_jump_wf (pl: nat) (pst: list nat) : G inst :=
-  let jlst := (nat_list_minus (seq 0 pl) (proc_hd pst)) in
-  if seq.nilp jlst
-  then
-    ret <{ skip }>
-  else
-    l <- elems_ 0 jlst;; (* 0 is unreachable *)
-    ret <{ jump l }>.
-
-Sample (gen_jump_wf 8 [3; 3; 1; 1]).
+Sample (gen_jump_wf 8 [3; 3; 1; 1] 2).
 
 Definition gen_load_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
   e <- gen_exp_wf vars 1 pst;;
@@ -924,20 +910,26 @@ Sample (gen_call_wf [3; 3; 1; 1]).
 Sample (vectorOf 1 (gen_call_wf [3; 3; 1; 1])).
 
 Definition gen_inst (gen_asgn : list string -> list nat -> G inst)
-                    (gen_branch : list string -> nat -> list nat -> G inst)
-                    (gen_jump : nat -> list nat -> G inst)
+                    (gen_branch : list string -> nat -> list nat -> nat -> G inst)
+                    (gen_jump : nat -> list nat -> nat -> G inst)
                     (gen_load : list string -> nat -> list nat -> G inst)
                     (gen_store : list string -> nat -> list nat -> G inst)
                     (gen_call : list nat -> G inst)
                     (vars: list string) (sz:nat) (pl: nat) (c: list nat) : G inst :=
-  freq [ (1, ret ISkip);
+  let insts := 
+    [ (1, ret ISkip);
          (1, ret IRet);
          (sz, gen_asgn vars c);
-         (sz, gen_branch vars pl c);
-         (sz, gen_jump pl c);
          (sz, gen_load vars pl c);
          (sz, gen_store vars pl c);
-         (sz, gen_call c)].
+         (sz, gen_call c) ] in
+  let non_proc_labels := list_minus (seq 0 (pl - 1)) (proc_hd c) in
+  match non_proc_labels with
+    (* There are only procedure heads or the size of the program is 0 *)
+    | nil => freq_ (ret ISkip) insts
+    (* There is at least one non procedure label *)
+    | hd :: _ => freq_ (ret ISkip) (insts ++ [ (sz, gen_branch vars pl c hd); (sz, gen_jump pl c hd) ])
+  end.
 
 Definition gen_inst_wf (vars: list string) (sz pl: nat) (pst: list nat) : G inst :=
   gen_inst gen_asgn_wf gen_branch_wf gen_jump_wf
@@ -1007,12 +999,12 @@ Definition gen_prog_wf :=
   pst <- gen_partition pl;;
   _gen_prog_wf ex_vars pl pst pst.
 
-QuickChick (forAll (gen_prog_wf) (fun (p : prog) => (wf p))).
+QuickChick (forAll (gen_prog_wf) (fun (p : prog) => wf p)).
 
 (* PROPERTY: uslh produces well-formed programs from well-formed programs
    probably need generator for well-formed programs *)
 
-QuickChick (forAll (gen_prog_wf) (fun (p : prog) => (wf (uslh_prog p)))).
+QuickChick (forAll (gen_prog_wf) (fun (p : prog) => wf (uslh_prog p))).
 
 
 (* YH: The current expression generator depends on a specific register set.
@@ -1138,22 +1130,20 @@ Definition gen_asgn_wt (t: ty) (c: rctx) (pst: list nat) : G inst :=
 
 Sample (c <- arbitrary;; i <- gen_asgn_wt TPtr c [3; 3; 1; 1];; ret (c, i)).
 
-Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) : G inst :=
+Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) (default : nat) : G inst :=
   let vars := (map_dom (snd c)) in
-  let jlst := (nat_list_minus (seq 0 pl) (proc_hd pst)) in
-  if seq.nilp jlst
-  then ret <{ skip }>
-  else e <- gen_exp_wt2 TNum 1 c pst;;
-       l <- elems_ 0 jlst;; (* 0 is unreachable *)
-       ret <{ branch e to l }>.
+  let jlst := (list_minus (seq 0 pl) (proc_hd pst)) in
+  e <- gen_exp_wt2 TNum 1 c pst;;
+  l <- elems_ default jlst;; (* 0 is unreachable *)
+  ret <{ branch e to l }>.
 
-Sample (c <- arbitrary;; i <- gen_branch_wt c 8 [3; 3; 1; 1];; ret (c, i)).
+Sample (c <- arbitrary;; i <- gen_branch_wt c 8 [3; 3; 1; 1] 2;; ret (c, i)).
 
 (* SAME: gen_jump_wf *)
-Definition gen_jump_wt (pl: nat) (pst: list nat) : G inst :=
-  gen_jump_wf pl pst.
+Definition gen_jump_wt (pl: nat) (pst: list nat) (default : nat) : G inst :=
+  gen_jump_wf pl pst default.
 
-Sample (gen_jump_wt 8 [3; 3; 1; 1]).
+Sample (gen_jump_wt 8 [3; 3; 1; 1] 2).
 
 Definition gen_load_wt (t: ty) (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
   let tlst := filter (fun '(_, t') => ty_eqb t t') (snd c) in
@@ -1171,7 +1161,7 @@ Definition gen_load_wt (t: ty) (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : 
 
 Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_load_wt TPtr c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
 
-Definition gen_store_wt  (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
+Definition gen_store_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
   let indices := seq 0 (Datatypes.length tm) in
   let idx_tm := combine indices tm in
   if seq.nilp idx_tm
@@ -1188,21 +1178,25 @@ Definition gen_call_wt (pst: list nat) : G inst :=
 
 Sample (gen_call_wt [3; 3; 1; 1]).
 
-Fixpoint _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
-                      (gen_branch : rctx -> nat -> list nat -> G inst)
-                      (gen_jump : nat -> list nat -> G inst)
+Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
+                      (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
+                      (gen_jump : nat -> list nat -> nat -> G inst)
                       (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
                       (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
                       (gen_call : list nat -> G inst)
                       (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
-  freq [ (1, ret ISkip);
+  let insts := 
+     [ (1, ret ISkip);
          (1, ret IRet);
          (sz, t <- arbitrary;; gen_asgn t c pst);
-         (sz, gen_branch c pl pst);
-         (sz, gen_jump pl pst);
          (sz, t <- arbitrary;; gen_load t c tm pl pst);
          (sz, gen_store c tm pl pst);
-         (sz, gen_call pst)].
+         (sz, gen_call pst) ] in
+  let non_proc_labels := list_minus (seq 0 pl) (proc_hd pst) in
+  match non_proc_labels with
+  | nil => freq_ (ret ISkip) insts
+  | hd :: _ => freq_ (ret ISkip) (insts ++ [ (sz, gen_branch c pl pst hd); (sz, gen_jump pl pst hd)])
+  end.
 
 Fixpoint gen_nonterm_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
                         (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
@@ -2095,7 +2089,7 @@ Definition gen_store_in_ctx (gen_store : pub_vars -> pub_arrs -> reg -> list nat
 Definition gen_pub_branch (P: pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst :=
   let vars := map_dom (snd rs) in
   e <- gen_pub_exp_no_ptr 1 P rs;;
-  l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
+  l <- elems_ 0 (list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
   ret <{ branch e to l }>.
 
 (* ex_vars = <{{ i[ ("X0"%string); ("X1"%string); ("X2"%string); ("X3"%string); ("X4"%string)] }}> *)
@@ -2115,7 +2109,7 @@ Definition gen_branch_in_ctx (gen_branch: pub_vars -> nat -> list nat -> reg -> 
   if pc then gen_branch P pl pst rs
   else
     e <- gen_exp_leaf_no_ptr rs;;
-    l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));;
+    l <- elems_ 0 (list_minus (seq 0 (pl - 1)) (proc_hd pst));;
     ret <{ branch e to l }>.
 
 Sample (gen_branch_in_ctx gen_pub_branch secret ex_pub_vars' 8 [3; 3; 1; 1] ex_rs).
