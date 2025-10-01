@@ -1281,31 +1281,91 @@ QuickChick (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf p))).
 
 QuickChick (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf (uslh_prog p)))).
 
-
-Definition gen_wt_com := gen_com_rec gen_secure_asgn gen_secure_aread gen_secure_awrite.
-
-Sample gen_pub_vars.
-
-Definition someP := (false, [("X0", false); ("X1", true); ("X2", true);
-                             ("X3", true); ("X4", false); ("X5", false)])%string.
-
-Sample gen_pub_arrs.
-
-Definition somePA := (true, [("A0", true); ("A1", true); ("A2", false)])%string.
-
-Sample (sized (gen_wt_com someP somePA)).
-
-(* Strange that we need such a big hack here, but if we use AllPub we don't get
-   public variables/arrays generated *)
-Definition gen_com := gen_wt_com
-                        (true, [("X0", true); ("X1", true); ("X2", true);
-                          ("X3", true); ("X4", true); ("X5", true)])%string
-                        (true, [("A0", true); ("A1", true); ("A2", true)])%string.
-
-Sample (sized gen_com).
-
 (* "+++ Passed 10000 tests (0 discards)" *)
 
+Fixpoint ty_exp (c: rctx) (e: exp) : option ty :=
+  match e with
+  | ANum _ => Some TNum
+  | FPtr _ => Some TPtr
+  | AId x => Some (apply c x)
+  | ACTIf e1 e2 e3 => match ty_exp c e1 with
+                     | Some TNum => match ty_exp c e2, ty_exp c e3 with
+                                   | Some TNum, Some TNum => Some TNum
+                                   | Some TPtr, Some TPtr => Some TPtr
+                                   | _, _ => None
+                                   end
+                     | _ => None
+                     end
+  | ABin bop e1 e2 => match bop with
+                     | BinEq =>  match ty_exp c e1, ty_exp c e2 with
+                                | Some t1, Some t2 => if (ty_eqb t1 t2) then Some TNum else None
+                                | _, _ => None
+                                end
+                     | _ => match ty_exp c e1, ty_exp c e2 with
+                           | Some TNum, Some TNum => Some TNum
+                           | _, _ => None
+                           end
+                     end
+  end.
+
+Fixpoint ty_inst (c: rctx) (tm: tmem) (p: prog) (i: inst) : bool :=
+  match i with
+  | ISkip | ICTarget | IRet => true
+  | IAsgn x e => match ty_exp c e with
+                | Some t => ty_eqb (apply c x) t
+                | _ => false
+                end
+  | IBranch e l => match ty_exp c e with
+                  | Some TNum => wf_label p false l
+                  | _ => false
+                  end
+  | IJump l => wf_label p false l
+  (* let's trust generator. *)
+  | ILoad x e => match e with
+                | ANum n =>
+                    match nth_error tm n with
+                    | Some t => ty_eqb (apply c x) t
+                    | _ => false
+                    end
+                | _ => match ty_exp c e with
+                      | Some TNum => true
+                      | _ => false
+                      end
+                end
+  | IStore a e => match a with
+                 | ANum n =>
+                     match nth_error tm n, ty_exp c e with
+                     | Some t1, Some t2 => ty_eqb t1 t2
+                     | _, _ => false
+                     end
+                 | _ => match ty_exp c a, ty_exp c e with
+                       | Some TNum, Some _ => true
+                       | _, _ => false
+                       end
+                 end
+  | ICall e => match e with
+              | FPtr l => wf_label p true l
+              | _ => match ty_exp c e with
+                    | Some TPtr => true
+                    | _ => false
+                    end
+              end
+  end.
+
+Definition ty_blk (c: rctx) (tm: tmem) (p: prog) (blk: list inst * bool) : bool :=
+  forallb (ty_inst c tm p) (fst blk).
+
+Definition ty_prog (c: rctx) (tm: tmem) (p: prog) : bool :=
+  forallb (ty_blk c tm p) p.
+
+Definition gen_prog_wt2 (bsz pl: nat) : G (rctx * tmem * prog) :=
+  c <- arbitrary;;
+  tm <- arbitrary;;
+  pst <- gen_partition pl;;
+  p <- _gen_prog_wt c tm bsz pl pst pst;;
+  ret (c, tm, p).
+
+QuickChick (forAll (gen_prog_wt2 3 8) (fun '(c, tm, p) => (ty_prog c tm p) && (wf p))).
 
 (** Relative Security *)
 
