@@ -1484,8 +1484,8 @@ Fixpoint _calc_taint_exp (e: exp) (treg: total_map taint) : taint :=
   end.
 
 Variant taint_ctx :=
-| CMem (n: nat)
-| CDefault.
+  | CMem (n: nat)
+  | CDefault.
 
 (* None cases are unreachable. *)
 Definition taint_step (i: inst) (c: cfg) (tc: tcfg) (tobs: taint) (tctx: taint_ctx) : option (tcfg * taint) :=
@@ -1680,11 +1680,11 @@ Fixpoint _tms_to_pm (tms: list nat) (len: nat) (cur: nat) : list label :=
   | S len' => member cur tms :: _tms_to_pm tms len' (S cur)
   end.
 
-Definition tms_to_pm (tms: list nat) : list label :=
-  let len := S (list_max tms) in
+Definition tms_to_pm (len: nat) (tms: list nat) : list label :=
+  (* let len := S (list_max tms) in *)
   _tms_to_pm tms len 0.
 
-Compute (tms_to_pm [3; 4; 5]).
+Compute (tms_to_pm 8 [3; 4; 5]).
 
 (* YH: Sanity Check *)
 
@@ -1697,13 +1697,13 @@ QuickChick (
   match r1 with
   | Some (os1', tvars, tms) =>
       let P := (false, map (fun x => (x,true)) tvars) in
-      let PM := tms_to_pm tms in
+      let PM := tms_to_pm (Datatypes.length m) tms in
       forAll (gen_pub_equiv P rs) (fun rs' =>
       forAll (gen_pub_mem_equiv PM m) (fun m' =>
       let icfg' := (ipc, rs', m', istk) in
-      let r2 := steps 1557 p icfg' in
+      let r2 := taint_tracking 1557 p icfg' in
       match r2 with
-      | Some (_, os2') => checker (obs_eqb os1' os2')
+      | Some (os2', _, _) => checker (obs_eqb os1' os2')
       | None => checker false (* fail *)
       end))
    | None => checker tt (* discard *)
