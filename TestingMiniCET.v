@@ -841,16 +841,27 @@ Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
 Definition nat_list_minus (l1 l2 : list nat) : list nat :=
   filter (fun x => negb (existsb (Nat.eqb x) l2)) l1.
 
+
 Definition gen_branch_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
-  e <- gen_exp_wf vars 1 pst;;
-  l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
-  ret <{ branch e to l }>.
+  let jlst := (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
+  if seq.nilp jlst
+  then
+    ret <{ skip }>
+  else
+    e <- gen_exp_wf vars 1 pst;;
+    l <- elems_ 0 jlst;; (* 0 is unreachable *)
+    ret <{ branch e to l }>.
 
 Sample (gen_branch_wf ex_vars 8 [3; 3; 1; 1]).
 
 Definition gen_jump_wf (pl: nat) (pst: list nat) : G inst :=
-  l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
-  ret <{ jump l }>.
+  let jlst := (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
+  if seq.nilp jlst
+  then
+    ret <{ skip }>
+  else
+    l <- elems_ 0 jlst;; (* 0 is unreachable *)
+    ret <{ jump l }>.
 
 Sample (gen_jump_wf 8 [3; 3; 1; 1]).
 
@@ -1100,20 +1111,22 @@ QuickChick (forAll arbitrary (fun (c : rctx) =>
 
 Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) : G inst :=
   let vars := (map_dom (snd c)) in
-  e <- gen_exp_wt2 TNum 1 c pst;;
-  l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
-  ret <{ branch e to l }>.
+  let jlst := (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
+  if seq.nilp jlst
+  then ret <{ skip }>
+  else e <- gen_exp_wt2 TNum 1 c pst;;
+       l <- elems_ 0 jlst;; (* 0 is unreachable *)
+       ret <{ branch e to l }>.
 
-(* TODO *)
-(* Sample (gen_branch_wt ex_vars 8 [3; 3; 1; 1]). *)
+Sample (c <- arbitrary;; i <- gen_branch_wt c 8 [3; 3; 1; 1];; ret (c, i)).
 
-Definition gen_jump_wf (pl: nat) (pst: list nat) : G inst :=
-  l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
-  ret <{ jump l }>.
+(* SAME: gen_jump_wf *)
+Definition gen_jump_wt (pl: nat) (pst: list nat) : G inst :=
+  gen_jump_wf pl pst.
 
-Sample (gen_jump_wf 8 [3; 3; 1; 1]).
+Sample (gen_jump_wt 8 [3; 3; 1; 1]).
 
-Definition gen_load_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
+Definition gen_load_wt  (pl: nat) (pst: list nat) : G inst :=
   e <- gen_exp_wf vars 1 pst;;
   x <- elems_ "X0"%string vars;;
   ret <{ x <- load[e] }>.
