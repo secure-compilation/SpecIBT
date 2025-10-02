@@ -1098,7 +1098,7 @@ Fixpoint gen_exp_wt2 (t: ty) (sz: nat) (c: rctx) (pst: list nat) : G exp :=
   | TPtr => gen_exp_ptr_wt sz c pst
   end.
 
-Definition wt_val (t: ty) (pst: list nat) : G val :=
+Definition gen_val_wt (t: ty) (pst: list nat) : G val :=
   match t with
   | TNum => liftM N arbitrary
   | TPtr => match pst with
@@ -1109,9 +1109,10 @@ Definition wt_val (t: ty) (pst: list nat) : G val :=
 
 Definition gen_wt_reg (c: rctx) (pst: list nat) : G reg :=
   let wt_vars := snd c in
-  let gen_binds := mapGen (fun '(s, t) =>  (v <- wt_val t pst;; ret (s, v))) wt_vars in
+  let gen_binds := mapGen (fun '(s, t) =>  (v <- gen_val_wt t pst;; ret (s, v))) wt_vars in
+  dv <- gen_val_wt (fst c) pst;;
   b <- gen_binds;;
-  ret (N 0, b).
+  ret (dv, b).
 
 QuickChick (forAll arbitrary (fun (c : rctx) =>
             forAll (gen_wt_reg c [3; 3; 1; 1]) (fun (state: reg) =>
@@ -1655,7 +1656,7 @@ Definition gen_prog_wt3 (bsz pl: nat) : G (rctx * tmem * list nat * prog) :=
 Definition gen_wt_mem (tm: tmem) (pst: list nat) : G mem :=
   let indices := seq 0 (Datatypes.length tm) in
   let idx_tm := combine indices tm in
-  let gen_binds := mapGen (fun '(idx, t) => (v <- wt_val t pst;; ret (idx, v))) idx_tm in
+  let gen_binds := mapGen (fun '(idx, t) => (v <- gen_val_wt t pst;; ret (idx, v))) idx_tm in
   r <- gen_binds;;
   ret (snd (split r)).
 
@@ -1693,6 +1694,27 @@ Definition gen_pub_equiv_same_ty (P : total_map label) (s: total_map val) : G (t
   ) m (ret []);;
   ret (d, new_m).
 
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv_same_ty P s1) (fun s2 =>
+      pub_equivb P s1 s2
+  )))).
+
+Definition wt_valb (v: val) (t: ty) : bool :=
+  match v, t with
+  | N _, TNum | FP _, TPtr => true
+  | _, _ => false
+  end.
+
+Definition rs_wtb (rs : total_map val) (c : rctx) : bool :=
+  let '(dv, m) := rs in
+  let '(dt, tm) := c in
+  wt_valb dv dt && forallb (fun '(x, t) => wt_valb (apply rs x) t) tm.
+
+QuickChick (
+  forAll (gen_prog_wt3 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_wt_reg c pst) (fun rs => rs_wtb rs c))).
+
 Fixpoint _gen_pub_mem_equiv_same_ty (P : list label) (m: list val) : G (list val) :=
   let f := fun v => match v with
                  | N _ => n <- arbitrary;; ret (N n)
@@ -1712,11 +1734,19 @@ Fixpoint gen_pub_mem_equiv_same_ty (P : list label) (m: list val) : G (list val)
   then _gen_pub_mem_equiv_same_ty P m
   else ret [].
 
-(* Definition wt_reg (rs: reg) (trs: rctx) : bool := *)
-(*   let f := fun x => match apply rs x, apply trs x with *)
-(*                  | Some v, Some t => wt_val *)
-(*                  | _, _ => false *)
-(*   forall x:string, apply rs x = true -> apply s1 x = apply s2 x. *)
+QuickChick (forAll gen_pub_mem (fun P =>
+    forAll gen_mem (fun s1 =>
+    forAll (gen_pub_mem_equiv_same_ty P s1) (fun s2 =>
+      (checker (pub_equiv_listb P s1 s2))
+    )))).
+
+Definition m_wtb (m: mem) (tm: tmem) : bool :=
+  let mtm := combine m tm in
+  forallb (fun '(v, t) => wt_valb v t) mtm.
+
+QuickChick (
+  forAll (gen_prog_wt3 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_wt_mem tm pst) (fun m => m_wtb m tm))).
 
 (* YH: Sanity Check *)
 

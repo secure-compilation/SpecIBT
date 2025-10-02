@@ -125,23 +125,6 @@ Definition gen_pub_vars : G pub_vars :=
     _ !-> default
   ) % string.
 
-Definition gen_state : G (total_map nat) :=
-  d <- arbitrary;;
-  v0 <- arbitrary;;
-  v1 <- arbitrary;;
-  v2 <- arbitrary;;
-  v3 <- arbitrary;;
-  v4 <- arbitrary;;
-  v5 <- arbitrary;;
-  ret (d, [("X0",v0); ("X1",v1); ("X2",v2);
-           ("X3",v3); ("X4",v4); ("X5",v5)]) % string.
-
-QuickChick (forAll gen_pub_vars (fun P =>
-    forAll gen_state (fun s1 =>
-    forAll (gen_pub_equiv P s1) (fun s2 =>
-      pub_equivb P s1 s2
-  )))).
-
 Inductive val : Type :=
   | N (n:nat)
   | FP (l:nat). (* <- NEW: function pointer to procedure at label [l] *)
@@ -198,6 +181,23 @@ Proof.
     right. red. intros.
     inversion H. subst. eapply Heqb; auto.
 Defined.
+
+Definition gen_state : G (total_map val) :=
+  d <- arbitrary;;
+  v0 <- arbitrary;;
+  v1 <- arbitrary;;
+  v2 <- arbitrary;;
+  v3 <- arbitrary;;
+  v4 <- arbitrary;;
+  v5 <- arbitrary;;
+  ret (d, [("X0",v0); ("X1",v1); ("X2",v2);
+           ("X3",v3); ("X4",v4); ("X5",v5)]) % string.
+
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+      pub_equivb P s1 s2
+  )))).
 
 Definition gen_pub_mem : G (list label) :=
   x0 <- arbitrary;;
