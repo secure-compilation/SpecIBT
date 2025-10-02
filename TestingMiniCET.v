@@ -1771,6 +1771,98 @@ QuickChick (
    | None => checker tt (* discard *)
   end)))).
 
+(* +++ Passed 10000 tests (4235 discards) *)
+
+(* direction generators *)
+Definition gen_dbr : G direction :=
+  b <- arbitrary;; ret (DBranch b).
+
+Definition gen_dcall (pst: list nat) : G direction :=
+  l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
+
+(* dirs generator *)
+Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) :=
+  let '(c, ct, ms) := sc in
+  let '(pc, r, m, sk) := c in
+  match p[[pc]] with
+  | Some i =>
+      match i with
+      | <{{branch e to l}}> =>
+          d <- gen_dbr;;
+          ret (match spec_step p sc [d] with
+               | Some (sc', dir', os') => Some (sc', [d], os')
+               | _ => None
+               end)
+      | <{{call e}}> =>
+          d <- gen_dcall pst;;
+          ret (match spec_step p sc [d] with
+               | Some (sc', dir', os') => Some (sc', [d], os')
+               | _ => None
+               end)
+      | _ =>
+          ret (match spec_step p sc [] with
+               | Some (sc', dir', os') => Some (sc', [], os')
+               | _ => None
+               end)
+      end
+  | None => ret None
+  end.
+
+Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) :=
+  match f with
+  | 0 => ret (Some (sc, [], []))
+  | S f' => ost <- gen_spec_step p sc pst;;
+           match ost with
+           | Some (sc', ds', os') => ost' <- gen_spec_steps_sized f' p sc' pst;;
+                                    match ost' with
+                                    | Some (sc'', ds'', os'') => ret (Some (sc'', ds' ++ ds'', os' ++ os''))
+                                    | _ => ret None
+                                    end
+           | _ => ret None
+           end
+  end.
+
+Definition gen_dir (p: prog) (c: cfg) (pst: list nat) : G (option dirs) :=
+  let sc := (c, false, false) in
+  res <- gen_spec_steps_sized 1557 p sc pst;;
+  ret (match res with
+       | Some (_, ds, _) => Some ds
+       | _ => None
+       end).
+
+Derive Show for direction.
+Derive Show for observation.
+
+QuickChick (
+  forAll (gen_prog_wt3 3 5) (fun '(c, tm, pst, p) =>
+  forAll (gen_wt_reg c pst) (fun rs =>
+  forAll (gen_wt_mem tm pst) (fun m =>
+  let icfg := (ipc, rs, m, istk) in
+  let r1 := taint_tracking 100 p icfg in
+  match r1 with
+  | Some (os1', tvars, tms) =>
+      let P := (false, map (fun x => (x,true)) tvars) in
+      let PM := tms_to_pm (Datatypes.length m) tms in
+      forAll (gen_pub_equiv_same_ty P rs) (fun rs' =>
+      forAll (gen_pub_mem_equiv_same_ty PM m) (fun m' =>
+      let icfg' := (ipc, rs', m', istk) in
+      let harden := uslh_prog p in
+      let iscfg := (icfg, true, false) in (* (cfg, ct, ms) *)
+      forAll (gen_spec_steps_sized 100 p iscfg pst) (fun ods =>
+      match ods with
+      | Some (_, ds, os1) =>
+          let iscfg' := (icfg', true, false) in
+          (* let res1 := spec_steps 100 harden iscfg ds in *)
+          let res2 := spec_steps 100 harden iscfg' ds in
+          match res2 with
+          | Some (_, _, os2) => checker (obs_eqb os1 os2)
+          | _ => checker tt
+          end
+      | None => checker tt
+      end)))
+   | None => checker tt (* discard *)
+  end)))).
+
 
 (* Definition gen_store_in_ctx (gen_store : pub_vars -> pub_arrs -> reg -> list nat -> G inst) *)
 (*     (pc:label) (P:pub_vars) (PA:pub_arrs) (rs: reg) (pst: list nat) : G inst := *)
