@@ -1822,16 +1822,32 @@ Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) :
            end
   end.
 
-Definition gen_dir (p: prog) (c: cfg) (pst: list nat) : G (option dirs) :=
-  let sc := (c, false, false) in
-  res <- gen_spec_steps_sized 1557 p sc pst;;
-  ret (match res with
-       | Some (_, ds, _) => Some ds
-       | _ => None
-       end).
+(* Definition gen_dir (p: prog) (c: cfg) (pst: list nat) : G (option dirs) := *)
+(*   let sc := (c, false, false) in *)
+(*   res <- gen_spec_steps_sized 1557 p sc pst;; *)
+(*   ret (match res with *)
+(*        | Some (_, ds, _) => Some ds *)
+(*        | _ => None *)
+(*        end). *)
 
 Derive Show for direction.
 Derive Show for observation.
+
+Definition gen_dir_test_aux : G (prog * spec_cfg * list nat) :=
+  '(c, tm, pst, p) <- gen_prog_wt3 3 5;;
+  rs <- gen_wt_reg c pst;;
+  m <- gen_wt_mem tm pst;;
+  let icfg := (ipc, rs, m, istk) in
+  let iscfg := (icfg, true, false) in
+  ret (p, iscfg, pst).
+
+Definition gen_dir_test : G (prog * option (spec_cfg * dirs * obs)) :=
+  '(p, iscfg, pst) <- gen_dir_test_aux;;
+  let harden := uslh_prog p in
+  res <- gen_spec_steps_sized 20 harden iscfg pst;;
+  ret (p, res).
+
+Sample (gen_dir_test).
 
 QuickChick (
   forAll (gen_prog_wt3 3 5) (fun '(c, tm, pst, p) =>
@@ -1848,7 +1864,7 @@ QuickChick (
       let icfg' := (ipc, rs', m', istk) in
       let harden := uslh_prog p in
       let iscfg := (icfg, true, false) in (* (cfg, ct, ms) *)
-      forAll (gen_spec_steps_sized 100 p iscfg pst) (fun ods =>
+      forAll (gen_spec_steps_sized 100 harden iscfg pst) (fun ods =>
       match ods with
       | Some (_, ds, os1) =>
           let iscfg' := (icfg', true, false) in
