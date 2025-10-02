@@ -1680,6 +1680,44 @@ Definition tms_to_pm (len: nat) (tms: list nat) : list label :=
 
 Compute (tms_to_pm 8 [3; 4; 5]).
 
+Definition gen_pub_equiv_same_ty (P : total_map label) (s: total_map val) : G (total_map val) :=
+  let f := fun v => match v with
+                 | N _ => n <- arbitrary;; ret (N n)
+                 | FP _ => l <- arbitrary;; ret (FP l)
+                 end in
+  let '(d, m) := s in
+  new_m <- List.fold_left (fun (acc : G (Map val)) (c : string * val) => let '(k, v) := c in
+    new_m <- acc;;
+    new_v <- (if apply P k then ret v else f v);;
+    ret ((k, new_v)::new_m)
+  ) m (ret []);;
+  ret (d, new_m).
+
+Fixpoint _gen_pub_mem_equiv_same_ty (P : list label) (m: list val) : G (list val) :=
+  let f := fun v => match v with
+                 | N _ => n <- arbitrary;; ret (N n)
+                 | FP _ => l <- arbitrary;; ret (FP l)
+                 end in
+  match P, m with
+  | [], [] => ret []
+  | hdp::tlp, hdm::tlm =>
+      hd <- (if hdp then ret hdm else f hdm);;
+      tl <-_gen_pub_mem_equiv_same_ty tlp tlm;;
+      ret (hd::tl)
+  | _, _ => ret [] (* unreachable *)
+  end.
+
+Fixpoint gen_pub_mem_equiv_same_ty (P : list label) (m: list val) : G (list val) :=
+  if (Datatypes.length P =? Datatypes.length m)
+  then _gen_pub_mem_equiv_same_ty P m
+  else ret [].
+
+(* Definition wt_reg (rs: reg) (trs: rctx) : bool := *)
+(*   let f := fun x => match apply rs x, apply trs x with *)
+(*                  | Some v, Some t => wt_val *)
+(*                  | _, _ => false *)
+(*   forall x:string, apply rs x = true -> apply s1 x = apply s2 x. *)
+
 (* YH: Sanity Check *)
 
 QuickChick (
@@ -1692,8 +1730,8 @@ QuickChick (
   | Some (os1', tvars, tms) =>
       let P := (false, map (fun x => (x,true)) tvars) in
       let PM := tms_to_pm (Datatypes.length m) tms in
-      forAll (gen_pub_equiv P rs) (fun rs' =>
-      forAll (gen_pub_mem_equiv PM m) (fun m' =>
+      forAll (gen_pub_equiv_same_ty P rs) (fun rs' =>
+      forAll (gen_pub_mem_equiv_same_ty PM m) (fun m' =>
       let icfg' := (ipc, rs', m', istk) in
       let r2 := taint_tracking 1557 p icfg' in
       match r2 with
