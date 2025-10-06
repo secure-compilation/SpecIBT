@@ -1299,7 +1299,7 @@ Ltac clean_goal st_b := try (rewrite t_update_shadow); rewrite t_update_permute;
 
 Ltac clean_ds_os dir := simpl; rewrite <- app_nil_r; rewrite <- app_nil_r with (l:=dir).
 
-
+Set Keep Proof Equalities.
 
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
@@ -1329,10 +1329,49 @@ Proof.
       + simpl in Heqn. injection Heqn; intros. inv s.
         * inversion X0.
         * destruct tgt_exec.
-          -- admit.
-          -- destruct s.
-             ++ 
-             ++ 
+          -- simpl. rewrite t_update_permute; [|discriminate]. 
+             rewrite t_update_shadow. do 2 rewrite t_update_same. 
+             eexists. split; econstructor; discriminate.
+          -- simpl in *. inversion s.
+             ++ subst. rewrite aeval_unused_update in *; auto.
+                specialize (ultimate_slh_prog_contents _ _ _ _ st H1). intros.
+                destruct H as (c_src & H). subst. eapply uslh_prog_to_uslh_com' in H1.
+                simpl in *. Fail eapply X with (uslh_c:=(ultimate_slh <{{ call f }}>)) (m:=(exec_len tgt_exec)) 
+                (tgt_exec:=tgt_exec).              
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
           apply X with (st:=("callee" !-> aeval st f; st)) (tgt_exec:=tgt_exec).  ; eauto.
         * apply le_pred_l.
