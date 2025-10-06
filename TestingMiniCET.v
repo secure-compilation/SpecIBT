@@ -487,7 +487,7 @@ Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
   let '(l, (bl, is_proc)) := nblk in
   bl' <- concatM (mapM uslh_inst bl);;
   if is_proc then
-    ret (<{{ i[ctarget; msf := callee = &l ? msf : 1] }}> ++ bl', true)
+    ret (<{{ i[ctarget; msf := (callee = &l) ? msf : 1] }}> ++ bl', true)
   else
     ret (bl', false).
 
@@ -495,6 +495,45 @@ Definition uslh_prog (p: prog) : prog :=
   let idx_p := (add_index p) in
   let '(p',newp) := mapM uslh_blk idx_p (Datatypes.length p) in
   (p' ++ newp).
+
+Definition procedure : Type := list (list inst * bool).
+
+Fixpoint group_by_proc_impl (p: prog) (current_proc_acc: procedure) : list procedure :=
+  match p with
+  | [] => match current_proc_acc with
+         | [] => []
+         | _ => [rev current_proc_acc]
+         end
+  | (blk, is_proc) :: tl =>
+      if is_proc then
+        match current_proc_acc with
+        | [] => group_by_proc_impl tl [(blk, is_proc)]
+        | _ => (rev current_proc_acc) :: group_by_proc_impl tl [(blk, is_proc)]
+        end
+      else group_by_proc_impl tl ((blk, is_proc) :: current_proc_acc)
+  end.
+
+Definition group_by_proc (p: prog) : list procedure :=
+  group_by_proc_impl p [].
+
+Definition sample_prog_for_grouping : prog := [
+  (nil, true);  (* Proc 1, Blk 0 *)
+  (nil, false); (* Proc 1, Blk 1 *)
+  (nil, false); (* Proc 1, Blk 2 *)
+  (nil, true);  (* Proc 2, Blk 3 *)
+  (nil, false); (* Proc 2, Blk 4 *)
+  (nil, true)   (* Proc 3, Blk 5 *)
+].
+
+Compute (group_by_proc sample_prog_for_grouping).
+
+Compute (Datatypes.length (group_by_proc sample_prog_for_grouping)).
+
+Definition proc_map := (fun (x: procedure) => Datatypes.length x).
+
+Definition pst_calc (p: prog) : list nat := (map proc_map (group_by_proc p)).
+
+Compute (pst_calc sample_prog_for_grouping).
 
 (* SOONER: Run some unit tests *)
 
@@ -1781,46 +1820,108 @@ Definition gen_dcall (pst: list nat) : G direction :=
   l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
 
 (* dirs generator *)
+
 Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
   match p[[pc]] with
   | Some i =>
+      let build_msg (reason: string) :=
+        ("gen_spec_step FAILED. Reason: " ++ reason ++
+        ". PC=" ++ show pc ++
+        ", Inst=" ++ show i ++
+        ", ct=" ++ show ct ++
+        ", ms=" ++ show ms)%string
+      in
       match i with
       | <{{branch e to l}}> =>
           d <- gen_dbr;;
           ret (match spec_step p sc [d] with
                | Some (sc', dir', os') => Some (sc', [d], os')
-               | _ => None
+               | None => trace (build_msg "spec_step failed for BRANCH"%string) None
                end)
       | <{{call e}}> =>
           d <- gen_dcall pst;;
           ret (match spec_step p sc [d] with
                | Some (sc', dir', os') => Some (sc', [d], os')
-               | _ => None
+               | None => trace (build_msg "spec_step failed for CALL"%string) None
                end)
       | _ =>
           ret (match spec_step p sc [] with
                | Some (sc', dir', os') => Some (sc', [], os')
-               | _ => None
+               | None => trace (build_msg "spec_step failed for OTHER inst"%string) None
                end)
       end
-  | None => ret None
+  | None =>
+      trace "PC fail" ret None
   end.
+
+(* Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) := *)
+(*   let '(c, ct, ms) := sc in *)
+(*   let '(pc, r, m, sk) := c in *)
+(*   match p[[pc]] with *)
+(*   | Some i => *)
+(*       let build_msg (reason: string) := *)
+(*         ("gen_spec_step FAILED. Reason: " ++ reason ++ *)
+(*          ". PC=" ++ (@show cptr _ pc) ++ *)
+(*          ", Inst=" ++ (@show inst _ i) ++ *)
+(*          ", ct=" ++ (@show bool _ ct) ++ *)
+(*          ", ms=" ++ (@show bool _ ms))%string *)
+(*       in *)
+(*       match i with *)
+(*       | <{{branch e to l}}> => *)
+(*           d <- gen_dbr;; *)
+(*           ret (match spec_step p sc [d] with *)
+(*                | Some (sc', dir', os') => Some (sc', [d], os') *)
+(*                | _ => (ret None) *)
+(*                end) *)
+(*       | <{{call e}}> => *)
+(*           d <- gen_dcall pst;; *)
+(*           ret (match spec_step p sc [d] with *)
+(*                | Some (sc', dir', os') => Some (sc', [d], os') *)
+(*                | _ => (ret None) *)
+(*                end) *)
+(*       | _ => *)
+(*           ret (match spec_step p sc [] with *)
+(*                | Some (sc', dir', os') => Some (sc', [], os') *)
+(*                | _ => (ret None) *)
+(*                end) *)
+(*       end *)
+(*   | None => ret None *)
+(*   end. *)
 
 Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) :=
   match f with
   | 0 => ret (Some (sc, [], []))
-  | S f' => ost <- gen_spec_step p sc pst;;
+  | S f' =>
+      let '(c, _, _) := sc in
+      let '(pc, _, _, _) := c in
+      if (TaintTracking.final_cfg p pc)
+      then ret (Some (sc, [], []))
+      else ost <- gen_spec_step p sc pst;;
            match ost with
            | Some (sc', ds', os') => ost' <- gen_spec_steps_sized f' p sc' pst;;
                                     match ost' with
                                     | Some (sc'', ds'', os'') => ret (Some (sc'', ds' ++ ds'', os' ++ os''))
-                                    | _ => ret None
+                                    | _ => trace ("Recursive call returned None" ++ show p) (ret None)
                                     end
-           | _ => ret None
+           | _ => trace ("gen_spec_step returned None"  ++ show p) (ret None)
            end
   end.
+
+(* Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) := *)
+(*   match f with *)
+(*   | 0 => ret (Some (sc, [], [])) *)
+(*   | S f' => ost <- gen_spec_step p sc pst;; *)
+(*            match ost with *)
+(*            | Some (sc', ds', os') => ost' <- gen_spec_steps_sized f' p sc' pst;; *)
+(*                                     match ost' with *)
+(*                                     | Some (sc'', ds'', os'') => ret (Some (sc'', ds' ++ ds'', os' ++ os'')) *)
+(*                                     | _ => ret None *)
+(*                                     end *)
+(*            | _ => ret None *)
+(*            end *)
+(*   end. *)
 
 (* Definition gen_dir (p: prog) (c: cfg) (pst: list nat) : G (option dirs) := *)
 (*   let sc := (c, false, false) in *)
@@ -1833,6 +1934,27 @@ Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) :
 Derive Show for direction.
 Derive Show for observation.
 
+Definition gen_the_dirs_only : G (option dirs) :=
+  '(c, tm, pst, p) <- gen_prog_wt3 3 5;;
+  rs <- gen_wt_reg c pst;;
+  m <- gen_wt_mem tm pst;;
+  let icfg := (ipc, rs, m, istk) in
+  let r1 := taint_tracking 100 p icfg in
+  match r1 with
+  | Some _ =>
+      let harden := uslh_prog p in
+      let iscfg := (icfg, true, false) in
+      let h_pst := pst_calc harden in
+      ods <- gen_spec_steps_sized 100 harden iscfg h_pst;;
+      ret (match ods with
+           | Some (_, ds, _) => Some ds
+           | None => None
+           end)
+  | _ => trace "seq fail" ret None
+  end.
+
+Sample (gen_the_dirs_only).
+
 Definition gen_dir_test_aux : G (prog * spec_cfg * list nat) :=
   '(c, tm, pst, p) <- gen_prog_wt3 3 5;;
   rs <- gen_wt_reg c pst;;
@@ -1844,7 +1966,8 @@ Definition gen_dir_test_aux : G (prog * spec_cfg * list nat) :=
 Definition gen_dir_test : G (prog * option (spec_cfg * dirs * obs)) :=
   '(p, iscfg, pst) <- gen_dir_test_aux;;
   let harden := uslh_prog p in
-  res <- gen_spec_steps_sized 20 harden iscfg pst;;
+  let h_pst := pst_calc harden in
+  res <- gen_spec_steps_sized 20 harden iscfg h_pst;;
   ret (p, res).
 
 Sample (gen_dir_test).
@@ -1864,7 +1987,35 @@ QuickChick (
       let icfg' := (ipc, rs', m', istk) in
       let harden := uslh_prog p in
       let iscfg := (icfg, true, false) in (* (cfg, ct, ms) *)
-      forAll (gen_spec_steps_sized 100 harden iscfg pst) (fun ods =>
+      let h_pst := pst_calc harden in
+      forAll (gen_spec_steps_sized 100 harden iscfg h_pst) (fun ods =>
+      match ods with
+      | Some (_, ds, os1) => checker ds
+      | None => checker tt
+      end)
+        )
+        )
+   | None => checker tt (* discard *)
+  end)))).
+
+
+QuickChick (
+  forAll (gen_prog_wt3 3 5) (fun '(c, tm, pst, p) =>
+  forAll (gen_wt_reg c pst) (fun rs =>
+  forAll (gen_wt_mem tm pst) (fun m =>
+  let icfg := (ipc, rs, m, istk) in
+  let r1 := taint_tracking 100 p icfg in
+  match r1 with
+  | Some (os1', tvars, tms) =>
+      let P := (false, map (fun x => (x,true)) tvars) in
+      let PM := tms_to_pm (Datatypes.length m) tms in
+      forAll (gen_pub_equiv_same_ty P rs) (fun rs' =>
+      forAll (gen_pub_mem_equiv_same_ty PM m) (fun m' =>
+      let icfg' := (ipc, rs', m', istk) in
+      let harden := uslh_prog p in
+      let iscfg := (icfg, true, false) in (* (cfg, ct, ms) *)
+      let h_pst := pst_calc harden in
+      forAll (gen_spec_steps_sized 100 harden iscfg h_pst) (fun ods =>
       match ods with
       | Some (_, ds, os1) =>
           let iscfg' := (icfg', true, false) in
@@ -1875,7 +2026,9 @@ QuickChick (
           | _ => checker tt
           end
       | None => checker tt
-      end)))
+      end)
+        )
+        )
    | None => checker tt (* discard *)
   end)))).
 
