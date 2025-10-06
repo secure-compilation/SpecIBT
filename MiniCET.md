@@ -4,6 +4,7 @@
 - Introduce a compiler to a lower-level language like "First attempt" below
   + Test relative security for speculatively safe inputs
 - Also test relative security for composition for sequentially safe inputs
+
 # Modelling Spectre 1.1 attacks – old discussion
 
 Our previous speculative semantics rule for calls didn't allow calls to
