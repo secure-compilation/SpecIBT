@@ -1052,7 +1052,7 @@ Ltac com_step :=
   | |- _ => now constructor
   end).
 
-(** TODO replace with standard library lemma? *)
+(** TODO replace with standard library lemma? 
 
 Lemma add_neq : forall (i j n : nat), 
   ((i =? j)%nat = false) -> ((n + i =? n + j)%nat = false).
@@ -1060,7 +1060,45 @@ Proof.
   intros. induction n; auto.
 Qed.
 
+ End todo *)
+
+(** TODO replace with standard library lemmas *)
+
+Lemma app_cons : forall {A} (x : A) (l : list A), 
+  x :: l = [x] ++ l.
+Proof. simpl. auto. Qed.
+
+Lemma add_neq : forall (i j n : nat), 
+  ((i =? j)%nat = false) -> ((n + i =? n + j)%nat = false).
+Proof.
+  intros. induction n; auto.
+Qed.
+
+Lemma plus_eq_0 : forall n m,
+  n + m = 0 -> n = 0 /\ m = 0.
+Proof.
+  induction n; intros; try (simpl in H; rewrite H; tauto); discriminate.
+Qed.
+
+
+Lemma nat_True: forall (n : nat), 
+  (n = n) <-> True.
+Proof.
+  split; intros; auto.
+Qed.
+
+Lemma j_not_zero: forall (j : nat),
+  (0 <> j) -> (match j with
+              | 0 => true
+              | S _ => false 
+              end) = false.
+Proof.
+  induction j; intros;
+  [unfold not in H; rewrite nat_True in H; contradiction|auto].
+Qed.
+
 (** End todo *)
+
 
 
 Definition measure (c : com) (ds : dirs) : nat * nat :=
