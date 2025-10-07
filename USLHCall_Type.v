@@ -1364,11 +1364,19 @@ Proof.
             simpl in *. clear H2. clear H8. clear H9. fold_cons.
             remember (S (S (S (S (exec_len tgt_exec))))) as n.
             specialize X with (p:=p) (c:=c_src)
-            (ds:=([DStep] ++ ds2)) (st:=st) (ast:=ast') (b:=b') (b':=b'') (c':=c_src)
-            (st':=st'') (ast':=ast'') (os:=([OCall (aeval st f)] ++ os2)) (uslh_c:=(ultimate_slh c_src)).
+            (ds:=ds2) (st:=st) (ast:=ast') (b:=b') (b':=b'') (c':=c_src)
+            (st':=st'') (ast':=ast'') (os:=os2) (uslh_c:=(ultimate_slh c_src)).
             pose proof tgt_exec as tgt_exec'. rewrite t_update_eq in tgt_exec'.
             rewrite eqb_refl in tgt_exec'. rewrite t_update_neq in tgt_exec'; [|discriminate].
             rewrite t_update_permute in tgt_exec'; [|discriminate]. rewrite t_update_same in tgt_exec'.
+            exists c_src.
+            split; [eapply multi_ideal_trans with (c':=c_src)|].
+            - eapply ISM_Call; [rewrite Hf|]; eauto. Check ideal_unused_update.
+            - apply ideal_unused_update with (n:=(st "callee")); eauto. 
+              + unfold unused_prog in unused_p_callee.  
+                rewrite Forall_forall in unused_p_callee. specialize unused_p_callee with (x:=c_src). 
+                apply unused_p_callee. apply nth_error_In in H1. auto.
+              + 
             Fail eapply X with (tgt_exec:=tgt_exec').
             (* The term "tgt_exec'" has type
                 "ultimate_slh_prog p |- <(( (ultimate_slh c_src),
