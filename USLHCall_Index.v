@@ -345,8 +345,19 @@ Proof.
       (* add_shuffle0: forall n m p : nat, n + m + p = n + p + m
 
          add_assoc: forall n m p : nat, n + (m + p) = n + m + p *)
+      (* replace ((x11 ++ x12) ++ x3) with x11 ++ (x12 ++ x3)  ^^ (x13 ++ x14) ++ x5 *)
+      rewrite <- !app_assoc.
+      replace ((((x15 + 1) + x16) + 1) + x7) with (x15 + ((1 + x16) + (1 + x7))) by lia.
+      eapply multi_spec_combined_executions.
+      * apply multi_spec_add_snd_com. eapply H6.
+      * simpl. econstructor.  eapply SpecSM_Seq_Skip.
+
       apply multi_spec_combined_executions with (cm:=c3) (stm:=x) (astm:=x0) (b':=x1) 
-      (n1:=x15 + 1 + x16 + 1) (n2:=x7); auto. 
+                                                (n1:=x15 + 1 + x16 + 1) (n2:=x7).
+      2:{ auto. }
+      replace (((x15 + 1) + x16) + 1) with ((x15 + 1) + (x16 + 1 )) by lia.
+      eapply multi_spec_add_snd_com.
+      eapply multi_spec_combined_executions; [apply multi_spec_add_snd_com, H6|].
       rewrite <- add_comm with 
     + destruct H2 as (c'0&H2). destruct H2. discriminate.
 
