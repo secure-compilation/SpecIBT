@@ -42,7 +42,7 @@ Ltac invert H := inversion H; subst; clear H.
 Reserved Notation
   "p '|-' '<((' c , st , ast '))>' '-->^' os '<((' ct , stt , astt '))>'"
   (at level 40, c custom com at level 99, ct custom com at level 99,
-   st constr, ast constr, stt constr, astt constr at next level).
+  st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive seq_eval_small_step (p:prog) :
 com -> state -> astate ->
@@ -1299,7 +1299,8 @@ Ltac clean_goal st_b := try (rewrite t_update_shadow); rewrite t_update_permute;
 
 Ltac clean_ds_os dir := simpl; rewrite <- app_nil_r; rewrite <- app_nil_r with (l:=dir).
 
-Set Keep Proof Equalities.
+(*Lemma state_aux : forall (x : string) (v : nat) (m : total_map nat),
+   aeval st *)
 
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
@@ -1312,7 +1313,7 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall c ds st ast (b b' : bool) c
       {c'':_ & (Datatypes.prod (p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>)
                                (c' = <{{ skip }}> -> (Datatypes.prod (c'' = <{{ skip }}>) (st' "b" = (if b' then 1 else 0)))))}.
 Proof.
-  intros c ds st ast b b' c' st' ast' os ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b tgt_exec. 
+  intros c ds st ast b b' c' st' ast' os ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b tgt_exec.
   remember (exec_len tgt_exec) as n. remember (ultimate_slh c) as uslh_c. revert Hequslh_c.
   induction n in p, c, ds, st, ast, b, b', c', st', ast', os, ast_arrs, unused_p,
   unused_c, unused_p_callee, unused_c_callee, st_b, uslh_c, tgt_exec, Heqn |- * using strong_induction_le_Type; intros. 
@@ -1322,22 +1323,77 @@ Proof.
   }
   (* execution length of S n *) destruct tgt_exec; [discriminate|]. destruct c.
   8 : { (* Call *) 
-    rename p0 into f.
-    simpl in *. destruct (is_empty (vars_aexp f)) eqn:Hf; subst.
-    - (* optimization *) inv s. inv X0. destruct tgt_exec.
-      + clean_goal st_b. eexists. split; [econstructor|intros; discriminate].
-      + simpl in Heqn. injection Heqn; intros. inv s.
-        * inversion X0.
-        * destruct tgt_exec.
-          -- simpl. rewrite t_update_permute; [|discriminate]. 
-             rewrite t_update_shadow. do 2 rewrite t_update_same. 
-             eexists. split; econstructor; discriminate.
-          -- simpl in *. inversion s.
-             ++ subst. rewrite aeval_unused_update in *; auto.
-                specialize (ultimate_slh_prog_contents _ _ _ _ st H1). intros.
-                destruct H as (c_src & H). subst. eapply uslh_prog_to_uslh_com' in H1.
-                simpl in *. Fail eapply X with (uslh_c:=(ultimate_slh <{{ call f }}>)) (m:=(exec_len tgt_exec)) 
-                (tgt_exec:=tgt_exec).              
+    rename p0 into f. simpl in *. destruct (is_empty (vars_aexp f)) eqn:Hf; subst.
+    - (* optimization *) 
+      inv s. inv X0. 
+      (* each destruct tgt_exec is a step in tgt. goal: ultimate_slh c_src as start cmd, 
+         so that we have a corresponding src cmd from which to construct corresponding src execution *)
+      (* step 1 *)
+      destruct tgt_exec; [clean_goal st_b; eexists; split; 
+      [econstructor|intros; discriminate] |]. simpl in Heqn. injection Heqn; intros. inv s; [inversion X0|].
+      { destruct tgt_exec. (* step 2 *)
+        { simpl. rewrite t_update_permute; [|discriminate]. rewrite t_update_shadow. do 2 rewrite t_update_same. 
+          eexists. split; econstructor; discriminate. 
+        }
+        simpl in *. inversion s; subst.
+        { (* DStep *)
+          rewrite aeval_unused_update in *; auto.
+          specialize (ultimate_slh_prog_contents _ _ _ _ st H1); intros.
+          destruct H as (c_src & H). subst. simpl in H1.
+          eapply uslh_prog_to_uslh_com' in H1; eauto. 
+          simpl in tgt_exec, s. inv s. destruct tgt_exec. (* step 3 *)
+          { simpl in *. eexists. split; cycle 1.
+              - intros; discriminate.
+              - rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=[DStep]).
+                rewrite t_update_permute; [|discriminate]. 
+                rewrite t_update_shadow. rewrite t_update_permute; [|discriminate].
+                do 2 rewrite t_update_same. econstructor; econstructor; [rewrite Hf|]; eauto.
+          }
+          { simpl in *. rewrite aeval_unused_update in *; auto. inv s. inv X0.
+            destruct tgt_exec; simpl in *. (* step 4 *)
+            { rewrite t_update_eq. rewrite eqb_refl. rewrite t_update_neq; [|discriminate].
+              rewrite t_update_permute; [|discriminate]. 
+              rewrite t_update_permute with (x1:="callee") (x2:="b"); [|discriminate].
+              do 2 rewrite t_update_shadow. do 2 rewrite t_update_same.
+              eexists. split; [|intros; discriminate].
+              rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=[DStep]).
+              econstructor; try econstructor; [rewrite Hf; simpl|]; eauto.
+            }
+            inv s; [inv X0|]. 
+            (* now we have (ultimate_slh c_src) as the starting command in tgt_exec *)
+            simpl in *. clear H2. clear H8. clear H9. fold_cons.
+            remember (S (S (S (S (exec_len tgt_exec))))) as n.
+            specialize X with (p:=p) (c:=c_src)
+            (ds:=([DStep] ++ ds2)) (st:=st) (ast:=ast') (b:=b') (b':=b'') (c':=c_src)
+            (st':=st'') (ast':=ast'') (os:=([OCall (aeval st f)] ++ os2)) (uslh_c:=(ultimate_slh c_src)).
+            pose proof tgt_exec as tgt_exec'. rewrite t_update_eq in tgt_exec'.
+            rewrite eqb_refl in tgt_exec'. rewrite t_update_neq in tgt_exec'; [|discriminate].
+            rewrite t_update_permute in tgt_exec'; [|discriminate]. rewrite t_update_same in tgt_exec'.
+            Fail eapply X with (tgt_exec:=tgt_exec').
+            (* The term "tgt_exec'" has type
+                "ultimate_slh_prog p |- <(( (ultimate_slh c_src),
+                  "callee" !-> aeval st f; st, ast', b' ))> -->*_ ds2 ^^ os2 <(( c'', st'',
+                  ast'', b'' ))>"
+                while it is expected to have type
+                "ultimate_slh_prog p |- <(( (ultimate_slh c_src), st, ast', b' ))> -->*_
+                  [DStep] ++ ds2 ^^ [OCall (aeval st f)] ++ os2 <(( c_src, st'', ast'', b''
+                  ))>".
+
+              I'm not sure why it expects DStep and OCall when I took pains to 
+              step through the target until c_src, which is where the call arrives at. It shouldn't 
+              still include the directions and observations from the original call f step. Where did 
+              that happen? 
+
+            *)
+
+                                              
+          }
+        }
+        { (* DForceCall *)
+
+        }
+      }
+    - (* no optimization *)
 
 
 
@@ -1355,28 +1411,6 @@ Proof.
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          apply X with (st:=("callee" !-> aeval st f; st)) (tgt_exec:=tgt_exec).  ; eauto.
-        * apply le_pred_l.
-        * rewrite H. simpl. reflexivity.
-      
 
 
 
