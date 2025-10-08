@@ -1446,7 +1446,7 @@ Definition gen_prog_ty_ctx_wt (bsz pl: nat) : G (rctx * tmem * prog) :=
   p <- _gen_prog_wt c tm bsz pl pst;;
   ret (c, tm, p).
 
-QuickChick (forAll (gen_prog_wt2 3 8) (fun '(c, tm, p) => (ty_prog c tm p) && (wf p))).
+QuickChick (forAll (gen_prog_ty_ctx_wt 3 8) (fun '(c, tm, p) => (ty_prog c tm p) && (wf p))).
 
 (** Relative Security *)
 
@@ -2022,8 +2022,8 @@ Definition gen_dir_test : G (prog * option (spec_cfg * dirs * obs)) :=
 Sample (gen_dir_test).
 
 QuickChick (
-  forAll (gen_prog_wt3 3 5) (fun '(c, tm, pst, p) =>
-  forAll (gen_wt_reg c pst) (fun rs =>
+  forAll (gen_prog_ty_ctx_wt' 3 5) (fun '(c, tm, pst, p) =>
+  forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
   let r1 := taint_tracking 100 p icfg in
@@ -2039,14 +2039,13 @@ QuickChick (
       let h_pst := pst_calc harden in
       forAll (gen_spec_steps_sized 100 harden iscfg h_pst) (fun ods =>
       match ods with
-      | Some (_, ds, os1) => checker ds
+      | Some (_, ds, os1) => checker (obs_eqb os1 os1')
       | None => checker tt
       end)
         )
         )
    | None => checker tt (* discard *)
   end)))).
-
 
 QuickChick (
   forAll (gen_prog_ty_ctx_wt' 3 5) (fun '(c, tm, pst, p) =>
