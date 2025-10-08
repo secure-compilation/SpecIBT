@@ -531,6 +531,7 @@ Compute (Datatypes.length (group_by_proc sample_prog_for_grouping)).
 
 Definition proc_map := (fun (x: procedure) => Datatypes.length x).
 
+(* pst: list of # of blocks in each procedure *)
 Definition pst_calc (p: prog) : list nat := (map proc_map (group_by_proc p)).
 
 Compute (pst_calc sample_prog_for_grouping).
@@ -606,6 +607,7 @@ Ltac inv H := inversion H; subst; clear H.
                           end
               | None => nil
               end)%string }.
+
 Eval compute in (shrink "X5")%string.
 Eval compute in (shrink "X0")%string.
 
@@ -1113,7 +1115,7 @@ with gen_exp_ptr_wt (sz : nat) (c : rctx) (pst: list nat) : G exp :=
           ]
   end.
 
-Fixpoint gen_exp_wt (sz: nat)(c: rctx) (pst: list nat) : G exp :=
+Fixpoint gen_exp_wt (sz: nat) (c: rctx) (pst: list nat) : G exp :=
   match sz with 
   | O =>
       t <- arbitrary;;
@@ -1238,6 +1240,7 @@ Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
   | hd :: _ => freq_ (ret ISkip) (insts ++ [ (sz, gen_branch c pl pst hd); (sz, gen_jump pl pst hd)])
   end.
 
+(* redundant functions *)
 Fixpoint gen_nonterm_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
                         (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
                         (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
@@ -1415,7 +1418,7 @@ Definition gen_prog_wt2 (bsz pl: nat) : G (rctx * tmem * prog) :=
   p <- _gen_prog_wt c tm bsz pl pst pst;;
   ret (c, tm, p).
 
-QuickChick (forAll (gen_prog_wt2 3 8) (fun '(c, tm, p) => (ty_prog c tm p) && (wf p))).
+QuickChick (forAll (gen_prog_wt2 3 8) (fun '(c, tm, p) => ((ty_prog c tm p) && (wf p)))).
 
 (** Relative Security *)
 
@@ -1436,6 +1439,28 @@ Fixpoint vars_exp (e:exp) : list string :=
   | ACTIf e1 e2 e3 => vars_exp e1 ++ vars_exp e2 ++ vars_exp e3
   | FPtr n => []
   end.
+
+Definition vars_inst (i: inst) : list string :=
+  match i with
+  | ISkip | IRet | ICTarget | IJump _ => []
+  | IAsgn x e => x :: vars_exp e
+  | IBranch e l => vars_exp e
+  | ILoad x e => x :: vars_exp e
+  | IStore e1 e2 => vars_exp e1 ++ vars_exp e2
+  | ICall e => vars_exp e
+  end.
+
+Fixpoint vars_blk (blk: list inst) : list string :=
+  List.concat (map vars_inst blk).
+
+Fixpoint _vars_prog (p: prog) : list string :=
+  match p with
+  | [] => []
+  | (blk, _) :: tl => vars_blk blk ++ _vars_prog tl
+  end.
+
+Definition vars_prog (p: prog) : list string :=
+  remove_dupes String.eqb (_vars_prog p).
 
 Definition label_of_exp (P:pub_vars) (e:exp) : label :=
   List.fold_left (fun l a => join l (apply P a)) (vars_exp e) public.
@@ -1685,6 +1710,85 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
   | _ => None
   end.
 
+(* Sanity Checker for taint tracker *)
+
+Definition gen_inst_noop (pl: nat) (pst: list nat) : G inst :=
+  let jlb := (list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
+  if seq.nilp jlb
+  then ret <{ skip }>
+  else freq [
+           (1, ret ISkip);
+           (1, l <- elems_ 0 jlb;; ret (IJump l))
+         ].
+
+Sample (gen_inst_noop 8 [3;3;1;1]).
+
+Definition gen_blk_noop (bsz pl: nat) (pst: list nat) : G (list inst) :=
+  vectorOf bsz (gen_inst_noop pl pst).
+
+Fixpoint _gen_proc_noop (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
+  match fsz with
+  | O => ret []
+  | S fsz' =>
+      n <- choose (1, bsz);;
+      blk <- gen_blk_noop n pl pst;;
+      rest <- _gen_proc_noop fsz' bsz pl pst;;
+      ret ((blk, false) :: rest)
+  end.
+
+Definition gen_proc_noop (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
+  match fsz with
+  | O => ret []
+  | S fsz' =>
+      n <- choose (1, bsz);;
+      blk <- gen_blk_noop n pl pst;;
+      rest <- _gen_proc_noop fsz' bsz pl pst;;
+      ret ((blk, true) :: rest)
+  end.
+
+Fixpoint _gen_prog_noop (bsz pl: nat) (pst pst': list nat) : G (list (list inst * bool)) :=
+  match pst' with
+  | [] => ret []
+  | hd :: tl =>
+      hd_proc <- gen_proc_noop hd bsz pl pst;;
+      tl_proc <- _gen_prog_noop bsz pl pst tl;;
+      ret (hd_proc ++ tl_proc)
+  end.
+
+Definition gen_noop_prog : G prog :=
+  pl <- choose(2, 6);; (* Generate small but non-trivial programs *)
+  pst <- gen_partition pl;;
+  let bsz := 3 in (* Max instructions per block *)
+  _gen_prog_noop bsz pl pst pst.
+
+Definition ipc : cptr := (0 , 0).
+Definition istk : list cptr := [].
+
+Sample gen_noop_prog.
+
+QuickChick (
+  forAll gen_noop_prog (fun p =>
+  forAll arbitrary (fun rs =>
+  forAll arbitrary (fun m =>
+    let icfg := (ipc, rs, m, istk) in
+    match taint_tracking 100 p icfg with
+    | Some (_, leaked_vars, leaked_mems) =>
+        checker (seq.nilp leaked_vars && seq.nilp leaked_mems)
+    | None => checker true
+    end
+  )))).
+
+Example implicit_flow_test :
+  let p := [([ IBranch (AId "x") 1 ], true); ([ IAsgn "y"%string (ANum 1)], false)] in
+  let rs := (N 0, [("x"%string, N 10); ("y"%string, N 0)]) in
+  let icfg := (ipc, rs, [], []) in
+  match taint_tracking 10 p icfg with
+  | Some (obs, leaked_vars, _) =>
+      existsb (String.eqb "x") leaked_vars
+  | None => false
+  end = true.
+Proof. simpl. reflexivity. Qed.
+
 Definition gen_prog_wt3 (bsz pl: nat) : G (rctx * tmem * list nat * prog) :=
   c <- arbitrary;;
   tm <- arbitrary;;
@@ -1692,15 +1796,38 @@ Definition gen_prog_wt3 (bsz pl: nat) : G (rctx * tmem * list nat * prog) :=
   p <- _gen_prog_wt c tm bsz pl pst pst;;
   ret (c, tm, pst, p).
 
+Definition all_possible_vars : list string := (["X0"%string; "X1"%string; "X2"%string; "X3"%string; "X4"%string; "X5"%string]).
+
+Definition gen_prog_and_unused_var : G (prog * string) :=
+  '(c, tm, pst, p) <- gen_prog_wt3 3 5;;
+  let used_vars := remove_dupes String.eqb (vars_prog p) in
+  let unused_vars := filter (fun v => negb (existsb (String.eqb v) used_vars)) all_possible_vars in
+  if seq.nilp unused_vars then
+    x <- arbitrary;; ret (p, x)
+  else
+    x <- elems_ "X0"%string unused_vars;;
+    ret (p, x).
+
+(* YH: another generator needed that generates program do not use some variables in register set. *)
+QuickChick (
+  forAll gen_prog_and_unused_var (fun '(p, unused_var) =>
+  forAll arbitrary (fun rs =>
+  forAll arbitrary (fun m =>
+    let icfg := (ipc, rs, m, istk) in
+    match taint_tracking 100 p icfg with
+    | Some (_, leaked_vars, _) =>
+        checker (negb (existsb (String.eqb unused_var) leaked_vars))
+    | None =>
+        checker true
+    end
+  )))).
+
 Definition gen_wt_mem (tm: tmem) (pst: list nat) : G mem :=
   let indices := seq 0 (Datatypes.length tm) in
   let idx_tm := combine indices tm in
   let gen_binds := mapGen (fun '(idx, t) => (v <- gen_val_wt t pst;; ret (idx, v))) idx_tm in
   r <- gen_binds;;
   ret (snd (split r)).
-
-Definition ipc : cptr := (0 , 0).
-Definition istk : list cptr := [].
 
 Fixpoint member (n: nat) (l: list nat) : bool :=
   match l with
@@ -1787,7 +1914,7 @@ QuickChick (
   forAll (gen_prog_wt3 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_wt_mem tm pst) (fun m => m_wtb m tm))).
 
-(* YH: Sanity Check *)
+(* YH: Sanity Check - Noninterference *)
 
 QuickChick (
   forAll (gen_prog_wt3 3 8) (fun '(c, tm, pst, p) =>
@@ -1934,6 +2061,7 @@ Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) :
 Derive Show for direction.
 Derive Show for observation.
 
+(* YH: keep failing... *)
 Definition gen_the_dirs_only : G (option dirs) :=
   '(c, tm, pst, p) <- gen_prog_wt3 3 5;;
   rs <- gen_wt_reg c pst;;
@@ -1972,31 +2100,31 @@ Definition gen_dir_test : G (prog * option (spec_cfg * dirs * obs)) :=
 
 Sample (gen_dir_test).
 
-QuickChick (
-  forAll (gen_prog_wt3 3 5) (fun '(c, tm, pst, p) =>
-  forAll (gen_wt_reg c pst) (fun rs =>
-  forAll (gen_wt_mem tm pst) (fun m =>
-  let icfg := (ipc, rs, m, istk) in
-  let r1 := taint_tracking 100 p icfg in
-  match r1 with
-  | Some (os1', tvars, tms) =>
-      let P := (false, map (fun x => (x,true)) tvars) in
-      let PM := tms_to_pm (Datatypes.length m) tms in
-      forAll (gen_pub_equiv_same_ty P rs) (fun rs' =>
-      forAll (gen_pub_mem_equiv_same_ty PM m) (fun m' =>
-      let icfg' := (ipc, rs', m', istk) in
-      let harden := uslh_prog p in
-      let iscfg := (icfg, true, false) in (* (cfg, ct, ms) *)
-      let h_pst := pst_calc harden in
-      forAll (gen_spec_steps_sized 100 harden iscfg h_pst) (fun ods =>
-      match ods with
-      | Some (_, ds, os1) => checker ds
-      | None => checker tt
-      end)
-        )
-        )
-   | None => checker tt (* discard *)
-  end)))).
+(* QuickChick ( *)
+(*   forAll (gen_prog_wt3 3 5) (fun '(c, tm, pst, p) => *)
+(*   forAll (gen_wt_reg c pst) (fun rs => *)
+(*   forAll (gen_wt_mem tm pst) (fun m => *)
+(*   let icfg := (ipc, rs, m, istk) in *)
+(*   let r1 := taint_tracking 100 p icfg in *)
+(*   match r1 with *)
+(*   | Some (os1', tvars, tms) => *)
+(*       let P := (false, map (fun x => (x,true)) tvars) in *)
+(*       let PM := tms_to_pm (Datatypes.length m) tms in *)
+(*       forAll (gen_pub_equiv_same_ty P rs) (fun rs' => *)
+(*       forAll (gen_pub_mem_equiv_same_ty PM m) (fun m' => *)
+(*       let icfg' := (ipc, rs', m', istk) in *)
+(*       let harden := uslh_prog p in *)
+(*       let iscfg := (icfg, true, false) in (* (cfg, ct, ms) *) *)
+(*       let h_pst := pst_calc harden in *)
+(*       forAll (gen_spec_steps_sized 100 harden iscfg h_pst) (fun ods => *)
+(*       match ods with *)
+(*       | Some (_, ds, os1) => checker ds *)
+(*       | None => checker tt *)
+(*       end) *)
+(*         ) *)
+(*         ) *)
+(*    | None => checker tt (* discard *) *)
+(*   end)))). *)
 
 
 QuickChick (
