@@ -1502,6 +1502,11 @@ Definition tstk := list tcptr.
 Definition tcfg := (tcptr * treg * tamem * tstk)%type.
 Definition input_st : Type := cfg * tcfg * taint.
 
+(* Currently, we generate UB-free programs based on abstract states.
+   Going forward, we'll transition to execution-based program
+   generation, which also produces UB-free programs. Therefore,
+   we don't need to worry about UB in either case. *)
+
 Variant output_st (A : Type) : Type :=
   | RStep : A -> obs -> input_st -> output_st A
   | RError : obs -> input_st -> output_st A
@@ -1649,13 +1654,11 @@ Definition step_taint_track (p: prog) : evaluator unit :=
                                  | Some (tc', tobs') => RStep _ tt os (c', tc', tobs')
                                  | _ => RError _ [] ist (* context is inconsistent. *)
                                  end
-                   | _ => RError _ [] ist
+                   | _ => RError _ [] ist (* For now, unreachable *)
                    end
-        | _ => RError _ [] ist
+        | _ => RTerm _ [] ist
         end
-    | None => if final_cfg p pc
-             then RTerm _ [] ist
-             else RError _ [] ist
+    | None => RTerm _ [] ist
     end
     ).
 
@@ -1937,7 +1940,7 @@ QuickChick (
    | None => checker tt (* discard *)
   end)))).
 
-(* +++ Passed 10000 tests (4235 discards) *)
+(* +++ Passed 10000 tests (2784 discards) *)
 
 (* direction generators *)
 Definition gen_dbr : G direction :=
