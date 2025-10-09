@@ -1221,12 +1221,12 @@ Definition gen_call_wt (pst: list nat) : G inst :=
 Sample (gen_call_wt [3; 3; 1; 1]).
 
 Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
-                      (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
-                      (gen_jump : nat -> list nat -> nat -> G inst)
-                      (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
-                      (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
-                      (gen_call : list nat -> G inst)
-                      (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
+                        (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
+                        (gen_jump : nat -> list nat -> nat -> G inst)
+                        (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
+                        (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
+                        (gen_call : list nat -> G inst)
+                        (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
   let insts := 
      [ (1, ret ISkip);
          (1, ret IRet);
@@ -1252,12 +1252,19 @@ Fixpoint gen_nonterm_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
          (sz, gen_store c tm pl pst);
          (sz, gen_call pst)].
 
-Fixpoint gen_term_wt (gen_branch : rctx -> nat -> list nat -> G inst)
-                     (gen_jump : nat -> list nat -> G inst)
-                     (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
-  freq [ (1, ret IRet);
-         (sz, gen_branch c pl pst);
-         (sz, gen_jump pl pst)].
+Fixpoint _gen_term_wt (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
+                      (gen_jump : nat -> list nat -> nat -> G inst)
+                      (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
+  let non_proc_labels := list_minus (seq 0 pl) (proc_hd pst) in
+  match non_proc_labels with
+  | nil => ret IRet
+  | hd :: _ => freq_ (ret IRet) ([(1, ret IRet); (sz, gen_branch c pl pst hd); (sz, gen_jump pl pst hd)])
+  end.
+
+Definition gen_term_wt (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
+  _gen_term_wt gen_branch_wt gen_jump_wt c tm sz pl pst.
+
+Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_term_wt c tm 4 8 [3; 3; 1; 1];; ret (i)).
 
 Definition gen_inst_wt (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
   _gen_inst_wt gen_asgn_wt gen_branch_wt gen_jump_wt gen_load_wt gen_store_wt gen_call_wt
@@ -1269,6 +1276,38 @@ Definition gen_blk_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst: list nat) : G (li
   vectorOf bsz (gen_inst_wt c tm bsz pl pst).
 
 Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_blk_wt c tm 5 8 [3; 3; 1; 1];; ret (c, tm, i)).
+
+Definition _gen_blk_body_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst: list nat) : G (list inst) :=
+  vectorOf (bsz - 1) (gen_inst_wt c tm bsz pl pst).
+
+Definition gen_blk_with_term_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst: list nat) : G (list inst) :=
+  blk <- _gen_blk_body_wt c tm bsz pl pst;;
+  term <- gen_term_wt c tm bsz pl pst;;
+  ret (blk ++ [term]).
+
+Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_blk_with_term_wt c tm 5 8 [3; 3; 1; 1];; ret i).
+
+Fixpoint _gen_proc_with_term_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
+  match fsz with
+  | O => ret []
+  | S fsz' => n <- choose (1, bsz);;
+             blk <- gen_blk_with_term_wt c tm n pl pst;;
+             rest <- _gen_proc_with_term_wt c tm fsz' bsz pl pst;;
+             ret ((blk, false) :: rest)
+  end.
+
+Sample (tm <- arbitrary;; c <- arbitrary;; proc <- _gen_proc_with_term_wt c tm 3 3 8 [3; 3; 1; 1];; ret proc).
+
+Definition gen_proc_with_term_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
+  match fsz with
+  | O => ret [] (* unreachable *)
+  | S fsz' => n <- choose (1, bsz);;
+             blk <- gen_blk_with_term_wt c tm n pl pst;;
+             rest <- _gen_proc_with_term_wt c tm fsz' bsz pl pst;;
+             ret ((blk, true) :: rest)
+  end.
+
+Sample (tm <- arbitrary;; c <- arbitrary;; proc <- gen_proc_with_term_wt c tm 3 3 8 [3; 3; 1; 1];; ret proc).
 
 (* fsz: # of blocks in procedure *)
 (* blk: max # of instructions in blk *)
@@ -1635,10 +1674,15 @@ Definition get_ctx (rs: reg) (i: inst) : option taint_ctx  :=
   | _ => Some CDefault
   end.
 
-Definition final_cfg (p: prog) (pc: cptr) : bool :=
-  match fetch p (inc pc) with
-  | Some _ => false
-  | None => true
+(* ret with empty stackframe *)
+Definition final_cfg (p: prog) (c: cfg) : bool :=
+  let '(pc, rs, m, stk) := c in
+  match fetch p pc with
+  | Some i => match i with
+             | IRet => if seq.nilp stk then true else false
+             | _ => false
+             end
+  | None => false
   end.
 
 Definition step_taint_track (p: prog) : evaluator unit :=
@@ -1656,9 +1700,11 @@ Definition step_taint_track (p: prog) : evaluator unit :=
                                  end
                    | _ => RError _ [] ist (* For now, unreachable *)
                    end
-        | _ => RTerm _ [] ist
+        | _ => RError _ [] ist
         end
-    | None => RTerm _ [] ist
+    | None => if final_cfg p c
+             then RTerm _ [] ist
+             else RError _ [] ist
     end
     ).
 
@@ -1713,9 +1759,30 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
   | _ => None
   end.
 
+Definition ub_free (f : nat) (p : prog) (c: cfg)
+  : option (obs * list string * list nat) :=
+  let '(pc, rs, m, ts) := c in
+  let tpc := [] in
+  let trs := ([], map (fun x => (x,[@inl reg_id mem_addr x])) (map_dom (snd rs))) in
+  let tm := TaintTracking.init_taint_mem m in
+  let ts := [] in
+  let tc := (tpc, trs, tm, ts) in
+  let ist := (c, tc, []) in
+  match (TaintTracking.steps_taint_track f p ist []) with
+  | TaintTracking.ETerm (_, _, tobs) os =>
+      let (ids, mems) := split_sum_list tobs in
+      Some (os, remove_dupes String.eqb ids,
+                remove_dupes Nat.eqb mems)
+  | TaintTracking.EOutOfFuel (_, _, tobs) os =>
+      let (ids, mems) := split_sum_list tobs in
+      Some (os, remove_dupes String.eqb ids,
+                remove_dupes Nat.eqb mems)
+  | _ => None
+  end.
+
 (* Sanity Checker for taint tracker *)
 
-Definition gen_inst_noop (pl: nat) (pst: list nat) : G inst :=
+Definition gen_inst_no_obs (pl: nat) (pst: list nat) : G inst :=
   let jlb := (list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
   if seq.nilp jlb
   then ret <{ skip }>
@@ -1724,53 +1791,53 @@ Definition gen_inst_noop (pl: nat) (pst: list nat) : G inst :=
            (1, l <- elems_ 0 jlb;; ret (IJump l))
          ].
 
-Sample (gen_inst_noop 8 [3;3;1;1]).
+Sample (gen_inst_no_obs 8 [3;3;1;1]).
 
-Definition gen_blk_noop (bsz pl: nat) (pst: list nat) : G (list inst) :=
-  vectorOf bsz (gen_inst_noop pl pst).
+Definition gen_blk_no_obs (bsz pl: nat) (pst: list nat) : G (list inst) :=
+  vectorOf bsz (gen_inst_no_obs pl pst).
 
-Fixpoint _gen_proc_noop (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
+Fixpoint _gen_proc_no_obs (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match fsz with
   | O => ret []
   | S fsz' =>
       n <- choose (1, bsz);;
-      blk <- gen_blk_noop n pl pst;;
-      rest <- _gen_proc_noop fsz' bsz pl pst;;
+      blk <- gen_blk_no_obs n pl pst;;
+      rest <- _gen_proc_no_obs fsz' bsz pl pst;;
       ret ((blk, false) :: rest)
   end.
 
-Definition gen_proc_noop (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
+Definition gen_proc_no_obs (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match fsz with
   | O => ret []
   | S fsz' =>
       n <- choose (1, bsz);;
-      blk <- gen_blk_noop n pl pst;;
-      rest <- _gen_proc_noop fsz' bsz pl pst;;
+      blk <- gen_blk_no_obs n pl pst;;
+      rest <- _gen_proc_no_obs fsz' bsz pl pst;;
       ret ((blk, true) :: rest)
   end.
 
-Fixpoint _gen_prog_noop (bsz pl: nat) (pst pst': list nat) : G (list (list inst * bool)) :=
+Fixpoint _gen_prog_no_obs (bsz pl: nat) (pst pst': list nat) : G (list (list inst * bool)) :=
   match pst' with
   | [] => ret []
   | hd :: tl =>
-      hd_proc <- gen_proc_noop hd bsz pl pst;;
-      tl_proc <- _gen_prog_noop bsz pl pst tl;;
+      hd_proc <- gen_proc_no_obs hd bsz pl pst;;
+      tl_proc <- _gen_prog_no_obs bsz pl pst tl;;
       ret (hd_proc ++ tl_proc)
   end.
 
-Definition gen_noop_prog : G prog :=
+Definition gen_no_obs_prog : G prog :=
   pl <- choose(2, 6);; (* Generate small but non-trivial programs *)
   pst <- gen_partition pl;;
   let bsz := 3 in (* Max instructions per block *)
-  _gen_prog_noop bsz pl pst pst.
+  _gen_prog_no_obs bsz pl pst pst.
 
 Definition ipc : cptr := (0 , 0).
 Definition istk : list cptr := [].
 
-Sample gen_noop_prog.
+Sample gen_no_obs_prog.
 
 QuickChick (
-  forAll gen_noop_prog (fun p =>
+  forAll gen_no_obs_prog (fun p =>
   forAll arbitrary (fun rs =>
   forAll arbitrary (fun m =>
     let icfg := (ipc, rs, m, istk) in
@@ -1806,7 +1873,7 @@ Definition gen_prog_and_unused_var : G (prog * string) :=
   let used_vars := remove_dupes String.eqb (vars_prog p) in
   let unused_vars := filter (fun v => negb (existsb (String.eqb v) used_vars)) all_possible_vars in
   if seq.nilp unused_vars then
-    x <- arbitrary;; ret (p, x)
+    ret (p, "X15"%string)
   else
     x <- elems_ "X0"%string unused_vars;;
     ret (p, x).
