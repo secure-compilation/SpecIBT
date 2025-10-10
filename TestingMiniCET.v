@@ -17,7 +17,7 @@ Require Import ExtLib.Structures.Traversable.
 Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
 Export MonadNotation. Open Scope monad_scope.
-From SECF Require Import PSlib.
+From SECF Require Import TestingLib.
 From Coq Require Import String.
 
 From SECF Require Import Utils.
@@ -146,7 +146,7 @@ Open Scope com_scope.
 (** Since type mismatches are now possible, evaluation of expressions can now
     fail, so the [eval] function is in the option monad. *)
 
-Definition to_nat (v:val) : option nat :=
+Definition to_nat (v: val) : option nat :=
   match v with
   | N n => Some n
   | FP _ => None
@@ -1129,7 +1129,7 @@ QuickChick (forAll (gen_prog_ty_ctx_wt 3 8) (fun '(c, tm, p) => (ty_prog c tm p)
 
 (* Taint Tracker for input pairs *)
 
-Notation label := PSlib.label.
+Notation label := TestingLib.label.
 Notation apply := ListMaps.apply.
 Definition join (l1 l2 : label) : label := l1 && l2.
 
