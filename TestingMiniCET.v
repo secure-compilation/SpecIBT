@@ -761,10 +761,6 @@ Definition gen_exp_leaf_wt (t: ty) (c: rctx) (pst: list nat) : G exp :=
                   [liftM AId (elems_ "X0"%string ptrs)] ) )
   end.
 
-(* TODO REMOVE *)
-Definition eitherOf {A} (a : G A) (b : G A) : G A := freq [(1, a); (1, b)].
-(* TODO REMOVE *)
-
 Fixpoint gen_exp_no_ptr_wt (sz : nat) (c : rctx) (pst: list nat) : G exp :=
   match sz with
   | O => gen_exp_leaf_wt TNum c []
@@ -1136,15 +1132,6 @@ Definition join (l1 l2 : label) : label := l1 && l2.
 Definition pub_vars := total_map label.
 Definition pub_arrs := list label. (* true: public, false: secret *)
 
-(* TODO REMOVE *)
-Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
-  match t with
-  | [] => []
-  | x :: xs => if existsb (eqb x) xs
-               then      remove_dupes eqb xs
-               else x :: remove_dupes eqb xs
-  end.
-
 Fixpoint vars_exp (e:exp) : list string :=
   match e with
   | ANum n => []
@@ -1409,13 +1396,6 @@ Definition init_taint_mem (m: mem) : tamem :=
   _init_taint_mem m 0.
 
 End TaintTracking.
-
-Fixpoint split_sum_list {A B : Type} (l : list (A + B)) : (list A * list B) :=
-  match l with
-  | [] => ([], [])
-  | inl a :: xs => let (la, lb) := split_sum_list xs in (a :: la, lb)
-  | inr b :: xs => let (la, lb) := split_sum_list xs in (la, b :: lb)
-  end.
 
 Definition taint_tracking (f : nat) (p : prog) (c: cfg)
   : option (obs * list string * list nat) :=

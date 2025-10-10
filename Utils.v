@@ -26,3 +26,18 @@ Qed.
 
 Definition add_index {a:Type} (xs:list a) : list (nat * a) :=
   combine (seq 0 (length xs)) xs.
+
+Fixpoint split_sum_list {A B : Type} (l : list (A + B)) : (list A * list B) :=
+  match l with
+  | [] => ([], [])
+  | inl a :: xs => let (la, lb) := split_sum_list xs in (a :: la, lb)
+  | inr b :: xs => let (la, lb) := split_sum_list xs in (la, b :: lb)
+  end.
+
+Fixpoint remove_dupes {A : Type} (eqb : A -> A -> bool) (t : list A) : list A :=
+  match t with
+  | [] => []
+  | x :: xs => if existsb (eqb x) xs
+               then      remove_dupes eqb xs
+               else x :: remove_dupes eqb xs
+  end.
