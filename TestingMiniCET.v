@@ -400,7 +400,7 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       v <- eval r e;;
       l <- to_fp v;;
       let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
-      ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall l])
+      ret ((((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
   | <{{ctarget}}> =>
       is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
       ret (((pc+1, r, m, sk), false, ms), ds, [])
@@ -2199,7 +2199,7 @@ QuickChick (
   forAll (gen_spec_steps_sized 100 harden h_pst iscfg) (fun ods =>
   (match ods with
    | SETerm sc os ds => trace (show ds) (checker true)
-   | SEError _ _ ds => trace ("dirgen fail!!!" ++ (show ds) ++ "errored dirs") (checker false)
+   | SEError _ _ ds => trace ("dirgen fail!!!" ++ (show ds) ++ "errored dirs " ++ "code: " ++ show harden) (checker false)
    | SEOutOfFuel _ _ ds => checker tt
    end))
   )))).
