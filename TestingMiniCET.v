@@ -496,9 +496,7 @@ Definition uslh_prog (p: prog) : prog :=
   let '(p',newp) := mapM uslh_blk idx_p (Datatypes.length p) in
   (p' ++ newp).
 
-Definition procedure : Type := list (list inst * bool).
-
-Fixpoint group_by_proc_impl (p: prog) (current_proc_acc: procedure) : list procedure :=
+Fixpoint group_by_proc_impl (p: prog) (current_proc_acc: prog) : list prog :=
   match p with
   | [] => match current_proc_acc with
          | [] => []
@@ -513,7 +511,7 @@ Fixpoint group_by_proc_impl (p: prog) (current_proc_acc: procedure) : list proce
       else group_by_proc_impl tl ((blk, is_proc) :: current_proc_acc)
   end.
 
-Definition group_by_proc (p: prog) : list procedure :=
+Definition group_by_proc (p: prog) : list prog :=
   group_by_proc_impl p [].
 
 Definition sample_prog_for_grouping : prog := [
@@ -529,7 +527,7 @@ Compute (group_by_proc sample_prog_for_grouping).
 
 Compute (Datatypes.length (group_by_proc sample_prog_for_grouping)).
 
-Definition proc_map := (fun (x: procedure) => Datatypes.length x).
+Definition proc_map := (fun (x: prog) => Datatypes.length x).
 
 Definition pst_calc (p: prog) : list nat := (map proc_map (group_by_proc p)).
 
@@ -567,6 +565,25 @@ Definition wf_blk (p:prog) (blb : list inst * bool) : bool :=
 Definition wf (p:prog) : bool :=
   forallb (wf_blk p) p.
 
+Inductive ty : Type := | TNum | TPtr.
+
+Definition rctx := total_map ty.
+Definition tmem := list ty.
+
+Definition ty_eqb (x y: ty) := match x, y with
+                               | TNum, TNum | TPtr, TPtr => true
+                               | _, _ => false
+                               end.
+
+Definition filter_vars_by_ty (t: ty) (c: rctx) : list string :=
+  filter (fun x => ty_eqb (apply c x) t) (map_dom (snd c)).
+
+Definition is_ptr (c : rctx) (var : string) :=
+  match apply c var with
+  | TPtr => true
+  | _ => false
+  end.
+
 (* PROPERTY: uslh produces well-formed programs from well-formed programs
    probably need generator for well-formed programs *)
 
@@ -581,12 +598,8 @@ Definition is_some {A} (v : option A) : bool := match v with
   | Some _ => true
   | None => false
   end.
-  
-(** custom tactics *)
 
-Ltac inv H := inversion H; subst; clear H.
-
-(** Generators and shows *)
+(** TestingMiniCET-related Gen and Show instances *)
 
 #[export] Instance genId : Gen string :=
   {arbitrary := (n <- freq [(10, ret 0);
@@ -608,14 +621,6 @@ Ltac inv H := inversion H; subst; clear H.
               end)%string }.
 Eval compute in (shrink "X5")%string.
 Eval compute in (shrink "X0")%string.
-
-Derive (Arbitrary, Shrink) for binop.
-Derive (Arbitrary, Shrink) for exp.
-Derive (Arbitrary, Shrink) for inst.
-
-(* Derive Show for binop. *)
-(* Derive Show for exp. *)
-(* Derive Show for inst. *)
 
 #[export] Instance showBinop : Show binop :=
   {show :=fun op => 
@@ -661,27 +666,6 @@ Derive (Arbitrary, Shrink) for inst.
          end)%string
   }.
 
-
-Sample (arbitrarySized 1 : G binop).
-Sample (arbitrarySized 2 : G binop).
-Sample (arbitrarySized 1 : G exp).
-Sample (arbitrarySized 1 : G inst).
-
-Derive Show for val.
-
-(* #[export] Instance showExp : Show exp := *)
-(*   {show := *)
-(*       (let fix showExpRec (a:exp) : string := *)
-(*          match a with *)
-(*          | AId i => String DoubleQuote (i ++ String DoubleQuote "") *)
-(*          | ANum n => show n *)
-(*          | ABin bop e1 e2 => "(" ++ showExpRec e1 ++ " " ++ show bop ++ " " ++ showExpRec e2 ++ ")" *)
-(*          | ACTIf b e1 e2 => showExpRec b ++ " ? " ++ showExpRec e1 ++ " : " ++ showExpRec e2 *)
-(*          | FPtr fp => "&" ++ show fp *)
-(*          end *)
-(*        in showExpRec)%string *)
-(*    }. *)
-
 (* As in [TestingStaticIFC.v], we generate a finite total map which we use as state. *)
 #[export] Instance genTotalMap (A:Type) `{Gen A} : Gen (total_map A) :=
   {arbitrary := (d <- arbitrary;;
@@ -705,131 +689,25 @@ Notation " 'oneOf' ( x ;;; y ;;; l ) " :=
 Derive (Arbitrary, Shrink) for val.
 Derive (Arbitrary, Shrink) for binop.
 Derive (Arbitrary, Shrink) for exp.
+Derive (Arbitrary, Shrink) for inst.
 
-(** The first unit test *)
+Derive (Arbitrary, Shrink) for ty.
+Derive Show for ty.
 
-(* The first property I test is the one proposed by Catalin, which shows how sane our
-  generators are: *)
-(* "forAll e st, is_some (eval st e) ==> True" *)
+Derive Show for direction.
+Derive Show for observation.
 
-(* Tests with generators derived by QuickChick are almost fully discarded: *)
-QuickChick (forAll arbitrary (fun (state : reg) =>
-            forAll arbitrary (fun (exp : exp) =>
-            implication (is_some (eval state exp)) true))).
-(* "*** Gave up! Passed only 4988 tests" *)
+(* YH: The current expression generator depends on a specific register set.
+   This structures can be problematic because registers changes during program execution.
+   To define expressions that "always succeeds", it probably be better to make type system. *)
 
-(* Above, we test if our evaluation succeeds, i.e. "eval" function returns "Some" value.
-    From the definition of "eval", it fails in two cases: if the expression contains a binary expression 
-    on a function pointer; or if the expression branches on a function pointer.
-*)
-
-(* Both branching and operating on function pointers may happen in two cases: when
-    a function pointer is directly used, or an identifier which evaluates to a function pointer
-    is used. *)
-
-(* To generate expressions which successfully evaluate I restrict these two cases.
-    Similar to [TestingStaticIFC], I first define generators for "leaves": expressions of size 0.
-    In our case, there are two such generators: one that permits all expressions, and the other which
-    only allows non-pointer expressions. *)
-
-Definition is_not_ptr (state : reg) (var : string) :=
-  match apply state var with
-  | N _ => true
-  | FP _ => false
-  end.
-
-(* This generator creates leaves as numbers and identifiers, which evaluate to numbers  *)
-Definition gen_exp_leaf_no_ptr (state : reg) : G exp :=
-  oneOf (liftM ANum arbitrary ;;;
-        (let not_ptrs := filter (is_not_ptr state) (map_dom (snd state)) in
-         if seq.nilp not_ptrs then [] else
-         [liftM AId (elems_ "X0"%string not_ptrs)] ) ).
-
-Sample (P <- arbitrary ;; 
-       exp <- gen_exp_leaf_no_ptr P;; 
-       ret (P, exp)).
-
-(* This generator allows numbers, function pointers and all variables *)
-Definition gen_exp_leaf (state : reg) : G exp :=
-  oneOf (liftM ANum arbitrary ;;; 
-         liftM FPtr arbitrary ;;; 
-         (let vars := map_dom (snd state) in
-          if seq.nilp vars then [] else
-          [liftM AId (elems_ "X0"%string vars)] )).
-
-(* I then define generators for expressions of a given size. Similarly,
-    there are two generators: one that allows all expressions, and one which
-    produces expressions without pointers. *)
-
-Fixpoint gen_exp_no_ptr (sz : nat) (state : reg) : G exp :=
-  match sz with
-  | O => gen_exp_leaf_no_ptr state
-  | S sz' => 
-      freq [ (2, gen_exp_leaf_no_ptr state);
-             (sz, liftM3 ABin arbitrary (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state));
-             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state))
-          ]
-  end.
-
-Fixpoint gen_exp1 (sz : nat) (state : reg) : G exp :=
-  match sz with 
-  | O => gen_exp_leaf state
-  | S sz' => 
-          freq [ 
-            (2, gen_exp_leaf state);
-             (sz, binop <- arbitrary;; match binop with
-                | BinEq => liftM2 (ABin BinEq) (gen_exp1 sz' state) (gen_exp1 sz' state)
-                | _ => liftM2 (ABin binop) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state)
-              end);
-             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp1 sz' state) (gen_exp1 sz' state))
-          ]
-  end.
-
-(* Notice, that a "gen_exp" generator calls non-pointer "gen_exp_no_ptr" generator when branching and
-  when performing a binary operation other than "BinEq" (equality is allowed on function pointers). *)
-
-Sample (P <- arbitrary;;
-        a <- gen_exp1 4 P;;
-        ret (P, a)).
-
-QuickChick (forAll arbitrary (fun (state : reg) =>
-            forAll (gen_exp1 4 state) (fun (exp : exp) =>
-            implication (is_some (eval state exp)) true))).
-(* "+++ Passed 10000 tests (382 discards)" *)
-
-(* Better, but we still get discards. These cases are when the equality is generated between pointer
-  and non-pointer. The following generator accounts for that: *)
-
-Definition eitherOf {A} (a : G A) (b : G A) : G A := freq [(1, a); (1, b)].
-
-Fixpoint gen_exp (sz : nat) (state : reg) : G exp :=
-  match sz with 
-  | O => gen_exp_leaf state
-  | S sz' => 
-          freq [ 
-             (2, gen_exp_leaf state);
-             (sz, binop <- arbitrary;; match binop with
-                | BinEq => eitherOf
-                    (liftM2 (ABin BinEq) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state))
-                    (liftM2 (ABin BinEq) (liftM FPtr arbitrary) (liftM FPtr arbitrary))
-                | _ => liftM2 (ABin binop) (gen_exp_no_ptr sz' state) (gen_exp_no_ptr sz' state)
-              end);
-             (sz, liftM3 ACTIf (gen_exp_no_ptr sz' state) (gen_exp sz' state) (gen_exp sz' state))
-          ]
-  end.
-
-(* QuickChick (forAll arbitrary (fun (state : reg) =>
-            forAll (gen_exp 4 state) (fun (exp : exp) => is_some (eval state exp)))). *)
-(* "+++ Passed 10000 tests (0 discards)" *)
-
-(* Now we generate expressions, where we only branch on numbers and identifiers evaluating to numbers,
-  and a binary operation allowed for function pointers is only equality. *)
+(* initial state X = 1, Y = 4
+   code: X = FP 42
+         Z = X + Y // error! *)
 
 (*! Section wf_programs *)
 
 (** Well-formed Program Generator *)
-
-(* We proceed by generating well-formed expression *)
 
 (* This auxiliary function, given a program length, generates the length of procedures in this program, counted in blocks.
    It therefore partitions the program in procedures. *)
@@ -846,9 +724,18 @@ Fixpoint _gen_partition (fuel program_length: nat) : G (list nat) :=
       end
   end.
 
-Definition gen_partition (pl: nat) := _gen_partition pl pl.
+Definition gen_partition (pl: nat): G (list nat) := _gen_partition pl pl.
 
 Sample (gen_partition 8).
+
+Fixpoint proc_hd (pst: list nat) : list nat :=
+  match pst with
+  | [] => []
+  | hd :: tl => 0 :: map (fun x => x + hd) (proc_hd tl)
+  end.
+
+Definition gen_callable (pl : nat) : G (list nat) :=
+  pst <- gen_partition pl ;; ret (proc_hd pst).
 
 Definition gen_vars (len: nat) : G (list string) :=
   vectorOf len arbitrary.
@@ -857,236 +744,6 @@ Sample (gen_vars 5).
 
 Definition ex_vars : list string :=
   ["X0"%string; "X1"%string; "X2"%string; "X3"%string; "X4"%string].
-
-Fixpoint proc_hd (pst: list nat) : list nat :=
-  match pst with
-  | [] => []
-  | hd :: tl => 0 :: map (fun x => x + hd) (proc_hd tl)
-  end.
-
-Compute (proc_hd [3; 3; 1; 1]).
-(* = <{{ i[ 0; 3; 6; 7] }}> *)
-
-Definition gen_exp_leaf_wf (vars: list string) (pst: list nat) : G exp :=
-  oneOf (liftM ANum arbitrary ;;;
-         liftM FPtr (elems_ 0 (proc_hd pst)) ;;;
-         if seq.nilp vars then [] else [liftM AId (elems_ "X0"%string vars)] ).
-
-(* We then generate the actual expressions. *)
-(* The restrictions on "well-formed" expressions are more relaxed then on those which actually evaluate. *)
-(* For instance, "well-formedness" does not consider if we add a number or a function pointer. *)
-Fixpoint gen_exp_wf (vars: list string) (sz : nat) (pst: list nat) : G exp :=
-  match sz with 
-  | O => gen_exp_leaf_wf vars pst
-  | S sz' => 
-          freq [
-             (2, gen_exp_leaf_wf vars pst);
-             (sz, liftM3 ABin arbitrary (gen_exp_wf vars sz' pst) (gen_exp_wf vars sz' pst));
-             (sz, liftM3 ACTIf (gen_exp_wf vars sz' pst) (gen_exp_wf vars sz' pst) (gen_exp_wf vars sz' pst))
-          ]
-  end.
-
-(* We further generate each type of instructions. *)
-
-Definition gen_asgn_wf (vars: list string) (pst: list nat) : G inst :=
-  if seq.nilp vars
-  then ret <{ skip }> 
-  else
-    x <- elems_ "X0"%string vars;;
-    a <- gen_exp_wf vars 1 pst;;
-    ret <{ x := a }>.
-
-Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
-  match t with
-  | [] => []
-  | x :: xs => if existsb (eqb x) xs
-               then      remove_dupes eqb xs
-               else x :: remove_dupes eqb xs
-  end.
-
-Definition gen_branch_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
-  let non_proc_labels := list_minus (seq 0 (pl - 1)) (proc_hd pst) in
-  match non_proc_labels with
-  | nil => ret <{ skip }>
-  | hd :: tl =>
-    e <- gen_exp_wf vars 1 pst;;
-    l <- elems_ hd non_proc_labels;; (* 0 is unreachable *)
-    ret <{ branch e to l }>
-  end.
-
-Sample (gen_branch_wf ex_vars 8 [3; 3; 1; 1]).
-
-Definition gen_jump_wf (pl: nat) (pst: list nat): G inst :=
-  let non_proc_labels := list_minus (seq 0 (pl - 1)) (proc_hd pst) in
-  match non_proc_labels with
-  | nil => ret <{ skip }>
-  | hd :: _ =>
-    l <- elems_ hd non_proc_labels ;; (* 0 is unreachable *)
-    ret <{ jump l }>
-  end.
-
-Sample (gen_jump_wf 8 [3; 3; 1; 1]).
-
-Definition gen_load_wf (vars: list string) (pl: nat) (pst: list nat) : G inst :=
-  e <- gen_exp_wf vars 1 pst;;
-  x <- elems_ "X0"%string vars;;
-  ret <{ x <- load[e] }>.
-
-Sample (gen_load_wf ex_vars 8 [3; 3; 1; 1]).
-
-Definition gen_store_wf  (vars: list string) (pl: nat) (pst: list nat) : G inst :=
-  e1 <- gen_exp_wf vars 1 pst;;
-  e2 <- gen_exp_wf vars 1 pst;;
-  ret <{ store[e1] <- e2 }>.
-
-Sample (gen_store_wf ex_vars 8 [3; 3; 1; 1]).
-
-(* SOONER: fix -> # of procedure is needed. *)
-Definition gen_call_wf (pst: list nat) : G inst :=
-  (* l <- gen_exp_wf vars pl pst;; *)
-  l <- elems_ 0 (proc_hd pst);;
-  ret <{ call (FPtr l) }>.
-
-Sample (gen_call_wf [3; 3; 1; 1]).
-(* = <{{ i[ 0; 3; 6; 7] }}> *)
-
-Sample (vectorOf 1 (gen_call_wf [3; 3; 1; 1])).
-
-Definition gen_inst (gen_asgn : list string -> list nat -> G inst)
-                    (gen_branch : list string -> nat -> list nat -> G inst)
-                    (gen_jump : nat -> list nat -> G inst)
-                    (gen_load : list string -> nat -> list nat -> G inst)
-                    (gen_store : list string -> nat -> list nat -> G inst)
-                    (gen_call : list nat -> G inst)
-                    (vars: list string) (sz:nat) (pl: nat) (c: list nat) : G inst :=
-  freq
-    [ (1, ret ISkip);
-         (1, ret IRet);
-         (sz, gen_asgn vars c);
-         (sz, gen_branch vars pl c); 
-         (sz, gen_jump pl c);
-         (sz, gen_load vars pl c);
-         (sz, gen_store vars pl c);
-         (sz, gen_call c) ].
-
-Definition gen_inst_wf (vars: list string) (sz pl: nat) (pst: list nat) : G inst :=
-  gen_inst gen_asgn_wf gen_branch_wf gen_jump_wf
-           gen_load_wf gen_store_wf gen_call_wf vars sz pl pst.
-
-Sample (gen_inst_wf ex_vars 8 8 [3; 3; 1; 1]).
-
-(* We further generate the blocks. Here, "bsz" is number of instructions per block, "pl" is program length and
-  "pst" are the labels of procedure heads. *)
-Definition gen_blk_wf (vars: list string) (bsz pl: nat) (pst: list nat) : G (list inst) :=
-  vectorOf bsz (gen_inst_wf vars bsz pl pst).
-
-Sample (gen_blk_wf ex_vars 8 8 [3; 3; 1; 1]).
-
-(* Similarly, we generate procedures. This Here, "psz" is the number of blocks in the program, and other
-  paramaters are the same as for "_gen_blk_wf". *)
-Fixpoint gen_proc_tail_wf (vars: list string) (psz bsz pl: nat) (pst: list nat) : G procedure :=
-  match psz with
-  | O => ret []
-  | S psz' => 
-    blk <- gen_blk_wf vars bsz pl pst;;
-    rest <- gen_proc_tail_wf vars psz' bsz pl pst;;
-    (* Note: all blocks generated by this function are not head of procedures ("false" flag for blocks) *)
-    ret ((blk, false) :: rest)
-  end.
-
-Sample (gen_proc_tail_wf ex_vars 3 3 8 [3; 3; 1; 1]).
-
-Definition gen_proc_wf (vars: list string) (psz bsz pl: nat) (pst: list nat) : G procedure :=
-  match psz with
-  | O => ret [] (* unreachable *)
-  | S psz' => 
-    blk <- gen_blk_wf vars bsz pl pst;;
-    rest <- gen_proc_tail_wf vars psz' bsz pl pst;;
-    ret ((blk, true) :: rest)
-  end.
-
-Sample (gen_proc_wf ex_vars 3 3 3 [3; 3; 1; 1]).
-
-Definition program := procedure.
-
-Locate "++".
-
-(* We further generate a program. A program in our setting has the same structure as the procedure, and is only
-  separated in procedures by procedure heads. *)
-Definition _gen_prog_wf (vars: list string) (pl bsz: nat) (pst : list nat) : G prog :=
-  List.fold_left 
-    (fun a proc_size => liftM2 app a (gen_proc_wf vars proc_size bsz pl pst)) 
-    pst (ret []).
-
-Sample (_gen_prog_wf ex_vars 8 3 [3; 3; 1; 1]).
-
-Definition gen_prog_wf_example :=
-  let bsz := 3%nat in
-  let pl := 8%nat in
-  pst <- gen_partition pl;;
-  _gen_prog_wf ex_vars pl bsz pst.
-
-Sample (gen_prog_wf_example).
-
-Definition gen_prog_wf_example' :=
-  let pl := 8%nat in
-  let bsz := 3%nat in
-  let pst := [3;3;1;1] in
-  _gen_prog_wf ex_vars pl bsz pst.
-
-Definition test_wf_example' : G bool :=
-  prog <- gen_prog_wf_example';;
-  ret (wf prog).
-
-Sample (vectorOf 1 test_wf_example').
-
-Definition gen_prog_wf :=
-  pl <- choose(1, 8);;
-  bsz <- choose(3, 5);;
-  pst <- gen_partition pl;;
-  _gen_prog_wf ex_vars pl bsz pst.
-
-QuickChick (forAll (gen_prog_wf) (fun (p : prog) => wf p)).
-
-(* PROPERTY: uslh produces well-formed programs from well-formed programs
-   probably need generator for well-formed programs *)
-
-QuickChick (forAll (gen_prog_wf) (fun (p : prog) => wf (uslh_prog p))).
-
-
-(* YH: The current expression generator depends on a specific register set.
-   This structures can be problematic because registers changes during program execution.
-   To define expressions that "always succeeds", it probably be better to make type system. *)
-
-(* initial state X = 1, Y = 4
-   code: X = FP 42
-         Z = X + Y // error! *)
-
-(*! Section typed_exps *)
-
-(** Type system for soundenss *)
-
-Inductive ty : Type := | TNum | TPtr.
-
-Derive (Arbitrary, Shrink) for ty.
-Derive Show for ty.
-
-Definition rctx := total_map ty.
-Definition tmem := list ty.
-
-Definition ty_eqb (x y: ty) := match x, y with
-                               | TNum, TNum | TPtr, TPtr => true
-                               | _, _ => false
-                               end.
-
-Definition filter_vars_by_ty (t: ty) (c: rctx) : list string :=
-  filter (fun x => ty_eqb (apply c x) t) (map_dom (snd c)).
-
-Definition is_ptr (c : rctx) (var : string) :=
-  match apply c var with
-  | TPtr => true
-  | _ => false
-  end.
 
 (* Similar to the previous expressions generators, we now generate the well-typed leaves, which
   differentiate between different types of values in the program. *)
@@ -1103,6 +760,10 @@ Definition gen_exp_leaf_wt (t: ty) (c: rctx) (pst: list nat) : G exp :=
                 if seq.nilp ptrs then [] else
                   [liftM AId (elems_ "X0"%string ptrs)] ) )
   end.
+
+(* TODO REMOVE *)
+Definition eitherOf {A} (a : G A) (b : G A) : G A := freq [(1, a); (1, b)].
+(* TODO REMOVE *)
 
 Fixpoint gen_exp_no_ptr_wt (sz : nat) (c : rctx) (pst: list nat) : G exp :=
   match sz with
@@ -1196,8 +857,14 @@ Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) : G inst :=
 Sample (c <- arbitrary;; i <- gen_branch_wt c 8 [3; 3; 1; 1];; ret (c, i)).
 
 (* SAME: gen_jump_wf *)
-Definition gen_jump_wt (pl: nat) (pst: list nat) : G inst :=
-  gen_jump_wf pl pst.
+Definition gen_jump_wt (pl: nat) (pst : list nat) : G inst :=
+  let non_proc_labels := list_minus (seq 0 (pl - 1)) (proc_hd pst) in
+  match non_proc_labels with
+  | nil => ret <{ skip }>
+  | hd :: _ =>
+    l <- elems_ hd non_proc_labels ;; (* 0 is unreachable *)
+    ret <{ jump l }>
+  end.
 
 Sample (gen_jump_wt 8 [3; 3; 1; 1]).
 
@@ -1213,7 +880,7 @@ Definition gen_load_wt (t: ty) (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : 
   else
     n <- elems_ 0 idxt;;
     x <- elems_ "X0"%string vars;;
-    ret <{ x <- load[ANum n] }>.
+    ret <{ x <- load[n] }>.
 
 Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_load_wt TPtr c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
 
@@ -1230,7 +897,8 @@ Definition gen_store_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst 
 Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_store_wt c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
 
 Definition gen_call_wt (pst: list nat) : G inst :=
-  gen_call_wf pst.
+  l <- elems_ 0 (proc_hd pst);;
+  ret <{ call &l }>.
 
 Sample (gen_call_wt [3; 3; 1; 1]).
 
@@ -1450,9 +1118,16 @@ QuickChick (forAll (gen_prog_ty_ctx_wt 3 8) (fun '(c, tm, p) => (ty_prog c tm p)
 
 (** Relative Security *)
 
-(* Taint Tracker for input pairs *)
+(* YH: Unlike non-interference, the relative security property is formally defined for all input pairs. It does not require input pairs to be public-equivalent.
 
-Module RS.
+ However, for the test to be meaningful, the premise of the property must hold.
+ This means we must select input pairs for which the original program produces
+ identical observations under sequential execution.
+
+  => the taint analysis of TestingFlexSLH will be useful.
+ *)
+
+(* Taint Tracker for input pairs *)
 
 Notation label := PSlib.label.
 Notation apply := ListMaps.apply.
@@ -1460,6 +1135,15 @@ Definition join (l1 l2 : label) : label := l1 && l2.
 
 Definition pub_vars := total_map label.
 Definition pub_arrs := list label. (* true: public, false: secret *)
+
+(* TODO REMOVE *)
+Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
+  match t with
+  | [] => []
+  | x :: xs => if existsb (eqb x) xs
+               then      remove_dupes eqb xs
+               else x :: remove_dupes eqb xs
+  end.
 
 Fixpoint vars_exp (e:exp) : list string :=
   match e with
@@ -1473,7 +1157,28 @@ Fixpoint vars_exp (e:exp) : list string :=
 Definition label_of_exp (P:pub_vars) (e:exp) : label :=
   List.fold_left (fun l a => join l (apply P a)) (vars_exp e) public.
 
-End RS.
+
+Definition vars_inst (i: inst) : list string :=
+  match i with
+  | ISkip | IRet | ICTarget | IJump _ => []
+  | IAsgn x e => x :: vars_exp e
+  | IBranch e l => vars_exp e
+  | ILoad x e => x :: vars_exp e
+  | IStore e1 e2 => vars_exp e1 ++ vars_exp e2
+  | ICall e => vars_exp e
+  end.
+
+Fixpoint vars_blk (blk: list inst) : list string :=
+  List.concat (map vars_inst blk).
+
+Fixpoint _vars_prog (p: prog) : list string :=
+  match p with
+  | [] => []
+  | (blk, _) :: tl => vars_blk blk ++ _vars_prog tl
+  end.
+
+Definition vars_prog (p: prog) : list string :=
+  remove_dupes String.eqb (_vars_prog p).
 
 (* YH: Unlike non-interference, the relative security property is formally defined for all input pairs. It does not require input pairs to be public-equivalent.
 
@@ -1729,13 +1434,125 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
   | _ => None
   end.
 
-(* TODO Yan: refactor! Can we just compose "gen_prog_ty_ctx_wt" with it? *)
+(* Sanity Checker for taint tracker *)
+
+Definition gen_inst_no_obs (pl: nat) (pst: list nat) : G inst :=
+  let jlb := (list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
+  if seq.nilp jlb
+  then ret <{ skip }>
+  else freq [
+           (1, ret ISkip);
+           (1, l <- elems_ 0 jlb;; ret (IJump l))
+         ].
+
+Sample (gen_inst_no_obs 8 [3;3;1;1]).
+
+Definition gen_blk_no_obs (bsz pl: nat) (pst: list nat) : G (list inst) :=
+  vectorOf bsz (gen_inst_no_obs pl pst).
+
+Fixpoint _gen_proc_no_obs (fsz bsz pl: nat) (pst: list nat) : G prog :=
+  match fsz with
+  | O => ret []
+  | S fsz' =>
+      n <- choose (1, bsz);;
+      blk <- gen_blk_no_obs n pl pst;;
+      rest <- _gen_proc_no_obs fsz' bsz pl pst;;
+      ret ((blk, false) :: rest)
+  end.
+
+Definition gen_proc_no_obs (fsz bsz pl: nat) (pst: list nat) : G prog :=
+  match fsz with
+  | O => ret []
+  | S fsz' =>
+      n <- choose (1, bsz);;
+      blk <- gen_blk_no_obs n pl pst;;
+      rest <- _gen_proc_no_obs fsz' bsz pl pst;;
+      ret ((blk, true) :: rest)
+  end.
+
+Fixpoint _gen_prog_no_obs (bsz pl: nat) (pst pst': list nat) : G (list (list inst * bool)) :=
+  match pst' with
+  | [] => ret []
+  | hd :: tl =>
+      hd_proc <- gen_proc_no_obs hd bsz pl pst;;
+      tl_proc <- _gen_prog_no_obs bsz pl pst tl;;
+      ret (hd_proc ++ tl_proc)
+  end.
+
+Definition gen_no_obs_prog : G prog :=
+  pl <- choose(2, 6);; (* Generate small but non-trivial programs *)
+  pst <- gen_partition pl;;
+  let bsz := 3 in (* Max instructions per block *)
+  _gen_prog_no_obs bsz pl pst pst.
+
+Definition ipc : cptr := (0 , 0).
+Definition istk : list cptr := [].
+
+Sample gen_no_obs_prog.
+
+QuickChick (
+  forAll gen_no_obs_prog (fun p =>
+  forAll arbitrary (fun rs =>
+  forAll arbitrary (fun m =>
+    let icfg := (ipc, rs, m, istk) in
+    match taint_tracking 100 p icfg with
+    | Some (_, leaked_vars, leaked_mems) =>
+        checker (seq.nilp leaked_vars && seq.nilp leaked_mems)
+    | None => checker true
+    end
+  )))).
+
+Example implicit_flow_test :
+  let x := "x"%string in
+  let y := "y"%string in
+  let p := [(<{ i[branch x to 1] }>, true); (<{ i[y := 1] }>, false)] in
+  let rs := (N 0, [("x"%string, N 10); ("y"%string, N 0)]) in
+  let icfg := (ipc, rs, [], []) in
+  match taint_tracking 10 p icfg with
+  | Some (obs, leaked_vars, _) =>
+      existsb (String.eqb "x") leaked_vars
+  | None => false
+  end = true.
+Proof. simpl. reflexivity. Qed.
+
 Definition gen_prog_ty_ctx_wt' (bsz pl: nat) : G (rctx * tmem * list nat * prog) :=
   c <- arbitrary;;
   tm <- arbitrary;;
   pst <- gen_partition pl;;
   p <- _gen_prog_wt c tm bsz pl pst;;
   ret (c, tm, pst, p).
+
+Definition all_possible_vars : list string := (["X0"%string; "X1"%string; "X2"%string; "X3"%string; "X4"%string; "X5"%string]).
+
+Definition gen_prog_and_unused_var : G (prog * string) :=
+  '(c, tm, pst, p) <- gen_prog_ty_ctx_wt' 3 5;;
+  let used_vars: list string := remove_dupes String.eqb (vars_prog p) in
+    let unused_vars := filter (fun v => negb (existsb (String.eqb v) used_vars)) all_possible_vars in
+  (* let unused_vars: list string := @list_minus string (EqDec string eq) all_possible_vars used_vars in *)
+  match unused_vars with
+  | [] => ret (p, "X6"%string) (* X6 cannot be sampled *)
+  | hd :: _ =>
+    x <- elems_ hd unused_vars;;
+    ret (p, x)
+  end.
+
+(* YH: another generator needed that generates program do not use some variables in register set. *)
+QuickChick (
+  forAll gen_prog_and_unused_var (fun '(p, unused_var) =>
+  forAll arbitrary (fun rs =>
+  forAll arbitrary (fun m =>
+    let icfg := (ipc, rs, m, istk) in
+    match taint_tracking 100 p icfg with
+    | Some (_, leaked_vars, _) =>
+      collect (unused_var)
+      (match negb (existsb (String.eqb unused_var) leaked_vars) with
+        | true => checker true
+        | false => trace (show leaked_vars) (checker false)
+      end)
+    | None =>
+        checker true
+    end
+  )))).
 
 Definition gen_wt_mem (tm: tmem) (pst: list nat) : G mem :=
   let indices := seq 0 (Datatypes.length tm) in
@@ -1745,9 +1562,6 @@ Definition gen_wt_mem (tm: tmem) (pst: list nat) : G mem :=
   ret (snd (split r)).
 
 Sample ('(_, tm, pst, _) <- gen_prog_ty_ctx_wt' 3 5;; gen_wt_mem tm pst).
-
-Definition ipc : cptr := (0 , 0).
-Definition istk : list cptr := [].
 
 Fixpoint member (n: nat) (l: list nat) : bool :=
   match l with
@@ -1859,83 +1673,49 @@ QuickChick (
 
 (* +++ Passed 10000 tests (4235 discards) *)
 
-(* direction generators *)
+(* * Speculative execution generator *)
+
 Definition gen_dbr : G direction :=
   b <- arbitrary;; ret (DBranch b).
 
 Definition gen_dcall (pst: list nat) : G direction :=
   l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
 
-(* dirs generator *)
-
 Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
   match p[[pc]] with
   | Some i =>
-      let build_msg (reason: string) :=
+      (* let build_msg (reason: string) :=
         ("gen_spec_step FAILED. Reason: " ++ reason ++
         ". PC=" ++ show pc ++
         ", Inst=" ++ show i ++
         ", ct=" ++ show ct ++
         ", ms=" ++ show ms)%string
-      in
+      in *)
       match i with
       | <{{branch e to l}}> =>
           d <- gen_dbr;;
           ret (match spec_step p sc [d] with
                | Some (sc', dir', os') => Some (sc', [d], os')
-               | None => trace (build_msg "spec_step failed for BRANCH"%string) None
+               | None => (* trace (build_msg "spec_step failed for BRANCH"%string) *) None
                end)
       | <{{call e}}> =>
           d <- gen_dcall pst;;
           ret (match spec_step p sc [d] with
                | Some (sc', dir', os') => Some (sc', [d], os')
-               | None => trace (build_msg "spec_step failed for CALL"%string) None
+               | None => (* trace (build_msg "spec_step failed for CALL"%string) *) None
                end)
       | _ =>
           ret (match spec_step p sc [] with
                | Some (sc', dir', os') => Some (sc', [], os')
-               | None => trace (build_msg "spec_step failed for OTHER inst"%string) None
+               | None => (* trace (build_msg "spec_step failed for OTHER inst"%string) *) None
                end)
       end
-  | None =>
-      trace "PC fail" ret None
+  | None => 
+      (* trace "PC fail" ret None *)
+      ret None
   end.
-
-(* Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) := *)
-(*   let '(c, ct, ms) := sc in *)
-(*   let '(pc, r, m, sk) := c in *)
-(*   match p[[pc]] with *)
-(*   | Some i => *)
-(*       let build_msg (reason: string) := *)
-(*         ("gen_spec_step FAILED. Reason: " ++ reason ++ *)
-(*          ". PC=" ++ (@show cptr _ pc) ++ *)
-(*          ", Inst=" ++ (@show inst _ i) ++ *)
-(*          ", ct=" ++ (@show bool _ ct) ++ *)
-(*          ", ms=" ++ (@show bool _ ms))%string *)
-(*       in *)
-(*       match i with *)
-(*       | <{{branch e to l}}> => *)
-(*           d <- gen_dbr;; *)
-(*           ret (match spec_step p sc [d] with *)
-(*                | Some (sc', dir', os') => Some (sc', [d], os') *)
-(*                | _ => (ret None) *)
-(*                end) *)
-(*       | <{{call e}}> => *)
-(*           d <- gen_dcall pst;; *)
-(*           ret (match spec_step p sc [d] with *)
-(*                | Some (sc', dir', os') => Some (sc', [d], os') *)
-(*                | _ => (ret None) *)
-(*                end) *)
-(*       | _ => *)
-(*           ret (match spec_step p sc [] with *)
-(*                | Some (sc', dir', os') => Some (sc', [], os') *)
-(*                | _ => (ret None) *)
-(*                end) *)
-(*       end *)
-(*   | None => ret None *)
-(*   end. *)
 
 Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) :=
   match f with
@@ -1956,30 +1736,7 @@ Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) :
            end
   end.
 
-(* Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) := *)
-(*   match f with *)
-(*   | 0 => ret (Some (sc, [], [])) *)
-(*   | S f' => ost <- gen_spec_step p sc pst;; *)
-(*            match ost with *)
-(*            | Some (sc', ds', os') => ost' <- gen_spec_steps_sized f' p sc' pst;; *)
-(*                                     match ost' with *)
-(*                                     | Some (sc'', ds'', os'') => ret (Some (sc'', ds' ++ ds'', os' ++ os'')) *)
-(*                                     | _ => ret None *)
-(*                                     end *)
-(*            | _ => ret None *)
-(*            end *)
-(*   end. *)
-
-(* Definition gen_dir (p: prog) (c: cfg) (pst: list nat) : G (option dirs) := *)
-(*   let sc := (c, false, false) in *)
-(*   res <- gen_spec_steps_sized 1557 p sc pst;; *)
-(*   ret (match res with *)
-(*        | Some (_, ds, _) => Some ds *)
-(*        | _ => None *)
-(*        end). *)
-
-Derive Show for direction.
-Derive Show for observation.
+(* ** Direction generators *)
 
 Definition gen_the_dirs_only : G (option dirs) :=
   '(c, tm, pst, p) <- gen_prog_ty_ctx_wt' 3 5;;
@@ -1997,7 +1754,6 @@ Definition gen_the_dirs_only : G (option dirs) :=
            | Some (_, ds, _) => Some ds
            | None => None
            end)
-  (* | _ => trace "seq fail" ret None *)
   | _ => ret None
   end.
 
@@ -2020,6 +1776,8 @@ Definition gen_dir_test : G (prog * option (spec_cfg * dirs * obs)) :=
   ret (p, res).
 
 Sample (gen_dir_test).
+
+(* TODO: FIX THESE TESTS *)
 
 QuickChick (
   forAll (gen_prog_ty_ctx_wt' 3 5) (fun '(c, tm, pst, p) =>
@@ -2079,455 +1837,3 @@ QuickChick (
         )
    | None => checker tt (* discard *)
   end)))).
-
-
-(* Definition gen_store_in_ctx (gen_store : pub_vars -> pub_arrs -> reg -> list nat -> G inst) *)
-(*     (pc:label) (P:pub_vars) (PA:pub_arrs) (rs: reg) (pst: list nat) : G inst := *)
-(*   if pc then gen_store P PA rs pst *)
-(*   else *)
-(*     i <- get_addr PA secret;; (* secret location *) *)
-(*     match i with *)
-(*     | Some i => *)
-(*         b <- arbitrary;; *)
-(*         e <- gen_exp_for_offset i P rs b;; *)
-(*         e' <- arbitrarySized 1;; *)
-(*         ret (IStore e e') *)
-(*     | None => ret <{ skip }> *)
-(*     end. *)
-
-(* Definition gen_pub_branch (P: pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst := *)
-(*   let vars := map_dom (snd rs) in *)
-(*   e <- gen_pub_exp_no_ptr 1 P rs;; *)
-(*   l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *) *)
-(*   ret <{ branch e to l }>. *)
-
-(* (* ex_vars = <{{ i[ ("X0"%string); ("X1"%string); ("X2"%string); ("X3"%string); ("X4"%string)] }}> *) *)
-(* Definition ex_pub_vars : total_map label := (true,[("X0",true); ("X1",true); ("X2",true); *)
-(*                                                    ("X3",false); ("X4",false)])%string. *)
-
-(* Definition ex_pub_vars' : total_map label := (true,[("X0",false); ("X1",false); ("X2",false); *)
-(*                                                    ("X3",true); ("X4",false)])%string. *)
-
-(* Definition ex_rs : total_map val := (N 0,[("X0",N 42); ("X1",N 33); ("X2",FP 0); *)
-(*                                           ("X3",FP 0); ("X4",FP 3)])%string. *)
-
-(* Sample (gen_pub_branch ex_pub_vars 8 [3; 3; 1; 1] ex_rs). *)
-
-(* Definition gen_branch_in_ctx (gen_branch: pub_vars -> nat -> list nat -> reg -> G inst) *)
-(*   (pc:label) (P:pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst := *)
-(*   if pc then gen_branch P pl pst rs *)
-(*   else *)
-(*     e <- gen_exp_leaf_no_ptr rs;; *)
-(*     l <- elems_ 0 (nat_list_minus (seq 0 (pl - 1)) (proc_hd pst));; *)
-(*     ret <{ branch e to l }>. *)
-
-(* Sample (gen_branch_in_ctx gen_pub_branch secret ex_pub_vars' 8 [3; 3; 1; 1] ex_rs). *)
-
-(* Definition gen_pub_call (P:pub_vars) (pst: list nat) (rs: reg) : G inst := *)
-(*   l <- gen_pub_exp_ptr 1 P pst rs;; *)
-(*   ret <{ call l }>. *)
-
-(* Sample (gen_pub_call ex_pub_vars [3; 3; 1; 1] ex_rs). *)
-
-(* Definition gen_call_in_ctx (gen_call: pub_vars -> list nat -> reg -> G inst) *)
-(*   (pc: label) (P:pub_vars) (pst: list nat) (rs: reg) : G inst := *)
-(*   if pc then gen_call P pst rs *)
-(*   else *)
-(*     l <- gen_exp_ptr_in_ctx false 1 P pst rs;; *)
-(*     ret <{ call l }>. *)
-
-(* YH: Unlike non-interference, the relative security property is formally defined for all input pairs. It does not require input pairs to be public-equivalent.
-
- However, for the test to be meaningful, the premise of the property must hold.
- This means we must select input pairs for which the original program produces
- identical observations under sequential execution.
-
-  => the taint analysis of TestingFlexSLH will be useful.
- *)
-
-(* From SECF Require Import TestingSpecCT. *)
-
-(* Notation label := TestingSpecCT.label. *)
-(* Notation apply := ListMaps.apply. *)
-(* Notation join := TestingSpecCT.join. *)
-
-
-
-
-(** Better wf program generator - constant time *)
-(* 1. public/secret
-   2. ptr/not ptr
-   3. wf          *)
-
-Definition gen_pub_exp_leaf (P : pub_vars) (pst :list nat) : G exp :=
-  oneOf (liftM ANum arbitrary ;;;
-         liftM FPtr (elems_ 0 (proc_hd pst)) ;;;
-         (let pubs := (filter (apply P) (map_dom (snd P))) in
-         if seq.nilp pubs then []
-         else [liftM AId (elems_ ("X0"%string) pubs)])).
-
-Sample (P <- arbitrary ;;
-       exp <- gen_pub_exp_leaf P [3; 3; 1; 1];;
-       ret (P, exp)).
-
-Definition gen_exp_leaf_in_ctx (pc: label) (P : pub_vars) (pst :list nat) : G exp :=
-  if pc then gen_pub_exp_leaf P pst
-  else
-    oneOf (liftM ANum arbitrary ;;;
-             liftM FPtr (elems_ 0 (proc_hd pst)) ;;;
-             (let vars := (map_dom (snd P)) in
-              if seq.nilp vars then []
-              else [liftM AId (elems_ ("X0"%string) vars)])).
-
-(* move to somewhere *)
-Definition string_eq_dec := Map.E.eq_dec.
-
-Definition list_inter {A: Type} (eq_dec: forall x y, {x = y} + {x <> y}) (l1 l2: list A) : list A :=
-  filter (fun x => if (in_dec eq_dec x l2) then true else false) l1.
-
-Definition gen_pub_exp_leaf_ptr (P : pub_vars) (pst :list nat) (rs : reg) : G exp :=
-  oneOf (liftM FPtr (elems_ 0 (proc_hd pst)) ;;;
-           (let ptrs := filter (fun x => negb (is_not_ptr rs x)) (map_dom (snd rs)) in
-            let pubs := (filter (apply P) (map_dom (snd P))) in
-            let s := list_inter string_eq_dec ptrs pubs in
-            if seq.nilp s then [] else
-              [liftM AId (elems_ "X0"%string s)] ) ).
-
-Sample (P <- arbitrary ;;
-        rs <- arbitrary ;;
-        exp <- gen_pub_exp_leaf_ptr P [3; 3; 1; 1] rs;;
-        ret (P, rs, exp)).
-
-Definition gen_exp_leaf_ptr_in_ctx (pc: label) (P : pub_vars) (pst :list nat) (rs : reg) : G exp :=
-  if pc then gen_pub_exp_leaf_ptr P pst rs
-  else
-    let ptrs := filter (fun x => negb (is_not_ptr rs x)) (map_dom (snd rs)) in
-    oneOf (liftM FPtr (elems_ 0 (proc_hd pst)) ;;;
-             if seq.nilp ptrs then [] else [liftM AId (elems_ "X0"%string ptrs)] ).
-
-Sample (P <- arbitrary ;;
-        rs <- arbitrary ;;
-        exp <- gen_exp_leaf_ptr_in_ctx false P [3; 3; 1; 1] rs;;
-        ret (P, rs, exp)).
-
-Definition gen_pub_exp_leaf_no_ptr (P : pub_vars) (rs : reg) : G exp :=
-  oneOf (liftM ANum arbitrary ;;;
-         (let not_ptrs := filter (is_not_ptr rs) (map_dom (snd rs)) in
-          let pubs := (filter (apply P) (map_dom (snd P))) in
-          let s := list_inter string_eq_dec not_ptrs pubs in
-          if seq.nilp s then [] else
-            [liftM AId (elems_ "X0"%string s)] ) ).
-
-Sample (P <- arbitrary ;;
-        rs <- arbitrary ;;
-        exp <- gen_pub_exp_leaf_no_ptr P rs;;
-        ret (P, rs, exp)).
-
-Definition gen_exp_leaf_no_ptr_in_ctx (pc: label) (P : pub_vars) (rs : reg) : G exp :=
-  if pc then gen_pub_exp_leaf_no_ptr P rs
-  else
-    oneOf (liftM ANum arbitrary ;;;
-           let not_ptrs := filter (is_not_ptr rs) (map_dom (snd rs)) in
-           if seq.nilp not_ptrs then [] else [liftM AId (elems_ "X0"%string not_ptrs)] ).
-
-Sample (P <- arbitrary ;;
-        rs <- arbitrary ;;
-        exp <- gen_exp_leaf_no_ptr_in_ctx false P rs;;
-        ret (P, rs, exp)).
-
-Fixpoint gen_pub_exp_no_ptr (sz : nat) (P: pub_vars) (rs: reg) : G exp :=
-  match sz with
-  | O => gen_pub_exp_leaf_no_ptr P rs
-  | S sz' =>
-      freq [ (2, gen_pub_exp_leaf_no_ptr P rs);
-             (sz, liftM3 ABin arbitrary (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs));
-             (sz, liftM3 ACTIf (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs))
-          ]
-  end.
-
-Sample (P <- arbitrary ;;
-        rs <- arbitrary ;;
-        exp <- gen_pub_exp_no_ptr 2 P rs;;
-        ret (P, rs, exp)).
-
-Fixpoint gen_exp_no_ptr_in_ctx (pc: label) (sz : nat) (P: pub_vars) (rs: reg) : G exp :=
-  if pc then gen_pub_exp_no_ptr sz P rs
-  else
-    match sz with
-    | O => gen_exp_leaf_no_ptr_in_ctx pc P rs
-    | S sz' =>
-        freq [ (2, gen_exp_leaf_no_ptr_in_ctx pc P rs);
-               (sz, liftM3 ABin arbitrary (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_no_ptr_in_ctx pc sz' P rs));
-               (sz, liftM3 ACTIf (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_no_ptr_in_ctx pc sz' P rs))
-          ]
-  end.
-
-Sample (P <- arbitrary ;;
-        rs <- arbitrary ;;
-        exp <- gen_exp_no_ptr_in_ctx false 2 P rs;;
-        ret (P, rs, exp)).
-
-Fixpoint gen_pub_exp_ptr (sz : nat) (P: pub_vars) (pst: list nat) (rs: reg) : G exp :=
-  match sz with
-  | O => gen_pub_exp_leaf_ptr P pst rs
-  | S sz' =>
-      freq [ (2, gen_pub_exp_leaf_ptr P pst rs);
-             (sz, liftM3 ACTIf (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_ptr sz' P pst rs) (gen_pub_exp_ptr sz' P pst rs))
-          ]
-  end.
-
-Sample (P <- arbitrary ;;
-        rs <- arbitrary ;;
-        exp <- gen_pub_exp_ptr 2 P [3; 3; 1; 1] rs;;
-        ret (P, rs, exp)).
-
-Fixpoint gen_exp_ptr_in_ctx (pc: label) (sz : nat) (P: pub_vars) (pst: list nat) (rs: reg) : G exp :=
-  if pc then gen_pub_exp_ptr sz P pst rs
-  else
-    match sz with
-    | O => gen_exp_leaf_ptr_in_ctx false P pst rs
-    | S sz' =>
-        freq [ (2, gen_exp_leaf_ptr_in_ctx false P pst rs);
-               (sz, liftM3 ACTIf (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_ptr_in_ctx pc sz' P pst rs) (gen_exp_ptr_in_ctx pc sz' P pst rs))
-          ]
-    end.
-
-Sample (P <- arbitrary ;;
-        rs <- arbitrary ;;
-        exp <- gen_exp_ptr_in_ctx false 2 P [3; 3; 1; 1] rs;;
-        ret (P, rs, exp)).
-
-
-(* Better, but we still get discards. These cases are when the equality is generated between pointer *)
-(*   and non-pointer. The following generator accounts for that: *)
-
-(* Definition eitherOf {A} (a : G A) (b : G A) : G A := freq [(1, a); (1, b)]. *)
-
-Fixpoint gen_pub_exp (sz : nat) (P: pub_vars) (rs : reg) (pst: list nat) : G exp :=
-  match sz with
-  | O => gen_pub_exp_leaf P pst
-  | S sz' =>
-          freq [
-             (2, gen_pub_exp_leaf P pst);
-             (sz, binop <- arbitrary;; match binop with
-                | BinEq => eitherOf
-                    (liftM2 (ABin BinEq) (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs))
-                    (liftM2 (ABin BinEq) (liftM FPtr arbitrary) (liftM FPtr arbitrary))
-                | _ => liftM2 (ABin binop) (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp_no_ptr sz' P rs)
-              end);
-             (sz, liftM3 ACTIf (gen_pub_exp_no_ptr sz' P rs) (gen_pub_exp sz' P rs pst) (gen_pub_exp sz' P rs pst))
-          ]
-  end.
-
-Fixpoint gen_exp_in_ctx (pc: label) (sz : nat) (P: pub_vars) (rs : reg) (pst: list nat) : G exp :=
-  if pc then gen_pub_exp sz P rs pst
-  else
-    match sz with
-    | O => gen_exp_leaf_in_ctx false P pst
-    | S sz' =>
-        freq [
-            (2, gen_exp_leaf_in_ctx pc P pst);
-            (sz, binop <- arbitrary;;
-                 match binop with
-                 | BinEq => eitherOf
-                             (liftM2 (ABin BinEq) (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_no_ptr_in_ctx pc sz' P rs))
-                             (liftM2 (ABin BinEq) (liftM FPtr arbitrary) (liftM FPtr arbitrary))
-                 | _ => liftM2 (ABin binop) (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_no_ptr_in_ctx pc sz' P rs)
-                 end);
-            (sz, liftM3 ACTIf (gen_exp_no_ptr_in_ctx pc sz' P rs) (gen_exp_in_ctx pc sz' P rs pst) (gen_exp_in_ctx pc sz' P rs pst))
-          ]
-  end.
-
-Definition gen_secure_asgn (P:pub_vars) (rs: reg) (pst: list nat) : G inst :=
-  let vars := map_dom (snd P) in
-  x <- elems_ "X0"%string vars;;
-  e <- (if apply P x then gen_pub_exp 1 P rs pst else gen_pub_exp 1 P rs pst);;
-  ret <{ x := e }>.
-
-Definition gen_name (P:pub_vars) (label:bool) : G (option string) :=
-  let names := filter (fun x => Bool.eqb label (apply P x))
-                      (map_dom (snd P)) in
-  match names with
-  | x0 :: _ => liftM Some (elems_ x0 names)
-  | [] => ret None
-  end.
-
-Definition get_addr (PA: pub_arrs) (label:bool) : G (option nat) :=
-  let indices := seq 0 (Datatypes.length PA) in
-  let idx_pa := combine indices PA in
-  let filtered := filter (fun '(idx, b) => Bool.eqb label b) idx_pa in
-  let indices' := map fst filtered in
-  match indices' with
-  | [] => ret None
-  | hd::tl => liftM Some (elems_ hd indices')
-  end.
-
-Definition gen_asgn_in_ctx (gen_asgn : pub_vars -> reg -> list nat -> G inst)
-    (pc:label) (P:pub_vars) (rs: reg) (pst: list nat) : G inst :=
-  if pc then gen_asgn P rs pst
-  else
-    x <- gen_name P secret;; (* secret var *)
-    match x with
-    | Some x =>
-      e <- gen_exp_in_ctx false 1 P rs pst;;
-      ret <{ x := e }>
-    | None => ret <{ skip }>
-    end.
-
-Definition gen_exp_for_offset (n: nat) (P: pub_vars) (rs: reg) (label: bool) : G exp :=
-  freq [(1, ret (ANum n));
-        (1, let label_regs := filter (fun x => Bool.eqb label (apply P (fst x))) (snd rs) in
-            let regs := filter (fun '(_, v) => match v with
-                                            | N m => m <=? n
-                                            | _ => false
-                                            end) label_regs in
-            match regs with
-            | [] => ret (ANum n)
-            | _ => '(name, vm) <- elems_ ("X0"%string, N 0) regs;;
-                  match vm with
-                  | N m => let ofs := n - m in
-                          ret (ABin BinPlus (AId name) (ANum ofs))
-                  | _ => ret (ANum n)
-                  end
-            end)
-    ].
-
-(* TODO: more complicate expression for address *)
-Definition gen_secure_load (P:pub_vars) (PA:pub_arrs) (rs: reg) : G inst :=
-  let vars := map_dom (snd P) in
-  x <- elems_ "X0"%string vars;;
-  if apply P x then
-    i <- get_addr PA public;; (* public location *)
-    match i with
-    | Some i' =>
-        i'' <- gen_exp_for_offset i' P rs true;;
-        ret (ILoad x i'')
-    | None => ret <{ skip }>
-    end
-  else
-    (* x is secret *)
-    b <- arbitrary;;
-    i <- get_addr PA b;;
-    match i with
-    | Some i' =>
-        i'' <- gen_exp_for_offset i' P rs b;;
-        ret (ILoad x i'')
-    | _ => ret <{ skip }>
-    end.
-
-Definition gen_load_in_ctx (gen_load : pub_vars -> pub_arrs -> reg -> G inst)
-    (pc:label) (P:pub_vars) (PA:pub_arrs) (rs: reg) : G inst :=
-  if pc then gen_load P PA rs
-  else
-    x <- gen_name P secret;; (* secret var *)
-    match x with
-    | Some x =>
-        b <- arbitrary;;
-        i <- get_addr PA b;;
-        match i with
-        | Some i' =>
-            i'' <- gen_exp_for_offset i' P rs b;;
-            ret (ILoad x i'')
-        | _ => ret <{ skip }>
-        end
-    | None => ret <{ skip }>
-    end.
-
-Definition gen_secure_store (P:pub_vars) (PA:pub_arrs) (rs: reg) (pst: list nat) : G inst :=
-  let indices := seq 0 (Datatypes.length PA) in
-  i <- elems_ 0 indices;;
-  if nth i PA true then
-    (* PA is always larger than []. *)
-    (* public location *)
-    e <- gen_exp_for_offset i P rs true;;
-    e' <- gen_pub_exp 1 P rs pst;;
-    ret (IStore e e')
-  else
-    (* secret location *)
-    b <- arbitrary;;
-    e <- gen_exp_for_offset i P rs b;;
-    e' <- arbitrarySized 1;;
-    ret (IStore e e').
-
-Definition gen_store_in_ctx (gen_store : pub_vars -> pub_arrs -> reg -> list nat -> G inst)
-    (pc:label) (P:pub_vars) (PA:pub_arrs) (rs: reg) (pst: list nat) : G inst :=
-  if pc then gen_store P PA rs pst
-  else
-    i <- get_addr PA secret;; (* secret location *)
-    match i with
-    | Some i =>
-        b <- arbitrary;;
-        e <- gen_exp_for_offset i P rs b;;
-        e' <- arbitrarySized 1;;
-        ret (IStore e e')
-    | None => ret <{ skip }>
-    end.
-
-Definition gen_pub_branch (P: pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst :=
-  let vars := map_dom (snd rs) in
-  e <- gen_pub_exp_no_ptr 1 P rs;;
-  l <- elems_ 0 (list_minus (seq 0 (pl - 1)) (proc_hd pst));; (* 0 is unreachable *)
-  ret <{ branch e to l }>.
-
-(* ex_vars = <{{ i[ ("X0"%string); ("X1"%string); ("X2"%string); ("X3"%string); ("X4"%string)] }}> *)
-Definition ex_pub_vars : total_map label := (true,[("X0",true); ("X1",true); ("X2",true);
-                                                   ("X3",false); ("X4",false)])%string.
-
-Definition ex_pub_vars' : total_map label := (true,[("X0",false); ("X1",false); ("X2",false);
-                                                   ("X3",true); ("X4",false)])%string.
-
-Definition ex_rs : total_map val := (N 0,[("X0",N 42); ("X1",N 33); ("X2",FP 0);
-                                          ("X3",FP 0); ("X4",FP 3)])%string.
-
-Sample (gen_pub_branch ex_pub_vars 8 [3; 3; 1; 1] ex_rs).
-
-Definition gen_branch_in_ctx (gen_branch: pub_vars -> nat -> list nat -> reg -> G inst)
-  (pc:label) (P:pub_vars) (pl: nat) (pst: list nat) (rs: reg) : G inst :=
-  if pc then gen_branch P pl pst rs
-  else
-    e <- gen_exp_leaf_no_ptr rs;;
-    l <- elems_ 0 (list_minus (seq 0 (pl - 1)) (proc_hd pst));;
-    ret <{ branch e to l }>.
-
-Sample (gen_branch_in_ctx gen_pub_branch secret ex_pub_vars' 8 [3; 3; 1; 1] ex_rs).
-
-Definition gen_pub_call (P:pub_vars) (pst: list nat) (rs: reg) : G inst :=
-  l <- gen_pub_exp_ptr 1 P pst rs;;
-  ret <{ call l }>.
-
-Sample (gen_pub_call ex_pub_vars [3; 3; 1; 1] ex_rs).
-
-Definition gen_call_in_ctx (gen_call: pub_vars -> list nat -> reg -> G inst)
-  (pc: label) (P:pub_vars) (pst: list nat) (rs: reg) : G inst :=
-  if pc then gen_call P pst rs
-  else
-    l <- gen_exp_ptr_in_ctx false 1 P pst rs;;
-    ret <{ call l }>.
-
-Sample (gen_call_in_ctx gen_pub_call false ex_pub_vars' [3; 3; 1; 1] ex_rs).
-  (* | IBranch : exp -> nat -> inst *)
-  (* | IJump : nat -> inst *)
-  (* | ICall : exp -> inst *)
-  (* | IRet : inst. *)
-
-Definition gen_inst2 (gen_asgn : label -> pub_vars -> reg -> G inst)
-                     (gen_load : label -> pub_vars -> pub_arrs -> reg -> G inst)
-                     (gen_store : label -> pub_vars -> pub_arrs -> reg -> G inst)
-                     (gen_branch: label -> pub_vars -> nat -> list nat -> reg -> G inst)
-                     (gen_jump: nat -> list nat -> G inst)
-                     (gen_call: label -> pub_vars -> list nat -> reg -> G inst)
-                     (P:pub_vars) (PA:pub_arrs) (rs: reg) (sz:nat) : G inst :=
-  match sz with
-  | O => freq [(1, ret ISkip);
-               (4, thunkGen (fun _ => gen_asgn P rs));
-               (4, thunkGen (fun _ => gen_load P PA rs));
-               (4, thunkGen (fun _ => gen_store P PA rs))]
-  | S sz' => freq [ (1, ret ISkip);
-                   (1, ret IRet);
-                   (sz, gen_asgn vars c);
-                   (sz, gen_branch vars pl c);
-                   (sz, gen_jump pl c);
-                   (sz, gen_load vars pl c);
-                   (sz, gen_store vars pl c);
-                   (sz, gen_call c)]
-  end.
