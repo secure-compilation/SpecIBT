@@ -268,7 +268,7 @@ Inductive observation : Type :=
   | OBranch (b:bool)
   | OLoad (n:nat)
   | OStore (n:nat)
-  | OCall (v:val). (* we allow speculative calls to arbitrary values;
+  | OCall (l: nat). (* we allow speculative calls to arbitrary values;
                       see Spectre 1.1 discussion in MiniCET.md *)
 
 Definition obs := list observation.
@@ -278,11 +278,7 @@ Definition observation_eqb (os1 : observation) (os2 : observation) : bool :=
   | OBranch b, OBranch b' => Bool.eqb b b'
   | OLoad i, OLoad i' => (i =? i')
   | OStore i, OStore i' => (i =? i')
-  | OCall v, OCall v' => match v, v' with
-                        | N n, N n' => (n =? n')
-                        | FP l, FP l' => (l =? l')
-                        | _, _ => false
-                        end
+  | OCall v, OCall v' => (v =? v')
   | _, _ => false
   end.
 
@@ -330,7 +326,7 @@ Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
   | <{{call e}}> =>
       v <- eval r e;;
       l <- to_fp v;;
-      ret (((l,0), r, m, (pc+1)::sk), [OCall (FP l)])
+      ret (((l,0), r, m, (pc+1)::sk), [OCall l])
   | <{{ret}}> =>
       pc' <- hd_error sk;;
       ret ((pc', r, m, tl sk), [])
@@ -402,12 +398,9 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       d <- hd_error ds;;
       pc' <- is_dcall d;;
       v <- eval r e;;
-      (* we allow speculative calls to arbitrary values;
-         see Spectre 1.1 discussion in MiniCET.md *)
-      is_true (if_some (to_nat v) (fun _ => ms));;
-      let ms' := ms || (if_some (to_fp v)
-                          (fun l => negb ((fst pc' =? l) && (snd pc' =? 0)))) in
-      ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall v])
+      l <- to_fp v;;
+      let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+      ret ((((pc', r, m, sk), true, ms'), tl ds), [OCall l])
   | <{{ctarget}}> =>
       is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
       ret (((pc+1, r, m, sk), false, ms), ds, [])
@@ -1799,22 +1792,22 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
   | _ => None
   end.
 
-Definition taint_tracking_detailed (f : nat) (p : prog) (c: cfg)
-  : option (obs * list string * list nat) :=
-  let '(pc, rs, m, ts) := c in
-  let tpc := [] in
-  let trs := ([], map (fun x => (x,[@inl reg_id mem_addr x])) (map_dom (snd rs))) in
-  let tm := TaintTracking.init_taint_mem m in
-  let ts := [] in
-  let tc := (tpc, trs, tm, ts) in
-  let ist := (c, tc, []) in
-  match (TaintTracking.steps_taint_track f p ist []) with
-  | TaintTracking.ETerm (_, _, tobs) os =>
-      let (ids, mems) := split_sum_list tobs in
-      Some (os, remove_dupes String.eqb ids,
-                remove_dupes Nat.eqb mems)
-  | _ => None
-  end.
+(* Definition taint_tracking_detailed (f : nat) (p : prog) (c: cfg) *)
+(*   : option (obs * list string * list nat) := *)
+(*   let '(pc, rs, m, ts) := c in *)
+(*   let tpc := [] in *)
+(*   let trs := ([], map (fun x => (x,[@inl reg_id mem_addr x])) (map_dom (snd rs))) in *)
+(*   let tm := TaintTracking.init_taint_mem m in *)
+(*   let ts := [] in *)
+(*   let tc := (tpc, trs, tm, ts) in *)
+(*   let ist := (c, tc, []) in *)
+(*   match (TaintTracking.steps_taint_track f p ist []) with *)
+(*   | TaintTracking.ETerm (_, _, tobs) os => *)
+(*       let (ids, mems) := split_sum_list tobs in *)
+(*       Some (os, remove_dupes String.eqb ids, *)
+(*                 remove_dupes Nat.eqb mems) *)
+(*   | _ => None *)
+(*   end. *)
 
 (** Some generators *)
 
@@ -1898,7 +1891,7 @@ Definition m_wtb (m: mem) (tm: tmem) : bool :=
   let mtm := combine m tm in
   forallb (fun '(v, t) => wt_valb v t) mtm.
 
-(*! Section Sanity-Check *)
+(** Sanity-Check *)
 
 (* check 1: generated program is stuck-free. *)
 
@@ -2077,27 +2070,6 @@ QuickChick (
 
 (* check 8: non-interference *)
 
-(* QuickChick ( *)
-(*   forAll (gen_prog_wt3 3 8) (fun '(c, tm, pst, p) => *)
-(*   forAll (gen_wt_reg c pst) (fun rs => *)
-(*   forAll (gen_wt_mem tm pst) (fun m => *)
-(*   let icfg := (ipc, rs, m, istk) in *)
-(*   let r1 := taint_tracking 100 p icfg in *)
-(*   match r1 with *)
-(*   | Some (os1', tvars, tms) => *)
-(*       let P := (false, map (fun x => (x,true)) tvars) in *)
-(*       let PM := tms_to_pm (Datatypes.length m) tms in *)
-(*       forAll (gen_pub_equiv_same_ty P rs) (fun rs' => *)
-(*       forAll (gen_pub_mem_equiv_same_ty PM m) (fun m' => *)
-(*       let icfg' := (ipc, rs', m', istk) in *)
-(*       let r2 := taint_tracking 100 p icfg' in *)
-(*       match r2 with *)
-(*       | Some (os2', _, _) => checker (obs_eqb os1' os2') *)
-(*       | None => checker false (* fail *) *)
-(*       end)) *)
-(*    | None => checker false (* discard *) *)
-(*   end)))). *)
-
 QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_wt_reg c pst) (fun rs =>
@@ -2121,7 +2093,15 @@ QuickChick (
 
 (* +++ Passed 10000 tests (6354 discards) *)
 
+(** Tests for Speculative Execution *)
+
+Derive Show for direction.
+Derive Show for observation.
+
+Definition spec_rs (rs: reg) := (callee !-> (FP 0); (msf !-> (N 0); rs)).
+
 (* direction generators *)
+
 Definition gen_dbr : G direction :=
   b <- arbitrary;; ret (DBranch b).
 
@@ -2130,40 +2110,164 @@ Definition gen_dcall (pst: list nat) : G direction :=
 
 (* dirs generator *)
 
-Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) :=
+Variant sc_output_st : Type :=
+  | SRStep : obs -> dirs -> spec_cfg -> sc_output_st
+  | SRError : obs -> dirs -> spec_cfg -> sc_output_st
+  | SRTerm : obs -> dirs -> spec_cfg -> sc_output_st.
+
+Definition gen_step_direction (i: inst) (c: cfg) (pst: list nat) : G dirs :=
+  let '(pc, rs, m, s) := c in
+  match i with
+  | <{ branch e to l }> => db <- gen_dbr;; ret [db]
+  | <{ call e }> =>  dc <- gen_dcall pst;; ret [dc]
+  | _ => ret []
+  end.
+
+Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G sc_output_st :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
   match p[[pc]] with
   | Some i =>
-      let build_msg (reason: string) :=
-        ("gen_spec_step FAILED. Reason: " ++ reason ++
-        ". PC=" ++ show pc ++
-        ", Inst=" ++ show i ++
-        ", ct=" ++ show ct ++
-        ", ms=" ++ show ms)%string
-      in
       match i with
       | <{{branch e to l}}> =>
           d <- gen_dbr;;
           ret (match spec_step p sc [d] with
-               | Some (sc', dir', os') => Some (sc', [d], os')
-               | None => trace (build_msg "spec_step failed for BRANCH"%string) None
+               | Some (sc', dir', os') => SRStep os' [d] sc'
+               | None => SRError [] [] sc
                end)
       | <{{call e}}> =>
           d <- gen_dcall pst;;
           ret (match spec_step p sc [d] with
-               | Some (sc', dir', os') => Some (sc', [d], os')
-               | None => trace (build_msg "spec_step failed for CALL"%string) None
+               | Some (sc', dir', os') => SRStep os' [d] sc'
+               | None => SRError [] [] sc
                end)
+      | IRet => let '(c, _, _) := sc in
+               if TaintTracking.final_cfg p c
+               then ret (SRTerm [] [] sc)
+               else ret (SRError [] [] sc)
       | _ =>
           ret (match spec_step p sc [] with
-               | Some (sc', dir', os') => Some (sc', [], os')
-               | None => trace (build_msg "spec_step failed for OTHER inst"%string) None
+               | Some (sc', dir', os') => SRStep os' [ ] sc'
+               | None => SRError [] [] sc
                end)
       end
-  | None =>
-      trace "PC fail" ret None
+  | None => ret (SRError [] [] sc)
   end.
+
+Variant spec_exec_result : Type :=
+  | SETerm (sc: spec_cfg) (os: obs) (ds: dirs)
+  | SEError (sc: spec_cfg) (os: obs) (ds: dirs)
+  | SEOutOfFuel (sc: spec_cfg) (os: obs) (ds: dirs).
+
+Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) (os: obs) (ds: dirs) : G (spec_exec_result) :=
+  match f with
+  | 0 => ret (SEOutOfFuel sc os ds)
+  | S f' =>
+      sr <- gen_spec_step p sc pst;;
+      match sr with
+      | SRStep os1 ds1 sc1 =>
+          _gen_spec_steps_sized f' p pst sc1 (os ++ os1) (ds ++ ds1)
+      | SRError os1 ds1 sc1 =>
+          ret (SEError sc1 (os ++ os1) (ds ++ ds1))
+      | SRTerm  os1 ds1 sc1 =>
+          ret (SETerm sc1 (os ++ os1) (ds ++ ds1))
+      end
+  end.
+
+Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) : G (spec_exec_result) :=
+  _gen_spec_steps_sized f p pst sc [] [].
+
+#[export] Instance showSER : Show spec_exec_result :=
+  {show :=fun ser => 
+      match ser with
+      | SETerm sc os ds => show ds
+      | SEError _ _ ds => ("error!!"%string ++ show ds)%string
+      | SEOutOfFuel _ _ ds => ("oof!!"%string ++ show ds)%string
+      end
+  }.
+
+QuickChick (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_wt_reg c pst) (fun rs =>
+  forAll (gen_wt_mem tm pst) (fun m =>
+  let icfg := (ipc, rs, m, istk) in
+  let harden := uslh_prog p in
+  let rs' := spec_rs rs in
+  let icfg' := (ipc, rs', m, istk) in
+  let iscfg := (icfg', true, false) in
+  let h_pst := pst_calc harden in
+  forAll (gen_spec_steps_sized 100 harden h_pst iscfg) (fun ods =>
+  (match ods with
+   | SETerm sc os ds => trace (show ds) (checker true)
+   | SEError _ _ ds => trace ("dirgen fail!!!" ++ (show ds) ++ "errored dirs") (checker false)
+   | SEOutOfFuel _ _ ds => checker tt
+   end))
+  )))).
+
+(* Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) := *)
+(*   let '(c, ct, ms) := sc in *)
+(*   let '(pc, r, m, sk) := c in *)
+(*   match p[[pc]] with *)
+(*   | Some i => *)
+(*       let build_msg (reason: string) := *)
+(*         ("gen_spec_step FAILED. Reason: " ++ reason ++ *)
+(*         ". PC=" ++ show pc ++ *)
+(*         ", Inst=" ++ show i ++ *)
+(*         ", ct=" ++ show ct ++ *)
+(*         ", ms=" ++ show ms)%string *)
+(*       in *)
+(*       match i with *)
+(*       | <{{branch e to l}}> => *)
+(*           d <- gen_dbr;; *)
+(*           ret (match spec_step p sc [d] with *)
+(*                | Some (sc', dir', os') => Some (sc', [d], os') *)
+(*                | None => trace (build_msg "spec_step failed for BRANCH"%string) None *)
+(*                end) *)
+(*       | <{{call e}}> => *)
+(*           d <- gen_dcall pst;; *)
+(*           ret (match spec_step p sc [d] with *)
+(*                | Some (sc', dir', os') => Some (sc', [d], os') *)
+(*                | None => trace (build_msg "spec_step failed for CALL"%string) None *)
+(*                end) *)
+(*       | _ => *)
+(*           ret (match spec_step p sc [] with *)
+(*                | Some (sc', dir', os') => Some (sc', [], os') *)
+(*                | None => trace (build_msg "spec_step failed for OTHER inst"%string) None *)
+(*                end) *)
+(*       end *)
+(*   | None => *)
+(*       trace "PC fail" ret None *)
+(*   end. *)
+
+(* Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) := *)
+(*   match f with *)
+(*   | 0 => ret (Some (sc, [], [])) *)
+(*   | S f' => *)
+(*       ost <- gen_spec_step p sc pst;; *)
+(*       match ost with *)
+(*       | Some (sc', ds', os') => *)
+(*           ost' <- gen_spec_steps_sized f' p sc' pst;; *)
+(*           match ost' with *)
+(*           | Some (sc'', ds'', os'') => ret (Some (sc'', ds' ++ ds'', os' ++ os'')) *)
+(*           | _ => trace ("Recursive call returned None" ++ show p) (ret None) *)
+(*           end *)
+(*       | None => *)
+(*           let '(c, _, _) := sc in *)
+(*           let is_final := TaintTracking.final_cfg p c in *)
+(*           trace ("gen_spec_step failed. PC=" ++ show (fst c) ++ ". final_cfg returned: " ++ show is_final) *)
+(*           (if is_final then *)
+(*              ret (Some (sc, [], [])) *)
+(*            else *)
+(*              ret None) *)
+(*       end *)
+(*   end. *)
+
+          (* let '(c, _, _) := sc in *)
+          (* if (TaintTracking.final_cfg p c) *)
+          (* then ret (Some (sc, [], [])) *)
+          (* else trace ("gen_spec_step returned None"  ++ show p) (ret None) *)
+
+(* Speculative stuck free *)
 
 (* Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) := *)
 (*   let '(c, ct, ms) := sc in *)
@@ -2199,24 +2303,6 @@ Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spe
 (*   | None => ret None *)
 (*   end. *)
 
-Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) :=
-  match f with
-  | 0 => ret (Some (sc, [], []))
-  | S f' =>
-      let '(c, _, _) := sc in
-      let '(pc, _, _, _) := c in
-      if (TaintTracking.final_cfg p c)
-      then ret (Some (sc, [], []))
-      else ost <- gen_spec_step p sc pst;;
-           match ost with
-           | Some (sc', ds', os') => ost' <- gen_spec_steps_sized f' p sc' pst;;
-                                    match ost' with
-                                    | Some (sc'', ds'', os'') => ret (Some (sc'', ds' ++ ds'', os' ++ os''))
-                                    | _ => trace ("Recursive call returned None" ++ show p) (ret None)
-                                    end
-           | _ => trace ("gen_spec_step returned None"  ++ show p) (ret None)
-           end
-  end.
 
 (* Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) : G (option (spec_cfg * dirs * obs)) := *)
 (*   match f with *)
@@ -2240,18 +2326,39 @@ Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) :
 (*        | _ => None *)
 (*        end). *)
 
-Derive Show for direction.
-Derive Show for observation.
 
-(* YH: keep failing... *)
+QuickChick (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_wt_reg c pst) (fun rs =>
+  forAll (gen_wt_mem tm pst) (fun m =>
+  let icfg := (ipc, rs, m, istk) in
+  let r1 := stuck_free 100 p icfg in
+  match r1 with
+  | TaintTracking.ETerm st os =>
+      let harden := uslh_prog p in
+      let rs' := spec_rs rs in
+      let icfg' := (ipc, rs', m, istk) in
+      let iscfg := (icfg', true, false) in
+      let h_pst := pst_calc harden in
+      forAll (gen_spec_steps_sized 100 harden iscfg h_pst) (fun ods =>
+      collect ods 
+      (match ods with
+      | Some (_, ds, _) => (checker true)
+      | _ => trace "dirgen fail!!!" (checker false)
+      end))
+  | TaintTracking.EOutOfFuel st os => checker tt
+  | TaintTracking.EError st os => checker false
+  end)))).
+
+
 Definition gen_the_dirs_only : G (option dirs) :=
-  '(c, tm, pst, p) <- gen_prog_wt3 3 5;;
+  '(c, tm, pst, p) <- gen_prog_wt_with_basic_blk 3 5;;
   rs <- gen_wt_reg c pst;;
   m <- gen_wt_mem tm pst;;
   let icfg := (ipc, rs, m, istk) in
-  let r1 := taint_tracking 100 p icfg in
+  let r1 := stuck_free 100 p icfg in
   match r1 with
-  | Some _ =>
+  | TaintTracking.ETerm (_, _, tobs) os =>
       let harden := uslh_prog p in
       let iscfg := (icfg, true, false) in
       let h_pst := pst_calc harden in
@@ -2260,8 +2367,11 @@ Definition gen_the_dirs_only : G (option dirs) :=
            | Some (_, ds, _) => Some ds
            | None => None
            end)
-  | _ => trace "seq fail" ret None
+  | TaintTracking.EOutOfFuel st os => checker tt
+  | TaintTracking.EError st os => ret None
   end.
+
+
 
 Sample (gen_the_dirs_only).
 
