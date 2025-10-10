@@ -1900,10 +1900,10 @@ Definition m_wtb (m: mem) (tm: tmem) : bool :=
 
 (*! Section Sanity-Check *)
 
-(* check 1: generated program is ub-free. *)
+(* check 1: generated program is stuck-free. *)
 
-Definition ub_free (f : nat) (p : prog) (c: cfg)
-  : option (obs * list string * list nat) :=
+Definition stuck_free (f : nat) (p : prog) (c: cfg)
+  : TaintTracking.exec_result :=
   let '(pc, rs, m, ts) := c in
   let tpc := [] in
   let trs := ([], map (fun x => (x,[@inl reg_id mem_addr x])) (map_dom (snd rs))) in
@@ -1911,17 +1911,21 @@ Definition ub_free (f : nat) (p : prog) (c: cfg)
   let ts := [] in
   let tc := (tpc, trs, tm, ts) in
   let ist := (c, tc, []) in
-  match (TaintTracking.steps_taint_track f p ist []) with
-  | TaintTracking.ETerm (_, _, tobs) os =>
-      let (ids, mems) := split_sum_list tobs in
-      Some (os, remove_dupes String.eqb ids,
-                remove_dupes Nat.eqb mems)
-  | TaintTracking.EOutOfFuel (_, _, tobs) os =>
-      let (ids, mems) := split_sum_list tobs in
-      Some (os, remove_dupes String.eqb ids,
-                remove_dupes Nat.eqb mems)
-  | _ => None
-  end.
+  TaintTracking.steps_taint_track f p ist [].
+
+QuickChick (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_wt_reg c pst) (fun rs =>
+  forAll (gen_wt_mem tm pst) (fun m =>
+  let icfg := (ipc, rs, m, istk) in
+  let r1 := stuck_free 100 p icfg in
+  match r1 with
+  | TaintTracking.ETerm st os => checker true
+  | TaintTracking.EOutOfFuel st os => checker tt
+  | TaintTracking.EError st os => checker false
+  end)))).
+
+(* +++ Passed 10000 tests (6403 discards) *)
 
 (* check 2: no observation -> no leaked *)
 
@@ -2201,7 +2205,7 @@ Fixpoint gen_spec_steps_sized (f : nat) (p:prog) (sc:spec_cfg) (pst: list nat) :
   | S f' =>
       let '(c, _, _) := sc in
       let '(pc, _, _, _) := c in
-      if (TaintTracking.final_cfg p pc)
+      if (TaintTracking.final_cfg p c)
       then ret (Some (sc, [], []))
       else ost <- gen_spec_step p sc pst;;
            match ost with
