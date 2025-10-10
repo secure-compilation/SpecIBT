@@ -335,3 +335,13 @@ Proof.
   - rewrite Nat.eqb_neq in Heb. right. red. intros. apply Heb.
     apply H.
 Qed.
+
+Definition eitherOf {A} (a : G A) (b : G A) : G A := freq [(1, a); (1, b)].
+
+(* [TestingStaticIFC.v]: The ;; notation didn't work with oneOf, probably related to monadic
+   bind also using ;;. So I redefined the notation using ;;;. *)
+Notation " 'oneOf' ( x ;;; l ) " :=
+  (oneOf_ x (cons x l))  (at level 1, no associativity) : qc_scope.
+
+Notation " 'oneOf' ( x ;;; y ;;; l ) " :=
+  (oneOf_ x (cons x (cons y l)))  (at level 1, no associativity) : qc_scope.

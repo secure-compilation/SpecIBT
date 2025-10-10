@@ -18,7 +18,7 @@ Require Import ExtLib.Structures.Traversable.
 Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
 Export MonadNotation. Open Scope monad_scope.
-From SECF Require Import PSlib.
+From SECF Require Import TestingLib.
 From Coq Require Import String.
 
 (* The first property I test is the one proposed by Catalin, which shows how sane our
