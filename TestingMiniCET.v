@@ -385,6 +385,9 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
   match i with
   | <{{branch e to l}}> =>
       is_false ct;;
+      if seq.nilp ds then
+        trace "Branch: Directions are empty!" None
+      else
       d <- hd_error ds;;
       b' <- is_dbranch d;;
       v <- eval r e;;
@@ -395,6 +398,9 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       ret ((((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
   | <{{call e}}> =>
       is_false ct;;
+      if seq.nilp ds then
+        trace "Call: Directions are empty!" None
+      else
       d <- hd_error ds;;
       pc' <- is_dcall d;;
       v <- eval r e;;
@@ -1059,6 +1065,19 @@ Derive Show for ty.
 
 Definition rctx := total_map ty.
 Definition tmem := list ty.
+
+#[export] Instance genTMem `{Gen ty} : Gen tmem :=
+  {arbitrary := tm <- arbitrary;;
+                ret (TNum :: tm) }.
+
+QuickChick (forAll arbitrary (fun (c : tmem) =>
+            match c with
+            | [] => false
+            | TPtr :: _ => false
+            | TNum :: _ => true
+            end
+           )).
+
 
 Definition ty_eqb (x y: ty) := match x, y with
                                | TNum, TNum | TPtr, TPtr => true
@@ -2141,10 +2160,15 @@ Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G sc_output_st
                | Some (sc', dir', os') => SRStep os' [d] sc'
                | None => SRError [] [] sc
                end)
-      | IRet => let '(c, _, _) := sc in
-               if TaintTracking.final_cfg p c
-               then ret (SRTerm [] [] sc)
-               else ret (SRError [] [] sc)
+      | IRet =>
+          ret (match spec_step p sc [] with
+               | Some (sc', dir', os') => SRStep os' [ ] sc'
+               | None =>
+                   let '(c, _, _) := sc in
+                   if TaintTracking.final_cfg p c
+                   then SRTerm [] [] sc
+                   else SRError [] [] sc
+               end)
       | _ =>
           ret (match spec_step p sc [] with
                | Some (sc', dir', os') => SRStep os' [ ] sc'
@@ -2168,7 +2192,8 @@ Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) 
       | SRStep os1 ds1 sc1 =>
           _gen_spec_steps_sized f' p pst sc1 (os ++ os1) (ds ++ ds1)
       | SRError os1 ds1 sc1 =>
-          ret (SEError sc1 (os ++ os1) (ds ++ ds1))
+          trace ("ERROR STATE: " ++ show sc1)%string
+            (ret (SEError sc1 (os ++ os1) (ds ++ ds1)))
       | SRTerm  os1 ds1 sc1 =>
           ret (SETerm sc1 (os ++ os1) (ds ++ ds1))
       end
@@ -2185,6 +2210,61 @@ Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg)
       | SEOutOfFuel _ _ ds => ("oof!!"%string ++ show ds)%string
       end
   }.
+
+(* safty preservation broken *)
+
+(*
+   Before USLH
+
+   m[0] = 5
+   m[1] = &1
+
+   block 0
+     X1 <- load[1]
+     call &2
+     ret
+
+   block 1
+     X1 <- load[1]
+     X2 <- &2
+     res := (X1 = X2)
+     ret
+
+   block 2
+     ret
+
+   After USLH
+
+   m[0] = 5
+   m[1] = &1
+
+   block 0
+     ctarget
+     msf := (callee = &0) ? msf : 1
+     X1 <- load[(msf = 1) ? 0 : 1]
+     callee := (msf = 1) ? &0 : &2
+     call (msf = 1) ? &0 : &2
+     ret
+
+   block 1
+     ctarget
+     msf := (callee = &1) ? msf : 1
+     X1 <- load[(msf = 1) ? 0 : 1]
+     X2 <- &2
+     res := (X1 = X2)
+     ret
+
+   block 2
+     ctarget
+     msf := (callee = &2) ? msf : 1
+     ret
+
+   trace:
+   1. block 0: mis-speculation occurs at the call in block 0
+   2. block 1: msf -> 1
+   3. block 1: msf is 1, so load 0-th value from memory
+   4. block 1: res := (5 = &2) occurs UB.
+ *)
 
 QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
