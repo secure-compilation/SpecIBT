@@ -127,15 +127,17 @@ Definition gen_pub_vars : G pub_vars :=
 
 Inductive val : Type :=
   | N (n:nat)
-  | FP (l:nat). (* <- NEW: function pointer to procedure at label [l] *)
+  | FP (l:nat) (* <- NEW: function pointer to procedure at label [l] *)
+  | UV. (* undefined value *)
 
-Derive (Arbitrary, Shrink) for val.
+(* TODO: Stop deriving this, define one without UV *)
 
 #[export] Instance showVal : Show val :=
   {show :=fun v => 
       match v with
       | N n => show n
       | FP l => ("&" ++ show l)%string
+      | UV => "UV"%string
       end
   }.
 
@@ -143,6 +145,7 @@ Definition val_eqb (v1 v2: val) : bool :=
   match v1, v2 with
   | N n1, N n2 => Nat.eqb n1 n2
   | FP l1, FP l2 => Nat.eqb l1 l2
+  | UV, UV => true (* don't use this in the semantics *)
   | _, _ => false
   end.
 
@@ -155,6 +158,7 @@ Proof.
   - destruct v1, v2; simpl in *; try discriminate.
     + rewrite Nat.eqb_eq in H. auto.
     + rewrite Nat.eqb_eq in H. auto.
+    + reflexivity.
   - subst. destruct v2; simpl; auto; eapply Nat.eqb_refl.
 Qed.
 
@@ -169,6 +173,7 @@ Proof.
       apply H. auto.
     + rewrite Nat.eqb_neq. red. intros. subst.
       apply H. auto.
+    + contradiction.
 Qed.
 
 Instance EqDec_val : EqDec val eq.

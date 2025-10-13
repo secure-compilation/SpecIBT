@@ -149,45 +149,41 @@ Open Scope com_scope.
 Definition to_nat (v:val) : option nat :=
   match v with
   | N n => Some n
-  | FP _ => None
+  | _ => None
   end.
 
 Definition to_fp (v:val) : option nat :=
   match v with
   | FP l => Some l
-  | N _ => None
+  | _ => None
   end.
 
-Definition eval_binop (o:binop) (v1 v2 : val) : option val :=
+Definition eval_binop (o:binop) (v1 v2 : val) : val :=
   match v1, v2 with
-  | N n1, N n2 => Some (N (eval_binop_nat o n1 n2))
+  | N n1, N n2 => N (eval_binop_nat o n1 n2)
   | FP l1, FP l2 =>
       match o with
-      | BinEq => Some (N (bool_to_nat (l1 =? l2)))
-      | _ => None (* Function pointers can only be tested for equality *)
+      | BinEq => N (bool_to_nat (l1 =? l2))
+      | _ => UV (* Function pointers can only be tested for equality *)
       end
-  | _, _ => None (* Type error *)
+  | _, _ => UV (* Type error; treating UV as a 3rd type; reasonable?
+                  - alternative: make && and || short-circuiting *)
   end.
 
 Definition reg := total_map val.
 
-Fixpoint eval (st : reg) (e: exp) : option val :=
+Fixpoint eval (st : reg) (e: exp) : val :=
   match e with
-  | ANum n => ret (N n)
-  | AId x => ret (apply st x)
-  | ABin b e1 e2 =>
-      v1 <- eval st e1;;
-      v2 <- eval st e2;;
-      eval_binop b v1 v2
+  | ANum n => N n
+  | AId x => apply st x
+  | ABin b e1 e2 => eval_binop b (eval st e1) (eval st e2)
   | <{b ? e1 : e2}> =>
-      v1 <- eval st b;;
-      n1 <- to_nat v1;; (* Can't branch on function pointers *)
-      if not_zero n1 then eval st e1 else eval st e2
-  | <{&l}> => ret (FP l)
+      match to_nat (eval st b) with (* Can't branch on function pointers *)
+      | Some n1 => if not_zero n1 then eval st e1 else eval st e2
+      | None => UV
+      end
+  | <{&l}> => FP l
   end.
-
-(* PROPERTY: forAll e st, is_some (eval st e) ==> True
-   will show we need custom generators *)
 
 Inductive inst : Type :=
   | ISkip
@@ -268,8 +264,7 @@ Inductive observation : Type :=
   | OBranch (b:bool)
   | OLoad (n:nat)
   | OStore (n:nat)
-  | OCall (l: nat). (* we allow speculative calls to arbitrary values;
-                      see Spectre 1.1 discussion in MiniCET.md *)
+  | OCall (l: nat).
 
 Definition obs := list observation.
 
@@ -304,28 +299,22 @@ Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
   | <{{skip}}> | <{{ctarget}}> =>
       ret ((pc+1, r, m, sk), [])
   | <{{x:=e}}> =>
-      v <- eval r e;;
-      ret ((pc+1, (x !-> v; r), m, sk), [])
+      ret ((pc+1, (x !-> eval r e; r), m, sk), [])
   | <{{branch e to l}}> =>
-      v <- eval r e;;
-      n <- to_nat v;;
+      n <- to_nat (eval r e);;
       let b := not_zero n in
       ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
   | <{{jump l}}> =>
       ret (((l,0), r, m, sk), [])
   | <{{x<-load[e]}}> =>
-      v <- eval r e;;
-      n <- to_nat v;;
+      n <- to_nat (eval r e);;
       v' <- nth_error m n;;
       ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])      
   | <{{store[e]<-e'}}> =>
-      v <- eval r e;;
-      n <- to_nat v;;
-      v' <- eval r e';;
-      ret ((pc+1, r, upd n m v', sk), [OStore n])
+      n <- to_nat (eval r e);;
+      ret ((pc+1, r, upd n m (eval r e'), sk), [OStore n])
   | <{{call e}}> =>
-      v <- eval r e;;
-      l <- to_fp v;;
+      l <- to_fp (eval r e);;
       ret (((l,0), r, m, (pc+1)::sk), [OCall l])
   | <{{ret}}> =>
       pc' <- hd_error sk;;
@@ -390,8 +379,7 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       else
       d <- hd_error ds;;
       b' <- is_dbranch d;;
-      v <- eval r e;;
-      n <- to_nat v;;
+      n <- to_nat (eval r e);;
       let b := not_zero n in
       let ms' := ms || negb (Bool.eqb b b') in 
       let pc' := if b' then (l, 0) else (pc+1) in
@@ -403,8 +391,7 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       else
       d <- hd_error ds;;
       pc' <- is_dcall d;;
-      v <- eval r e;;
-      l <- to_fp v;;
+      l <- to_fp (eval r e);;
       let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
       ret ((((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
   | <{{ctarget}}> =>
@@ -713,10 +700,19 @@ Derive (Arbitrary, Shrink) for exp.
   generators are: *)
 (* "forAll e st, is_some (eval st e) ==> True" *)
 
+Definition is_defined (v:val) : bool :=
+  match v with
+  | UV => false
+  | _ => true
+  end.
+
+(* PROPERTY: forAll e st, is_defined (eval st e) ==> True
+   will show we need custom generators *)
+
 (* Tests with generators derived by QuickChick are almost fully discarded: *)
 QuickChick (forAll arbitrary (fun (state : reg) =>
             forAll arbitrary (fun (exp : exp) =>
-            implication (is_some (eval state exp)) true))).
+            implication (is_defined (eval state exp)) true))).
 (* "*** Gave up! Passed only 4988 tests" *)
 
 (* Above, we test if our evaluation succeeds, i.e. "eval" function returns "Some" value.
@@ -735,8 +731,8 @@ QuickChick (forAll arbitrary (fun (state : reg) =>
 
 Definition is_not_ptr (state : reg) (var : string) :=
   match apply state var with
-  | N _ => true
   | FP _ => false
+  | _ => true (* don't use this in the semantics *)
   end.
 
 (* This generator creates leaves as numbers and identifiers, which evaluate to numbers  *)
@@ -797,8 +793,8 @@ Sample (P <- arbitrary;;
 
 QuickChick (forAll arbitrary (fun (state : reg) =>
             forAll (gen_exp1 4 state) (fun (exp : exp) =>
-            implication (is_some (eval state exp)) true))).
-(* "+++ Passed 10000 tests (382 discards)" *)
+            implication (is_defined (eval state exp)) true))).
+(* "+++ Passed 10000 tests (382 discards)" -- TODO: this has a lot more discards after adding UV *)
 
 (* Better, but we still get discards. These cases are when the equality is generated between pointer
   and non-pointer. The following generator accounts for that: *)
@@ -1170,7 +1166,7 @@ Definition gen_wt_reg (c: rctx) (pst: list nat) : G reg :=
 QuickChick (forAll arbitrary (fun (c : rctx) =>
             forAll (gen_wt_reg c [3; 3; 1; 1]) (fun (state: reg) =>
             forAll (gen_exp_wt 4 c [3; 3; 1; 1]) (fun (exp : exp) =>
-            implication (is_some (eval state exp)) true)))).
+            implication (is_defined (eval state exp)) true)))).
 
 Definition gen_asgn_wt (t: ty) (c: rctx) (pst: list nat) : G inst :=
   let tlst := filter (fun '(_, t') => ty_eqb t t') (snd c) in
@@ -1717,12 +1713,10 @@ Definition taint_step (i: inst) (c: cfg) (tc: tcfg) (tobs: taint) (tctx: taint_c
 
 Definition get_ctx (rs: reg) (i: inst) : option taint_ctx  :=
   match i with
-  | <{ x <- load[e] }> =>  v <- eval rs e;;
-                         n <- to_nat v;;
-                         Some (CMem n)
-  | <{ store[e] <- e' }> => v <- (eval rs e);;
-                          n <- to_nat v;;
+  | <{ x <- load[e] }> => n <- to_nat (eval rs e);;
                           Some (CMem n)
+  | <{ store[e] <- e' }> => n <- to_nat (eval rs e);;
+                            Some (CMem n)
   | _ => Some CDefault
   end.
 
@@ -1891,6 +1885,7 @@ Fixpoint _gen_pub_mem_equiv_same_ty (P : list label) (m: list val) : G (list val
   let f := fun v => match v with
                  | N _ => n <- arbitrary;; ret (N n)
                  | FP _ => l <- arbitrary;; ret (FP l)
+                 | UV => ret UV (* shouldn't happen *)
                  end in
   match P, m with
   | [], [] => ret []
@@ -2052,6 +2047,7 @@ Definition gen_pub_equiv_same_ty (P : total_map label) (s: total_map val) : G (t
   let f := fun v => match v with
                  | N _ => n <- arbitrary;; ret (N n)
                  | FP _ => l <- arbitrary;; ret (FP l)
+                 | UV => ret UV (* shouldn't happen *)
                  end in
   let '(d, m) := s in
   new_m <- List.fold_left (fun (acc : G (Map val)) (c : string * val) => let '(k, v) := c in
@@ -2192,7 +2188,7 @@ Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) 
       | SRStep os1 ds1 sc1 =>
           _gen_spec_steps_sized f' p pst sc1 (os ++ os1) (ds ++ ds1)
       | SRError os1 ds1 sc1 =>
-          trace ("ERROR STATE: " ++ show sc1)%string
+          (* trace ("ERROR STATE: " ++ show sc1)%string *)
             (ret (SEError sc1 (os ++ os1) (ds ++ ds1)))
       | SRTerm  os1 ds1 sc1 =>
           ret (SETerm sc1 (os ++ os1) (ds ++ ds1))
@@ -2408,7 +2404,9 @@ QuickChick (
 
 
 QuickChick (
-  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  (* TODO: should make sure shrink indeed satisfies invariants of generator;
+           or define a better shrinker *)
+  forAllShrink (gen_prog_wt_with_basic_blk 3 8) shrink (fun '(c, tm, pst, p) =>
   forAll (gen_wt_reg c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
@@ -2420,14 +2418,15 @@ QuickChick (
       let icfg' := (ipc, rs', m, istk) in
       let iscfg := (icfg', true, false) in
       let h_pst := pst_calc harden in
-      forAll (gen_spec_steps_sized 100 harden iscfg h_pst) (fun ods =>
-      collect ods 
+      forAll (gen_spec_steps_sized 100 harden h_pst iscfg) (fun ods =>
+      (* collect ods  *)
       (match ods with
-      | Some (_, ds, _) => (checker true)
-      | _ => trace "dirgen fail!!!" (checker false)
+      | SETerm _ _ _ds => (checker true)
+      | SEOutOfFuel _ _ _ => (checker tt)
+      | _ => (* trace "dirgen fail!!!" *) (checker false)
       end))
   | TaintTracking.EOutOfFuel st os => checker tt
-  | TaintTracking.EError st os => checker false
+  | TaintTracking.EError st os => checker tt
   end)))).
 
 
