@@ -2211,7 +2211,7 @@ Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg)
       end
   }.
 
-(* safty preservation broken *)
+  (* safety preservation broken *)
 
 (*
    Before USLH
