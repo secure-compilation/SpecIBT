@@ -306,26 +306,6 @@ Proof.
   + left. repeat eexists; [constructor|eassumption].
 Qed.
 
-(* Check multi_spec_combined_executions.
-
-multi_spec_combined_executions
-     : forall (p : prog) (c : com) (st : state) (ast : astate) 
-         (cm : com) (stm : state) (astm : astate) 
-         (osm : obs) (ct : com) (stt : state) (astt : astate) 
-         (ost : obs) (ds ds' : dirs) (b b' b'' : bool) 
-         (n1 n2 : nat),
-       p |- <(( c, st, ast, b ))> -->*_ ds ^^ osm ^^ n1 <(( cm, stm, astm, b'
-       ))> ->
-       p |- <(( cm, stm, astm, b' ))> -->*_ ds' ^^ ost ^^ n2 <(( ct, stt,
-       astt, b'' ))> ->
-       p |- <(( c, st, ast, b ))> -->*_ ds ++ ds' ^^ 
-   osm ++ ost ^^ n1 + n2 <(( ct, stt, astt, b'' ))> *)
-Definition x25 := 3.
-Definition x26 := 4.
-Definition x27 := 5.
-Definition sum_five := x25 + x26 + 1 + x27 + 1.
-Print sum_five.
-
 Lemma multi_spec_seq_assoc p c1 c2 c3 st ast b c' st' ast' b' ds os n :
   p |- <(((c1; c2); c3, st, ast, b))> -->*_ds^^os^^n <((c', st', ast', b'))> ->
   exists c'', 
@@ -340,12 +320,7 @@ Proof.
       rewrite <- add_assoc with (n:=(x15 + (1 + x16))) (m:=x7) (p:=1).
       rewrite (add_comm x7 1).
       rewrite add_assoc with (n:=(x15 + (1 + x16))) (m:=1) (p:=x7).
-      rewrite add_assoc with (n:=x15) (m:=1) (p:=x16).
-      (* add_shuffle0: forall n m p : nat, n + m + p = n + p + m
-
-         add_assoc: forall n m p : nat, n + (m + p) = n + m + p *)
-      (* replace ((x11 ++ x12) ++ x3) with x11 ++ (x12 ++ x3)  ^^ (x13 ++ x14) ++ x5 *)
-      rewrite <- !app_assoc.
+      rewrite add_assoc with (n:=x15) (m:=1) (p:=x16). rewrite <- !app_assoc.
       replace ((((x15 + 1) + x16) + 1) + x7) with (x15 + ((1 + x16) + (1 + x7))) by lia. 
       eapply multi_spec_combined_executions.
       * apply multi_spec_add_snd_com. eapply H6.
@@ -373,6 +348,7 @@ Proof.
     + destruct H as (c'&->&H). exists <{{ c'; c2; c3 }}>. split; [|discriminate].
       apply multi_spec_add_snd_com, H.
 Qed.
+
 
 (** * Definition of Relative Secure *)
 
@@ -489,6 +465,51 @@ Definition ultimate_slh_prog_gen (p:prog) (start: nat) :=
 
 (* this is the whole-program version we had before *)
 Definition ultimate_slh_prog (p: prog) := ultimate_slh_prog_gen p 0.
+
+(* Helpers for 2nd seq case in bcc lemma *)
+Definition not_seq (c : com) := ~ (exists c1 c2, c = <{{ c1; c2 }}>).
+
+Lemma first_cmd_sequence_or_not : forall p c1 c2 st ast b c' st' ast' b' ds os n,
+  (ultimate_slh_prog p) |- <(( c1; c2, st, ast, b ))> -->*_ds^^os^^n <(( c', st', ast', b' ))>  -> 
+  (not_seq c1) \/ (exists c11 c12, c1 = <{{ c11; c12 }}>).
+Proof.
+  intros. destruct c1; [| |right; exists c1_1; exists c1_2; auto| | | | |];
+  left; unfold not_seq; unfold not; intros; do 2 destruct H0; discriminate.
+Qed.
+
+Lemma not_not : forall c, ~ not_seq c <-> exists c1 c2, c = <{{ c1; c2 }}>.
+Proof.
+  intros. split; intros.
+  - induction c; try (unfold not, not_seq, not in H; destruct H; intros; do 2 destruct H; discriminate). 
+    exists c1. exists c2. auto.
+  - unfold not. intros. do 2 destruct H; subst. destruct H0. exists x. exists x0. auto.
+Qed.
+ 
+(* this isn't stated correctly yet... *)
+Lemma canonicalize_seq_fst_cmd_seq_free : forall p c1 c2 st ast b c' st' ast' b' ds os n,
+  (ultimate_slh_prog p) |- <(( c1; c2, st, ast, b ))> -->*_ds^^os^^n <(( c', st', ast', b' ))>  ->
+      (*~ (not_seq c1) ->*)
+  not_seq c1 \/ exists c11 c12, c1 = <{{ c11; c12 }}> /\ not_seq c11 /\ 
+    exists c'0, (ultimate_slh_prog p) |- <(( c1, st, ast, b ))> -->*_ds^^os^^n <(( c'0, st', ast', b' ))>.
+Proof.
+  intros. destruct c1; try (left; unfold not_seq, not; intros; do 2 destruct H0; discriminate).
+  right. exists c1_1. exists c1_2. split; auto. apply multi_spec_seq_assoc in H.  split; cycle 1.
+  - Admitted.
+
+(*(ultimate_slh_prog p) |- <(( c0; (c1; c2), st, ast, b ))> -->*_ds^^os^^n <(( c', st', ast', b' ))> 
+      /\ not_seq c0.
+Proof.
+  intros. induction c1; try (rewrite not_not in H0; do 2 destruct H0; discriminate).
+  rewrite not_not in H0. 
+ *)
+
+Print com_size.
+Compute (<{{(ultimate_slh (<{{call 1}}>)); (ultimate_slh (<{{Y:=5}}>))}}>).
+Compute (com_size (<{{(ultimate_slh (<{{call 1}}>)); (ultimate_slh (<{{Y:=5}}>))}}>)).
+Compute (map com_size (ultimate_slh_prog [<{{(call 1); Y:=5}}>])).
+Compute (ultimate_slh_prog [<{{if true then call 1 else call 2 end}}>;<{{X:=2}}>;<{{X:=3}}>]).
+Compute (map com_size (ultimate_slh_prog [<{{if true then call 1 else call 2 end}}>;<{{X:=2}}>;<{{X:=3}}>])).
+
 
 (* Compute (ultimate_slh_prog [<{{(call 1); Y:=5}}>]).
  ==> 
@@ -1347,119 +1368,6 @@ Ltac clean_ds_os dir := simpl; rewrite <- app_nil_r; rewrite <- app_nil_r with (
 Ltac measure n1 n2 := rewrite <- add_assoc; rewrite (add_comm n2 1); rewrite add_assoc;
         rewrite (add_comm n1 1); apply le_add_r.
 
-(*
-Check strong_induction_le. ==>
-
-  strong_induction_le
-     : forall A : nat -> Prop,
-       A 0 ->
-       (forall n : nat, (forall m : nat, m <= n -> A m) -> A (S n)) ->
-       forall n : nat, A n
-*)
-
-(*
-Check induction. ==>
-
-  induction
-     : forall A : nat -> Prop,
-       Morphisms.Proper (Logic.eq ==> iff) A ->
-       A 0 -> (forall n : nat, A n -> A (S n)) -> forall n : nat, A n
-*)
-
-(* The difference is the assumption in the inductive step:
-
-  (forall n : nat, A n -> A (S n)) 
-   (if with a proof that A holds for n you can obtain a proof that A holds for 
-    the successor of n, then you have a proof that A holds for all n)
-
-   vs 
-
-  (forall n : nat, (forall m : nat, m <= n -> A m) -> A (S n))
-   (if with a proof that A holds for all m less than or equal to n, you can obtain 
-    a proof that A holds for the successor of n, then you can obtain a proof that 
-    A holds for all n)
-
-  IH at the beginning of the program:
-
-   IH :
-  forall m : nat,
-  m <= n -> 
-  forall (c : com) (ds : dirs) (st : string -> nat) 
-    (ast : astate) (b b' : bool) (c' : com) (st' : state) 
-    (ast' : astate) (os : obs),
-  nonempty_arrs ast ->
-  unused_prog "b" p ->
-  unused "b" c ->
-  unused_prog "callee" p ->
-  unused "callee" c ->
-  st "b" = (if b then 1 else 0) ->
-  ultimate_slh_prog p |- <(( (ultimate_slh c), st, ast, b ))> -->*_ ds ^^ os
-  ^^ m <(( c', st', ast', b' ))> ->
-  exists c'' : com,
-    p |- <(( c, st, ast, b ))> -->i*_ ds ^^ os <(( c'',
-    "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b' ))> /\
-    (c' = <{{ skip }}> ->
-     c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0))
-
-   Also:
-
-   H1 :
-  ultimate_slh_prog p |- <(( (ultimate_slh c), st, ast, b ))> -->_ ds1 ^^ os1
-                         <(( c'0, st'0, ast'0, b'0 ))>
-   H8 :
-  ultimate_slh_prog p |- <(( c'0, st'0, ast'0, b'0 ))> -->*_ ds2 ^^ os2 ^^ n 
-                         <(( c', st', ast', b' ))>
-
-   ========================= (1 / 1)
-
-    exists c'' : com,
-    p |- <(( c, st, ast, b ))> -->i*_ ds1 ++ ds2 ^^ os1 ++ os2 
-         <(( c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))> /\
-    (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0))
-
-   So we have a single step of length 1 from which our protected command proceeds, 
-   and from there a multistep execution of length n. 
-
-*)
-
-(* Check multi_spec_seq. ==>
-
-              multi_spec_seq
-                  : forall (p : prog) (c1 c2 cm : com) (st : state) 
-                      (ast : astate) (b : bool) (stm : state) (astm : astate) 
-                      (bm : bool) (ds : dirs) (os : obs) (n : nat),
-                    p |- <(( c1; c2, st, ast, b ))> -->*_ ds ^^ os ^^ n <(( cm, stm, astm, bm ))> ->
-                    
-                      (exists
-                        (st' : state) (ast' : astate) (b' : bool) 
-                      (ds1 ds2 : list direction) (os1 os2 : list observation) 
-                      (n1 n2 : nat),
-                        os = os1 ++ os2 /\
-                        ds = ds1 ++ ds2 /\
-                        n = n1 + n2 + 1 /\
-                        p |- <(( c1, st, ast, b ))> -->*_ ds1 ^^ os1 ^^ n1 <(( skip, st',
-                        ast', b' ))> /\
-                        p |- <(( c2, st', ast', b' ))> -->*_ ds2 ^^ os2 ^^ n2 <(( cm, stm,
-                        astm, bm ))>) 
-
-                      \/
-
-                      (exists c' : com,
-                        cm = <{{ c'; c2 }}> /\
-                        p |- <(( c1, st, ast, b ))> -->*_ ds ^^ os ^^ n <(( c', stm, astm, bm ))>) 
-
-          multi_spec_trans
-                : forall (p : prog) (c : com) (st : state) (ast : astate) 
-                    (b : bool) (c' : com) (st' : state) (ast' : astate) 
-                    (b' : bool) (c'' : com) (st'' : state) (ast'' : astate) 
-                    (b'' : bool) (ds1 ds2 : dirs) (os1 os2 : obs) 
-                    (n : nat),
-                  p |- <(( c, st, ast, b ))> -->_ ds1 ^^ os1 <(( c', st', ast', b' ))> ->
-                  p |- <(( c', st', ast', b' ))> -->*_ ds2 ^^ os2 ^^ n <(( c'', st'', ast'', b'' ))> ->
-                  p |- <(( c, st, ast, b ))> -->*_ ds1 ++ ds2 ^^ os1 ++ os2 ^^ S n <(( c'', st'', ast'', b'' ))>
-
-        *)
-
 Lemma ultimate_slh_bcc_generalized (p:prog) : forall n c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused_prog "b" p ->
@@ -1651,7 +1559,7 @@ Proof.
         rewrite t_update_eq in H3. rewrite t_update_permute in H3; [|discriminate].
         setoid_rewrite t_update_permute in H3 at 2; [|discriminate]. apply H3.
       * discriminate.
-    + do 2 destruct H. subst.
+    + do 2 destruct H. subst. 
       eapply multi_spec_trans in H12; [|apply H0].
       eapply IH in H12; eauto; try tauto; try (inversion unused_c); 
       try (inversion unused_c_callee); auto; cycle 1.
