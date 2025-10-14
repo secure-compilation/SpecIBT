@@ -367,6 +367,21 @@ Definition if_some {a:Type} (o:option a) (f:a->bool) : bool :=
   | None => true
   end.
 
+(* ret with empty stackframe *)
+Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
+  let '(c, ct, ms) := sc in
+  let '(pc, rs, m, stk) := c in
+  match fetch p pc with
+  | Some i => match i with
+             | IRet => if seq.nilp stk then true else false (* Normal Termination *)
+             | ICTarget => if ct
+                          then false (* Call target block: Unreachable *)
+                          else true (* TODO: Do we need to distinguish fault and normal termination? *)
+             | _ => false
+             end
+  | None => false
+  end.
+
 Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs * obs) :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
@@ -794,7 +809,7 @@ Sample (P <- arbitrary;;
 QuickChick (forAll arbitrary (fun (state : reg) =>
             forAll (gen_exp1 4 state) (fun (exp : exp) =>
             implication (is_defined (eval state exp)) true))).
-(* "+++ Passed 10000 tests (382 discards)" -- TODO: this has a lot more discards after adding UV *)
+(* "+++ Passed 10000 tests (382 discards)" -- FIXED *)
 
 (* Better, but we still get discards. These cases are when the equality is generated between pointer
   and non-pointer. The following generator accounts for that: *)
@@ -2155,12 +2170,11 @@ Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G sc_output_st
                | Some (sc', dir', os') => SRStep os' [d] sc'
                | None => SRError [] [] sc
                end)
-      | IRet =>
+      | IRet | ICTarget =>
           ret (match spec_step p sc [] with
                | Some (sc', dir', os') => SRStep os' [ ] sc'
                | None =>
-                   let '(c, _, _) := sc in
-                   if TaintTracking.final_cfg p c
+                   if final_spec_cfg p sc
                    then SRTerm [] [] sc
                    else SRError [] [] sc
                end)
@@ -2401,6 +2415,30 @@ QuickChick (
 (*        | _ => None *)
 (*        end). *)
 
+QuickChick (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_wt_reg c pst) (fun rs =>
+  forAll (gen_wt_mem tm pst) (fun m =>
+  let icfg := (ipc, rs, m, istk) in
+  let r1 := stuck_free 100 p icfg in
+  match r1 with
+  | TaintTracking.ETerm st os =>
+      let harden := uslh_prog p in
+      let rs' := spec_rs rs in
+      let icfg' := (ipc, rs', m, istk) in
+      let iscfg := (icfg', true, false) in
+      let h_pst := pst_calc harden in
+      forAll (gen_spec_steps_sized 100 harden h_pst iscfg) (fun ods =>
+      (* collect ods  *)
+      (match ods with
+      | SETerm _ _ _ds => (checker true)
+      | SEOutOfFuel _ _ _ => (checker tt)
+      | _ => trace ("ERROR INITSTATE: " ++ show iscfg) (checker false)
+      end))
+  | TaintTracking.EOutOfFuel st os => checker tt
+  | TaintTracking.EError st os => checker tt
+  end)))).
+
 
 QuickChick (
   (* TODO: should make sure shrink indeed satisfies invariants of generator;
@@ -2422,12 +2460,36 @@ QuickChick (
       (match ods with
       | SETerm _ _ _ds => (checker true)
       | SEOutOfFuel _ _ _ => (checker tt)
-      | _ => (* trace "dirgen fail!!!" *) (checker false)
+      | _ => trace ("ERROR INITSTATE: " ++ show iscfg) (checker false)
       end))
   | TaintTracking.EOutOfFuel st os => checker tt
   | TaintTracking.EError st os => checker tt
   end)))).
 
+Definition CE : prog := [([IBranch 1 4], false); ([], false); ([], false); ([], false); ([IRet], false)].
+Definition PC : nat * nat := (0, 0).
+Definition RS: reg := (FP 0, [(callee, FP 0); (msf, N 0)]).
+Definition Mem: mem := [].
+Definition STK: list cptr := [].
+Definition CT := true.
+Definition MSF := false.
+
+Definition ccfg : cfg := (PC, RS, Mem, STK).
+Definition scfg : spec_cfg := (ccfg, CT, MSF).
+
+Sample (gen_spec_steps_sized 100 CE [] scfg).
+
+MSF: false
+
+PROG: [([branch 1 to 4], false); ([], false); ([], false); ([], false); ([ret], false)]
+
+       (((((, ), ), []), true), false)
+
+ERROR INITSTATE: ((((((0, 0), (&0, [("callee", &0); ("msf", 0)])), []), []), true), false)
+                   ((((TPtr, []), []), []),
+                     )
+(&0, [])
+[]
 
 Definition gen_the_dirs_only : G (option dirs) :=
   '(c, tm, pst, p) <- gen_prog_wt_with_basic_blk 3 5;;
