@@ -466,44 +466,46 @@ Definition ultimate_slh_prog_gen (p:prog) (start: nat) :=
 (* this is the whole-program version we had before *)
 Definition ultimate_slh_prog (p: prog) := ultimate_slh_prog_gen p 0.
 
-(* Helpers for 2nd seq case in bcc lemma *)
-Definition not_seq (c : com) := ~ (exists c1 c2, c = <{{ c1; c2 }}>).
+(* 
 
-Lemma first_cmd_sequence_or_not : forall p c1 c2 st ast b c' st' ast' b' ds os n,
-  (ultimate_slh_prog p) |- <(( c1; c2, st, ast, b ))> -->*_ds^^os^^n <(( c', st', ast', b' ))>  -> 
-  (not_seq c1) \/ (exists c11 c12, c1 = <{{ c11; c12 }}>).
-Proof.
-  intros. destruct c1; [| |right; exists c1_1; exists c1_2; auto| | | | |];
-  left; unfold not_seq; unfold not; intros; do 2 destruct H0; discriminate.
-Qed.
+I think the 'canonicalize' operation for sequences is about syntax, so it shouldn't have much to do with step 
+or multi-step (like canonicalize_seq_fst_cmd_seq_free).
+At a high level, what I'm saying is that for any command c, there should exist a first command c_hd that's sequence-free. 
+(While and if might be a bit different though - we need to think about these commands more carefully.)
 
-Lemma not_not : forall c, ~ not_seq c <-> exists c1 c2, c = <{{ c1; c2 }}>.
-Proof.
-  intros. split; intros.
-  - induction c; try (unfold not, not_seq, not in H; destruct H; intros; do 2 destruct H; discriminate). 
-    exists c1. exists c2. auto.
-  - unfold not. intros. do 2 destruct H; subst. destruct H0. exists x. exists x0. auto.
-Qed.
- 
-(* this isn't stated correctly yet... *)
-Lemma canonicalize_seq_fst_cmd_seq_free : forall p c1 c2 st ast b c' st' ast' b' ds os n,
-  (ultimate_slh_prog p) |- <(( c1; c2, st, ast, b ))> -->*_ds^^os^^n <(( c', st', ast', b' ))>  ->
-      (*~ (not_seq c1) ->*)
-  not_seq c1 \/ exists c11 c12, c1 = <{{ c11; c12 }}> /\ not_seq c11 /\ 
-    exists c'0, (ultimate_slh_prog p) |- <(( c1, st, ast, b ))> -->*_ds^^os^^n <(( c'0, st', ast', b' ))>.
-Proof.
-  intros. destruct c1; try (left; unfold not_seq, not; intros; do 2 destruct H0; discriminate).
-  right. exists c1_1. exists c1_2. split; auto. apply multi_spec_seq_assoc in H.  split; cycle 1.
-  - Admitted.
+In other words, if any command c is c1; c2, then there should exist some seq-free first command c_hd contained in c1 
+(we can just apply this to c1).
 
-(*(ultimate_slh_prog p) |- <(( c0; (c1; c2), st, ast, b ))> -->*_ds^^os^^n <(( c', st', ast', b' ))> 
-      /\ not_seq c0.
-Proof.
-  intros. induction c1; try (rewrite not_not in H0; do 2 destruct H0; discriminate).
-  rewrite not_not in H0. 
- *)
+*)
 
-Print com_size.
+(* Jonathan suggested this idea from his work comparing rollback and always-mispredict semantics
+   I haven't tried incorporating it yet. *)
+
+Inductive hd_ctxt : Type :=
+  | CHole
+  | CSeq (c1 : hd_ctxt) (c2 : com).
+
+Fixpoint subst_hd ctxt c : com := match ctxt with 
+                                  | CHole => c
+                                  | CSeq ctxt' c2 => Seq (subst_hd ctxt' c) c2
+                                  end.
+
+Notation "C '<[' c ']>'" := (subst_hd C c).
+
+(* I tried again but wound up with seemingly unprovable cases *)
+
+Definition is_seq (c : com) := exists (c1 c2 : com), c = <{{ c1; c2 }}>.
+
+Lemma canonicalize_seq : forall (c1 : com), 
+  ~ (is_seq c1) \/ (exists (c_hd c_tl : com), c1 = <{{ c_hd; c_tl }}> /\ ~ (is_seq c_hd)).
+Proof.
+  induction c1.
+  1, 2, 4, 5, 6, 7, 8 : left; unfold not; intros; unfold is_seq in H; do 2 destruct H; discriminate.
+  rename c1_1 into c11. rename c1_2 into c12. rename IHc1_1 into IHc11. rename IHc1_2 into IHc12.
+  destruct IHc11, IHc12.
+  1, 2 : right; exists c11; exists c12; firstorder.
+  - right. (* this isn't it *) Abort.
+
 Compute (<{{(ultimate_slh (<{{call 1}}>)); (ultimate_slh (<{{Y:=5}}>))}}>).
 Compute (com_size (<{{(ultimate_slh (<{{call 1}}>)); (ultimate_slh (<{{Y:=5}}>))}}>)).
 Compute (map com_size (ultimate_slh_prog [<{{(call 1); Y:=5}}>])).
