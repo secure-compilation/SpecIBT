@@ -475,9 +475,9 @@ Definition uslh_inst (i: inst) : M (list inst) :=
       let e' := <{ (msf=1) ? 0 : e }> in
       ret [<{{store[e'] <- e1}}>]
   | <{{branch e to l}}> =>
-      let e' := <{ (msf=0) && e }> in (* if mispeculating always pc+1 *)
-      l' <- add_block_M <{{ i[msf := ~e' ? 1 : msf; jump l] }}>;;
-      ret <{{ i[branch e' to l'; msf := e' ? 1 : msf] }}>
+      let e' := <{ (msf=1) ? 0 : e }> in (* if mispeculating always pc+1 *)
+      l' <- add_block_M <{{ i[(msf := ((~e') ? 1 : msf)); jump l] }}>;;
+      ret <{{ i[branch e' to l'; (msf := (e' ? 1 : msf))] }}>
   | <{{call e}}> =>
       let e' := <{ (msf=1) ? &0 : e }> in
       ret <{{ i[callee:=e'; call e'] }}>
@@ -1954,6 +1954,7 @@ Definition gen_inst_no_obs (pl: nat) (pst: list nat) : G inst :=
   then ret <{ skip }>
   else freq [
            (1, ret ISkip);
+           (1, ret IRet);
            (1, l <- elems_ 0 jlb;; ret (IJump l))
          ].
 
@@ -2001,7 +2002,7 @@ Sample gen_no_obs_prog.
 
 Definition empty_mem : mem := [].
 
-Definition empty_rs : reg := t_empty (N 0).
+Definition empty_rs : reg := t_empty (FP 0).
 
 QuickChick (
   forAll gen_no_obs_prog (fun p =>
@@ -2032,28 +2033,30 @@ Qed.
 
 (* check 4: unused variables never leaked *)
 
-Definition gen_prog_and_unused_var : G (prog * string) :=
-  '(c, tm, pst, p) <- gen_prog_wt3 3 5;;
+Definition gen_prog_and_unused_var : G (rctx * tmem * list nat * prog * string) :=
+  '(c, tm, pst, p) <- (gen_prog_wt_with_basic_blk 3 5);;
   let used_vars := remove_dupes String.eqb (vars_prog p) in
   let unused_vars := filter (fun v => negb (existsb (String.eqb v) used_vars)) all_possible_vars in
   if seq.nilp unused_vars then
-    ret (p, "X15"%string)
+    ret (c, tm, pst, p, "X15"%string)
   else
     x <- elems_ "X0"%string unused_vars;;
-    ret (p, x).
+    ret (c, tm, pst, p, x).
 
 QuickChick (
-  forAll gen_prog_and_unused_var (fun '(p, unused_var) =>
-  forAll arbitrary (fun rs =>
-  forAll arbitrary (fun m =>
-    let icfg := (ipc, rs, m, istk) in
-    match taint_tracking 100 p icfg with
-    | Some (_, leaked_vars, _) =>
-        checker (negb (existsb (String.eqb unused_var) leaked_vars))
-    | None =>
-        checker tt
-    end
-  )))).
+  forAll gen_prog_and_unused_var (fun '(c, tm, pst, p, unused_var) =>
+  forAll (gen_wt_reg c pst) (fun rs =>
+  forAll (gen_wt_mem tm pst) (fun m =>
+  let icfg := (ipc, rs, m, istk) in
+  match stuck_free 100 p icfg with
+  | TaintTracking.ETerm (_, _, tobs) os =>
+      let (ids, mems) := split_sum_list tobs in
+      let leaked_vars := remove_dupes String.eqb ids in
+      checker (negb (existsb (String.eqb unused_var) leaked_vars))
+  (* | TaintTracking.ETerm st os => checker true *)
+  | TaintTracking.EOutOfFuel st os => checker tt
+  | TaintTracking.EError st os => checker false
+  end)))).
 
 (* check 5: gen_pub_equiv_same_ty works *)
 
@@ -2275,6 +2278,7 @@ Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg)
    4. block 1: res := (5 = &2) occurs UB.
  *)
 
+(* Safety Preservation *)
 QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_wt_reg c pst) (fun rs =>
@@ -2288,7 +2292,7 @@ QuickChick (
   forAll (gen_spec_steps_sized 100 harden h_pst iscfg) (fun ods =>
   (match ods with
    | SETerm sc os ds => trace (show ds) (checker true)
-   | SEError _ _ ds => trace ("dirgen fail!!!" ++ (show ds) ++ "errored dirs " ++ "code: " ++ show harden) (checker false)
+   | SEError (c', _, _) _ ds => trace ("current cfg: " ++ show c' ++ "pst: " ++ show h_pst ++ "init_cfg: " ++ show iscfg ++ "errored dirs: " ++ (show ds) ++ "code: " ++ show harden ++ " done") (checker false)
    | SEOutOfFuel _ _ ds => checker tt
    end))
   )))).
