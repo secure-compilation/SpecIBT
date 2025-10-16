@@ -439,18 +439,6 @@ Fixpoint ultimate_slh (c:com) :=
         <{{"callee" := e'; call e'}}>
   end)%string.
 
-(* Not using these anymore:
-
-   Definition add_index {a:Type} (xs:list a) : list (nat * a) :=
-  combine (seq 0 (length xs)) xs.
-
-Definition ultimate_slh_prog (p:prog) :=
-  map (fun p =>
-    let '(i,c) := p in
-        <{{"b" := ("callee" = ANum i)? "b" : 1; ultimate_slh c}}>
-      ) (add_index p). 
-*)
-
 (* Generalization of ultimate_slh_prog *)
 
 (* partial program version of add_index *)
@@ -488,17 +476,6 @@ I think I can give a better explanation now. Our commands have a determined eval
 (* Jonathan suggested this idea from his work comparing rollback and always-mispredict semantics
    I haven't tried incorporating it yet. *)
 
-(* first cmd in sequence can either itself contain a sequence, or not. 
-   CHole = not. so when it's already in the desired form, subst_hd just 
-   gives back the cmd as is. Otherwise, if it does contain a nested sequence, 
-   subst_hd gives back a sequence cmd where the first cmd is built with the 
-   recursive call to subst_hd using the first cmd of the nested sequence as first arg 
-   and the full cmd as second (why), and second arg is just the second cmd of the original.
-   oh, that's why, we won't know in the recursive call what the original second cmd is 
-   otherwise. It just gets passed unchanged until we encounter a first cmd that doesn't contain 
-   a nested sequence.
-*)
-
 Inductive hd_ctxt : Type :=
   | CHole
   | CSeq (c1 : hd_ctxt) (c2 : com).
@@ -511,7 +488,7 @@ Fixpoint subst_hd ctxt c : com :=
 
 Notation "C '<[' c ']>'" := (subst_hd C c).
 
-Definition is_seq (c : com) := exists (c1 c2 : com), c = <{{ c1; c2 }}>.
+(* Definition is_seq (c : com) := exists (c1 c2 : com), c = <{{ c1; c2 }}>.
 
 Lemma canonicalize_seq : forall (c : com) (C : hd_ctxt), 
   ~ (is_seq c) \/ exists c1 c2 c_hd, c = <{{ c1; c2 }}> /\ c1 = C <[ c_hd ]>.
@@ -523,44 +500,8 @@ Proof.
   - exists c1. split; auto. induction C; auto.
     rewrite IHC in H. cbn.
     assert (subst_hd C c1 = c1).
-Admitted. 
+   Admitted. *)
   
-
- 
-Compute (<{{(ultimate_slh (<{{call 1}}>)); (ultimate_slh (<{{Y:=5}}>))}}>).
-Compute (com_size (<{{(ultimate_slh (<{{call 1}}>)); (ultimate_slh (<{{Y:=5}}>))}}>)).
-Compute (map com_size (ultimate_slh_prog [<{{(call 1); Y:=5}}>])).
-Compute (ultimate_slh_prog [<{{if true then call 1 else call 2 end}}>;<{{X:=2}}>;<{{X:=3}}>]).
-Compute (map com_size (ultimate_slh_prog [<{{if true then call 1 else call 2 end}}>;<{{X:=2}}>;<{{X:=3}}>])).
-
-
-(* Compute (ultimate_slh_prog [<{{(call 1); Y:=5}}>]).
- ==> 
-[<{{ "b" := ("callee" = 0) ? "b" : 1; ("callee" := 1; call 1)
-     ; "Y" := 5 }}>]
-here the protected c1 is ("callee" := 1; call 1), 
-so it takes one extra step to get to uslh c2
-*)
-
-(* Compute (ultimate_slh_prog [<{{if true then call 1 else call 2 end}}>;<{{X:=2}}>;<{{X:=3}}>]).
-==> 
-[<{{
-        "b" := ("callee" = 0) ? "b" : 1;
-        if true then "b" := true ? "b" : 1; "callee" := 1; call 1
-        else "b" := true ? 1 : "b"; "callee" := 2; call 2 end }}>;
-        <{{ "b" := ("callee" = 1) ? "b" : 1; "X" := 2 }}>;
-        <{{ "b" := ("callee" = 2) ? "b" : 1; "X" := 3 }}>] 
-
-here the protected c1 is 
-if true then "b" := true ? "b" : 1; "callee" := 1; call 1
-else "b" := true ? 1 : "b"; "callee" := 2; call 2 end }}>
-
-and the protected c2 is one or the other of the assignments, 
-so the combination of the protection on the if and the 
-(recursive) protection on either the then or the else command 
-makes two, but could accumulate only 1 in other circs.
-   So I'd say 1 + (calculate then or else)
-   *)
 
 (** The masking USLH does for indices requires that our arrays are nonempty. *)
 
@@ -1209,32 +1150,6 @@ Qed.
 
 (** End todo *)
 
-(* Definition measure (c : com) (ds : dirs) : nat * nat :=
-  (length ds, com_size c).
-
-Definition lex_ord (cds1 cds2: com * dirs) : Prop :=
-  lex_nat_nat (measure (fst cds1) (snd cds1)) (measure (fst cds2) (snd cds2)).
-
-Require Import Coq.Wellfounded.Inverse_Image.
-
-(* matches syntactic form of prog_size_ind; easier to apply *)
-Lemma lex_ind2 : forall P : com -> dirs -> Prop,
-    (forall c ds,
-        (forall c' ds',
-            lex_nat_nat (measure c' ds') (measure c ds) -> P c' ds') ->
-        P c ds) -> forall c ds, P c ds.
-Proof.
-  intros.
-  set (f := fun cds => P (fst cds) (snd cds)).
-  replace (P c ds) with (f (c, ds)) by auto.
-  eapply well_founded_ind.
-  - instantiate (1:=lex_ord). unfold lex_ord. 
-    apply wf_inverse_image. apply lex_nat_nat_wf.
-  - unfold lex_ord. intros. subst f. simpl in *. eapply H.
-    intros. specialize (H0 (c', ds')). simpl in H0. 
-    apply H0. apply H1.
-   Qed. *)
-
 Lemma unused_prog_unused :
   forall (p : prog) (c : com) (X : string), 
     In c p -> unused_prog X p -> unused X c.
@@ -1442,7 +1357,7 @@ Proof.
       destruct H8 as (c''&st'0_st'&H'). exists c''. split; [|tauto]. simpl. now com_step.
       }
 
-  11 : { (* Call *) rename p0 into f.
+  7 : { (* Call *) rename p0 into f. inv H1.
         inv H12. inv H8. 
         { rewrite t_update_permute; [|discriminate]. rewrite t_update_shadow.
           do 2 rewrite t_update_same. eexists. split; [econstructor|intros; discriminate].
@@ -1585,8 +1500,8 @@ Proof.
           }
         }
       }
-  - (* Asgn *)
-    invert H8; [|now inversion H]. eexists. split; 
+  - (* Skip *) inv H1. 
+  - (* Asgn *) inv H1. invert H8; [|now inversion H]. eexists. split; 
     [eapply multi_ideal_trans|split; [tauto|] ]; [apply ISM_Asgn; auto| |].
     + rewrite t_update_permute with (x1:="b") (x2:=x); try (rewrite t_update_permute with (x1:="callee") (x2:=x)); 
       try tauto; unfold not; intros.
@@ -1595,40 +1510,7 @@ Proof.
       * unfold unused in unused_c. destruct unused_c. contradiction.
     + rewrite <- st_b. apply t_update_neq. unfold not. intros. unfold unused in unused_c. 
       destruct unused_c. contradiction.
-  - (* Seq *)
-    eapply multi_spec_seq in H8. destruct H8.
-    + do 10 destruct H. destruct H0, H1, H2. subst.
-      eapply multi_spec_trans in H12; [|apply H2]. clear H2.
-      eapply IH in H12; eauto; try (inversion unused_c); try (inversion unused_c_callee);
-      try (measure x6 x7); auto. 
-      destruct H12 as (c''&st_x&->&Hx); [reflexivity|]. eapply IH in H3; try tauto;
-      try (eapply ideal_eval_preserves_nonempty_arrs); try (inversion unused_c);
-      try (inversion unused_c_callee); eauto; try lia.
-      do 2 destruct H3. exists x8. split; [|tauto]. rewrite !app_assoc. com_step.
-      erewrite <- t_update_same in H3 at 1. erewrite <- t_update_shadow in H3 at 1.
-      apply ideal_unused_update in H3; try tauto. 
-      rewrite t_update_eq in H3. setoid_rewrite <- t_update_same in H3 at 2. 
-      rewrite t_update_permute in H3.
-      * setoid_rewrite t_update_permute in H3 at 2; [|discriminate].
-        erewrite <- t_update_shadow in H3.
-        apply ideal_unused_update in H3; [| |inv unused_p]; try (inv unused_c); auto.
-        rewrite t_update_eq in H3. rewrite t_update_permute in H3; [|discriminate].
-        setoid_rewrite t_update_permute in H3 at 2; [|discriminate]. apply H3.
-      * discriminate.
-    + do 2 destruct H. subst. 
-      eapply multi_spec_trans in H12; [|apply H0].
-      eapply IH in H12; eauto; try tauto; try (inversion unused_c); 
-      try (inversion unused_c_callee); auto; cycle 1.
-      (* uh oh *) 
-      { admit. }
-      destruct H12 as (c''&st_st'&H').
-      exists <{{ c''; c2 }}>. split; [|discriminate]. com_step.
-  - (* Seq-Skip *)
-    destruct c1; invert H1.
-    eapply IH in H8; eauto; [|inversion unused_c|inversion unused_c_callee]; auto. 
-    destruct H8 as (c''&st'0_st'&H'). exists c''. split; [|tauto]. simpl. now com_step.
-  - (* If *)
-    destruct (is_empty (vars_bexp be)) eqn:Hbe.
+  - (* If *) inv H1; destruct (is_empty (vars_bexp be)) eqn:Hbe.
     + simpl in H8. destruct (beval st'0 be) eqn:Heq.
       * invert H8; [solve_refl|].
         invert H. invert H12. invert H0; [solve_refl|].
@@ -1673,8 +1555,6 @@ Proof.
         2 : { inversion unused_c_callee. destruct H0. auto. }
         destruct H1 as (c''&st'0_st'&H'). eexists. simpl. rewrite Heq, andb_false_r. simpl.
         split; [|eassumption]. now com_step.
-  - (* If-Force *)
-    destruct (is_empty (vars_bexp be)) eqn:Hbe.
     + simpl in H8. destruct (beval st'0 be) eqn:Heq.
       * invert H8; [solve_refl|].
         invert H. invert H12. invert H0; [solve_refl|].
@@ -1758,7 +1638,7 @@ Proof.
              rewrite t_update_permute in st'0_st'; [|discriminate].
              split; [|tauto]. com_step. apply st'0_st'. 
         -- discriminate.
-  - (* While *)
+  - (* While *) inv H1.
     invert H12. invert H8.
     (* reflexive multistep *)
     { eexists. split; [|discriminate]. simpl. rewrite t_update_same. rewrite t_update_same. constructor. }
@@ -2001,43 +1881,41 @@ Proof.
               rewrite Heq, andb_false_r. com_step. 
               apply multi_ideal_add_snd_com. rewrite t_update_permute; [|discriminate].
               eassumption.
-  - (* Read *)
-    invert H8; [|inversion H].
-    destruct (is_empty (vars_aexp i)) eqn:Heq.
-    + eexists. split; try split; [|reflexivity|rewrite t_update_neq; inv unused_c; auto].
+  - inv H1.
+    + (* Read *) invert H8; [|inversion H].
+      destruct (is_empty (vars_aexp i)) eqn:Heq.
+      * eexists. split; try split; [|reflexivity|rewrite t_update_neq; inv unused_c; auto].
       repeat econstructor; [now rewrite Heq|tauto|].
       setoid_rewrite t_update_permute at 2; [|inv unused_c; auto].
       rewrite t_update_same. rewrite t_update_permute; [|inv unused_c_callee; auto].
       rewrite t_update_same. constructor.
-    + eexists. split; try split; [|auto|rewrite t_update_neq; inv unused_c; auto].
+      * eexists. split; try split; [|auto|rewrite t_update_neq; inv unused_c; auto].
       repeat econstructor; [now simpl; rewrite Heq, st_b; destruct b'|tauto|].
       setoid_rewrite t_update_permute at 2; [|inv unused_c; auto].
       rewrite t_update_same. rewrite t_update_permute; [|inv unused_c_callee; auto].
       rewrite t_update_same. constructor.
-  - (* Load *)
-    destruct (is_empty (vars_aexp i)) eqn:Heq.
-    + invert H8; [|inversion H]. setoid_rewrite t_update_permute at 2; [|inv unused_c; auto].
+    + (* Load *) invert H8; [|inversion H]. 
+      destruct (is_empty (vars_aexp i)) eqn:Heq.
+      * setoid_rewrite t_update_permute at 2; [|inv unused_c; auto].    
       rewrite t_update_same. rewrite t_update_permute; [|inv unused_c_callee; auto].
-      rewrite t_update_same. 
-      eexists. split; try split; [|reflexivity|rewrite t_update_neq; inv unused_c; auto].
-      repeat econstructor; tauto.
-    + simpl in H14. rewrite st_b in H14. simpl in H14.
+      rewrite t_update_same. eexists. split; try split; try rewrite t_update_neq; 
+      firstorder; eauto. repeat econstructor; tauto.
+      * simpl in H14. rewrite st_b in H14. simpl in H14.
       specialize (ast_arrs a). lia.
-  - (* Write *)
-    invert H8; [|inversion H].
-    destruct (is_empty (vars_aexp i)) eqn:Heq.
-    + eexists. split; [|tauto]. repeat econstructor; [now rewrite Heq|tauto|]. 
+  - inv H1.
+    + (* Write *) invert H8; [|inversion H].
+      destruct (is_empty (vars_aexp i)) eqn:Heq.
+      * eexists. split; [|tauto]. repeat econstructor; [now rewrite Heq|tauto|]. 
       do 2 rewrite t_update_same. constructor.
-    + eexists. split; [|tauto]. repeat econstructor; 
+      * eexists. split; [|tauto]. repeat econstructor; 
       [now simpl; rewrite Heq, st_b; destruct b'|tauto|]. 
       do 2 rewrite t_update_same. constructor.
-  - (* Store *)
-    destruct (is_empty (vars_aexp i)) eqn:Heq.
-    + invert H8; [|inversion H]. do 2 rewrite t_update_same.
+    + (* Store *) destruct (is_empty (vars_aexp i)) eqn:Heq.
+      * invert H8; [|inversion H]. do 2 rewrite t_update_same.
       eexists. split; [repeat econstructor|]; tauto. 
-    + simpl in H15. rewrite st_b in H15. simpl in H15. specialize (ast_arrs a). lia.
-Unshelve. all: exact 0.
-  Admitted.
+      * simpl in H15. rewrite st_b in H15. simpl in H15. specialize (ast_arrs a). lia.
+Unshelve. exact 0.
+Qed.
 
 Ltac bcc_helper H c :=
   unfold unused_prog in H; rewrite Forall_forall in H;
