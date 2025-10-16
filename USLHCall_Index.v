@@ -466,7 +466,7 @@ Definition ultimate_slh_prog_gen (p:prog) (start: nat) :=
 (* this is the whole-program version we had before *)
 Definition ultimate_slh_prog (p: prog) := ultimate_slh_prog_gen p 0.
 
-(* 
+(* Yonghyun's comment: 
 
 I think the 'canonicalize' operation for sequences is about syntax, so it shouldn't have much to do with step 
 or multi-step (like canonicalize_seq_fst_cmd_seq_free).
@@ -476,36 +476,57 @@ At a high level, what I'm saying is that for any command c, there should exist a
 In other words, if any command c is c1; c2, then there should exist some seq-free first command c_hd contained in c1 
 (we can just apply this to c1).
 
+And then later:
+
+I think I can give a better explanation now. Our commands have a determined evaluation order 
+   (i.e., they're deterministic) and can always be divided into what to compute now and a continuation. 
+   My suggestion to show the sequence-free part first is in the same context. What I'm saying is that 
+   we should divide commands into context commands and the command to evaluate right now
+
 *)
 
 (* Jonathan suggested this idea from his work comparing rollback and always-mispredict semantics
    I haven't tried incorporating it yet. *)
 
+(* first cmd in sequence can either itself contain a sequence, or not. 
+   CHole = not. so when it's already in the desired form, subst_hd just 
+   gives back the cmd as is. Otherwise, if it does contain a nested sequence, 
+   subst_hd gives back a sequence cmd where the first cmd is built with the 
+   recursive call to subst_hd using the first cmd of the nested sequence as first arg 
+   and the full cmd as second (why), and second arg is just the second cmd of the original.
+   oh, that's why, we won't know in the recursive call what the original second cmd is 
+   otherwise. It just gets passed unchanged until we encounter a first cmd that doesn't contain 
+   a nested sequence.
+*)
+
 Inductive hd_ctxt : Type :=
   | CHole
   | CSeq (c1 : hd_ctxt) (c2 : com).
 
-Fixpoint subst_hd ctxt c : com := match ctxt with 
-                                  | CHole => c
-                                  | CSeq ctxt' c2 => Seq (subst_hd ctxt' c) c2
-                                  end.
+Fixpoint subst_hd ctxt c : com :=
+  match ctxt with
+  | CHole => c
+  | CSeq ctxt' c2 => Seq (subst_hd ctxt' c) c2
+  end.
 
 Notation "C '<[' c ']>'" := (subst_hd C c).
 
-(* I tried again but wound up with seemingly unprovable cases *)
-
 Definition is_seq (c : com) := exists (c1 c2 : com), c = <{{ c1; c2 }}>.
 
-Lemma canonicalize_seq : forall (c1 : com), 
-  ~ (is_seq c1) \/ (exists (c_hd c_tl : com), c1 = <{{ c_hd; c_tl }}> /\ ~ (is_seq c_hd)).
+Lemma canonicalize_seq : forall (c : com) (C : hd_ctxt), 
+  ~ (is_seq c) \/ exists c1 c2 c_hd, c = <{{ c1; c2 }}> /\ c1 = C <[ c_hd ]>.
 Proof.
-  induction c1.
+  intros. induction c.
   1, 2, 4, 5, 6, 7, 8 : left; unfold not; intros; unfold is_seq in H; do 2 destruct H; discriminate.
-  rename c1_1 into c11. rename c1_2 into c12. rename IHc1_1 into IHc11. rename IHc1_2 into IHc12.
-  destruct IHc11, IHc12.
-  1, 2 : right; exists c11; exists c12; firstorder.
-  - right. (* this isn't it *) Abort.
+  right. exists c1. exists c2. 
+  destruct IHc1, IHc2.
+  - exists c1. split; auto. induction C; auto.
+    rewrite IHC in H. cbn.
+    assert (subst_hd C c1 = c1).
+Admitted. 
+  
 
+ 
 Compute (<{{(ultimate_slh (<{{call 1}}>)); (ultimate_slh (<{{Y:=5}}>))}}>).
 Compute (com_size (<{{(ultimate_slh (<{{call 1}}>)); (ultimate_slh (<{{Y:=5}}>))}}>)).
 Compute (map com_size (ultimate_slh_prog [<{{(call 1); Y:=5}}>])).
@@ -1381,13 +1402,66 @@ Lemma ultimate_slh_bcc_generalized (p:prog) : forall n c ds st ast (b b' : bool)
       exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
   /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
 Proof.
-  intros n. induction n using strong_induction_le; intros until os;
-  intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'; invert st_st'.
-  { do 2 rewrite t_update_same. eexists. split.
+  intros n. induction n using strong_induction_le.
+  { intros until os. intros ast_arrs unused_p unused_c unused_p_callee unused_c_callee st_b st_st'; invert st_st'.
+    do 2 rewrite t_update_same. eexists. split.
     - rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=[]). econstructor.
     - intros; destruct c; intros; try discriminate. split; auto.
   }
-  rename H into IH. destruct c; rename H1 into H; invert H.
+  rename H into IH. revert IH. generalize dependent n. 
+  induction c; intros; rename H into ast_arrs; rename H0 into unused_p; rename H1 into unused_c;
+  rename H2 into unused_p_callee; rename H3 into unused_c_callee; rename H4 into st_b; rename H5 into H; invert H.
+  3 : {  (* Seq *) inv H1. Check multi_spec_trans.
+    (* multi_spec_trans
+     : forall (p : prog) (c : com) (st : state) (ast : astate) 
+         (b : bool) (c' : com) (st' : state) (ast' : astate) 
+         (b' : bool) (c'' : com) (st'' : state) (ast'' : astate) 
+         (b'' : bool) (ds1 ds2 : dirs) (os1 os2 : obs) 
+         (n : nat),
+       p |- <(( c, st, ast, b ))> -->_ ds1 ^^ os1 <(( c', st', ast', b' ))> ->
+       p |- <(( c', st', ast', b' ))> -->*_ ds2 ^^ os2 ^^ n <(( c'', st'',
+       ast'', b'' ))> ->
+       p |- <(( c, st, ast, b ))> -->*_ ds1 ++ ds2 ^^ 
+       os1 ++ os2 ^^ S n <(( c'', st'', ast'', b'' ))> *)
+        - apply multi_spec_trans with (c'':=c') (st'':=st') (ast'':=ast') (b'':=b') (ds2:=ds2) (os2:=os2) (n:=n) in H12.
+          + eapply IHc1 in H12; eauto.
+            2 : { inv unused_c; auto. }
+            2 : { inv unused_c_callee; auto. }
+            
+
+    eapply multi_spec_seq in H8. destruct H8.
+    + do 10 destruct H. destruct H0, H1, H2. subst.
+      eapply multi_spec_trans in H12; [|apply H2]. clear H2.
+      eapply IH in H12; eauto; try (inversion unused_c); try (inversion unused_c_callee);
+      try (measure x6 x7); auto. 
+      destruct H12 as (c''&st_x&->&Hx); [reflexivity|]. eapply IH in H3; try tauto;
+      try (eapply ideal_eval_preserves_nonempty_arrs); try (inversion unused_c);
+      try (inversion unused_c_callee); eauto; try lia.
+      do 2 destruct H3. exists x8. split; [|tauto]. rewrite !app_assoc. com_step.
+      erewrite <- t_update_same in H3 at 1. erewrite <- t_update_shadow in H3 at 1.
+      apply ideal_unused_update in H3; try tauto. 
+      rewrite t_update_eq in H3. setoid_rewrite <- t_update_same in H3 at 2. 
+      rewrite t_update_permute in H3.
+      * setoid_rewrite t_update_permute in H3 at 2; [|discriminate].
+        erewrite <- t_update_shadow in H3.
+        apply ideal_unused_update in H3; [| |inv unused_p]; try (inv unused_c); auto.
+        rewrite t_update_eq in H3. rewrite t_update_permute in H3; [|discriminate].
+        setoid_rewrite t_update_permute in H3 at 2; [|discriminate]. apply H3.
+      * discriminate.
+    + do 2 destruct H. subst. 
+      eapply multi_spec_trans in H12; [|apply H0].
+      
+      eapply IH in H12; eauto; try tauto; try (inversion unused_c); 
+      try (inversion unused_c_callee); auto; cycle 1.
+      (* uh oh *) 
+      { admit. }
+      destruct H12 as (c''&st_st'&H').
+      exists <{{ c''; c2 }}>. split; [|discriminate]. com_step.
+
+
+
+      }
+
   11 : { (* Call *) rename p0 into f.
         inv H12. inv H8. 
         { rewrite t_update_permute; [|discriminate]. rewrite t_update_shadow.
