@@ -1411,55 +1411,35 @@ Proof.
   rename H into IH. revert IH. generalize dependent n. 
   induction c; intros; rename H into ast_arrs; rename H0 into unused_p; rename H1 into unused_c;
   rename H2 into unused_p_callee; rename H3 into unused_c_callee; rename H4 into st_b; rename H5 into H; invert H.
-  3 : {  (* Seq *) inv H1. Check multi_spec_trans.
-    (* multi_spec_trans
-     : forall (p : prog) (c : com) (st : state) (ast : astate) 
-         (b : bool) (c' : com) (st' : state) (ast' : astate) 
-         (b' : bool) (c'' : com) (st'' : state) (ast'' : astate) 
-         (b'' : bool) (ds1 ds2 : dirs) (os1 os2 : obs) 
-         (n : nat),
-       p |- <(( c, st, ast, b ))> -->_ ds1 ^^ os1 <(( c', st', ast', b' ))> ->
-       p |- <(( c', st', ast', b' ))> -->*_ ds2 ^^ os2 ^^ n <(( c'', st'',
-       ast'', b'' ))> ->
-       p |- <(( c, st, ast, b ))> -->*_ ds1 ++ ds2 ^^ 
-       os1 ++ os2 ^^ S n <(( c'', st'', ast'', b'' ))> *)
-        - apply multi_spec_trans with (c'':=c') (st'':=st') (ast'':=ast') (b'':=b') (ds2:=ds2) (os2:=os2) (n:=n) in H12.
-          + eapply IHc1 in H12; eauto.
-            2 : { inv unused_c; auto. }
-            2 : { inv unused_c_callee; auto. }
-            
-
-    eapply multi_spec_seq in H8. destruct H8.
-    + do 10 destruct H. destruct H0, H1, H2. subst.
-      eapply multi_spec_trans in H12; [|apply H2]. clear H2.
-      eapply IH in H12; eauto; try (inversion unused_c); try (inversion unused_c_callee);
-      try (measure x6 x7); auto. 
-      destruct H12 as (c''&st_x&->&Hx); [reflexivity|]. eapply IH in H3; try tauto;
-      try (eapply ideal_eval_preserves_nonempty_arrs); try (inversion unused_c);
-      try (inversion unused_c_callee); eauto; try lia.
-      do 2 destruct H3. exists x8. split; [|tauto]. rewrite !app_assoc. com_step.
-      erewrite <- t_update_same in H3 at 1. erewrite <- t_update_shadow in H3 at 1.
-      apply ideal_unused_update in H3; try tauto. 
-      rewrite t_update_eq in H3. setoid_rewrite <- t_update_same in H3 at 2. 
-      rewrite t_update_permute in H3.
-      * setoid_rewrite t_update_permute in H3 at 2; [|discriminate].
-        erewrite <- t_update_shadow in H3.
-        apply ideal_unused_update in H3; [| |inv unused_p]; try (inv unused_c); auto.
-        rewrite t_update_eq in H3. rewrite t_update_permute in H3; [|discriminate].
-        setoid_rewrite t_update_permute in H3 at 2; [|discriminate]. apply H3.
-      * discriminate.
-    + do 2 destruct H. subst. 
-      eapply multi_spec_trans in H12; [|apply H0].
-      
-      eapply IH in H12; eauto; try tauto; try (inversion unused_c); 
-      try (inversion unused_c_callee); auto; cycle 1.
-      (* uh oh *) 
-      { admit. }
-      destruct H12 as (c''&st_st'&H').
-      exists <{{ c''; c2 }}>. split; [|discriminate]. com_step.
-
-
-
+  3 : {  (* Seq *) inv H1.
+    - eapply multi_spec_seq in H8. destruct H8.
+      + do 10 destruct H. destruct H0, H1, H2. subst.
+        eapply multi_spec_trans in H12; [|apply H2]. clear H2.
+        eapply IH in H12; eauto; try (inversion unused_c); try (inversion unused_c_callee);
+        try (measure x6 x7); auto. 
+        destruct H12 as (c''&st_x&->&Hx); [reflexivity|]. eapply IH in H3; try tauto;
+        try (eapply ideal_eval_preserves_nonempty_arrs); try (inversion unused_c);
+        try (inversion unused_c_callee); eauto; try lia.
+        do 2 destruct H3. exists x8. split; [|tauto]. rewrite !app_assoc. com_step.
+        erewrite <- t_update_same in H3 at 1. erewrite <- t_update_shadow in H3 at 1.
+        apply ideal_unused_update in H3; try tauto. 
+        rewrite t_update_eq in H3. setoid_rewrite <- t_update_same in H3 at 2. 
+        rewrite t_update_permute in H3.
+        * setoid_rewrite t_update_permute in H3 at 2; [|discriminate].
+          erewrite <- t_update_shadow in H3.
+          apply ideal_unused_update in H3; [| |inv unused_p]; try (inv unused_c); auto.
+          rewrite t_update_eq in H3. rewrite t_update_permute in H3; [|discriminate].
+          setoid_rewrite t_update_permute in H3 at 2; [|discriminate]. apply H3.
+        * discriminate.
+      + do 2 destruct H. subst. 
+        eapply multi_spec_trans in H12; [|apply H0].
+        eapply IHc1 in H12; try (inv unused_c); try (inv unused_c_callee); eauto.
+        destruct H12 as (c''&st_st'&H').
+        exists <{{ c''; c2 }}>. split; [|discriminate]. com_step.
+    - assert (c1 = <{{ skip }}>). 
+      { destruct c1; try discriminate; auto. }
+      rewrite H in *. eapply IH in H8; try (inv unused_c); try (inv unused_c_callee); eauto.
+      destruct H8 as (c''&st'0_st'&H'). exists c''. split; [|tauto]. simpl. now com_step.
       }
 
   11 : { (* Call *) rename p0 into f.
