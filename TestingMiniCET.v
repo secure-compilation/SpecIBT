@@ -2229,6 +2229,31 @@ Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg)
       end
   }.
 
+Definition spec_step_acc (p:prog) (sc:spec_cfg) (ds: dirs) : sc_output_st :=
+  match spec_step p sc ds with
+  | Some (sc', ds', os) => SRStep os ds' sc' (* sc': current spec_cfg, os: observations, ds': remaining dirs *)
+  | None => if final_spec_cfg p sc
+           then SRTerm [] ds sc
+           else SRError [] ds sc
+  end.
+
+Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (os: obs) (ds: dirs) : spec_exec_result :=
+  match f with
+  | 0 => SEOutOfFuel sc os ds (* sc: current spec_cfg, os: observations, ds: remaining dirs *)
+  | S f' =>
+      match spec_step_acc p sc ds with
+      | SRStep os1 ds1 sc1 =>
+          _spec_steps_acc f' p sc1 (os ++ os1) ds1
+      | SRError os1 ds1 sc1 =>
+          (SEError sc1 (os ++ os1) ds1)
+      | SRTerm os1 ds1 sc1 =>
+          (SETerm sc1 (os ++ os1) ds1)
+      end
+  end.
+
+Definition spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (ds: dirs) : spec_exec_result :=
+  _spec_steps_acc f p sc [] ds.
+
 (* Safety Preservation *)
 
 (* Extract Constant defNumTests => "1000000". *)
@@ -2278,7 +2303,52 @@ QuickChick (
 (*   | TaintTracking.EError st os => checker tt *)
 (*   end)))). *)
 
-(* Rel. Security *)
+(* Testing Relative Security *)
+
+QuickChick (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_wt_reg c pst) (fun rs1 =>
+  forAll (gen_wt_mem tm pst) (fun m1 =>
+  let icfg1 := (ipc, rs1, m1, istk) in
+  let r1 := taint_tracking 100 p icfg1 in
+  match r1 with
+  | Some (os1', tvars, tms) =>
+      let P := (false, map (fun x => (x,true)) tvars) in
+      let PM := tms_to_pm (Datatypes.length m1) tms in
+      forAll (gen_pub_equiv_same_ty P rs1) (fun rs2 =>
+      forAll (gen_pub_mem_equiv_same_ty PM m1) (fun m2 =>
+      let icfg2 := (ipc, rs2, m2, istk) in
+      let r2 := taint_tracking 100 p icfg2 in
+      match r2 with
+      | Some (os2', _, _) =>
+          if (obs_eqb os1' os2') (* The source program produces the same leakage for a pair of inputs. *)
+          then (let harden := uslh_prog p in
+                let rs1' := spec_rs rs1 in
+                let icfg1' := (ipc, rs1', m1, istk) in
+                let iscfg1' := (icfg1', true, false) in
+                let h_pst := pst_calc harden in
+                forAll (gen_spec_steps_sized 100 harden h_pst iscfg1') (fun ods1 =>
+                (match ods1 with
+                 | SETerm _ os1 ds =>
+                     (* checker true *)
+                     let rs2' := spec_rs rs2 in
+                     let icfg2' := (ipc, rs2', m2, istk) in
+                     let iscfg2' := (icfg2', true, false) in
+                     let sc_r2 := spec_steps_acc 100 harden iscfg2' ds in
+                     match sc_r2 with
+                     | SETerm _ os2 _ => checker (obs_eqb os1 os2)
+                     | SEOutOfFuel _ _ _ => (checker tt) (* discard -- doesn't seem to happen *)
+                     | _ => (checker false)
+                     end
+                 | SEOutOfFuel _ _ _ => (checker tt)
+                 | _ => (checker tt)
+                 end))
+               )
+          else checker tt (* discard *)
+      | None => checker tt (* discard *)
+      end))
+   | None => checker tt (* discard *)
+  end)))).
 
 QuickChick (
   (* TODO: should make sure shrink indeed satisfies invariants of generator;
