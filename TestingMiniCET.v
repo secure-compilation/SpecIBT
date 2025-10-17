@@ -743,16 +743,9 @@ Definition rctx := total_map ty.
 Definition tmem := list ty.
 
 #[export] Instance genTMem `{Gen ty} : Gen tmem :=
-  {arbitrary := tm <- arbitrary;;
-                ret (TNum :: tm) }.
-
-QuickChick (forAll arbitrary (fun (c : tmem) =>
-            match c with
-            | [] => false
-            | TPtr :: _ => false
-            | TNum :: _ => true
-            end
-           )).
+  {arbitrary := t <- arbitrary;;
+                tm <- arbitrary;;
+                ret (t :: tm) }.
 
 Definition ty_eqb (x y: ty) := match x, y with
                                | TNum, TNum | TPtr, TPtr => true
@@ -1109,12 +1102,13 @@ QuickChick (
     forAll (gen_reg_wt c pst) (fun (r : reg) =>
     forAll (gen_exp_wt exp_sz c pst) (fun (e : exp) =>
     is_defined (eval r e)
-)))))).
+  )))))).
 
 (* "+++ Passed 10000 tests (0 discards)" *)
 
 (* To evaluate our generator, we proceed by creating a predicate, which checks kind of type checks the
   program. *)
+
 (*! Section ty_exps *)
 
 Fixpoint ty_exp (c: rctx) (e: exp) : option ty :=
@@ -1919,7 +1913,7 @@ Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (os: obs) (ds: dirs) :
 Definition spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (ds: dirs) : spec_exec_result :=
   _spec_steps_acc f p sc [] ds.
 
-(* Safety Preservation *)
+(** Safety Preservation *)
 
 (* Extract Constant defNumTests => "1000000". *)
 
@@ -1944,7 +1938,7 @@ QuickChick (
 (* +++ Passed 1000000 tests (431506 discards) *)
 (* Time Elapsed: 137.819446s *)
 
-(* Testing Relative Security *)
+(** Testing Relative Security *)
 
 QuickChick (
   (* TODO: should make sure shrink indeed satisfies invariants of generator;
