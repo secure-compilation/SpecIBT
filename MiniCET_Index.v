@@ -92,6 +92,20 @@ Inductive seq_eval_small_step_inst (p:prog) :
   where "p |- <(( c ))> -->^ os <(( ct ))>" :=
       (seq_eval_small_step_inst p c ct os).
 
+Reserved Notation 
+  "p '|-' '<((' c '))>' '-->*^' os '<((' ct '))>'"
+      (at level 40, c constr, ct constr).
+
+Inductive multi_seq_inst (p : prog) (c : cfg) : cfg -> obs -> Prop :=
+  | multi_seq_inst_refl : p |- <(( c ))> -->*^[] <(( c ))>
+  | multi_seq_inst_trans (c' c'' : cfg) (os1 os2 : obs) : 
+      p |- <(( c ))> -->^os1 <(( c' ))> -> 
+      p |- <(( c' ))> -->*^os2 <(( c'' ))> ->
+      p |- <(( c ))> -->*^(os1 ++ os2) <(( c'' ))>
+
+  where "p |- <(( c ))> -->*^ os <(( ct ))>" :=
+      (multi_seq_inst p c ct os).
+
 (* Reserved Notation *)
 (*    "p '|-' '<((' c , st , ast '))>' '-->*^' os '<((' ct , stt , astt '))>'" *)
 (*    (at level 40, c custom com at level 99, ct custom com at level 99, *)
@@ -201,6 +215,20 @@ Inductive spec_eval_small_step (p:prog):
 
   where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
     (spec_eval_small_step p sc sct ds os).
+
+Reserved Notation 
+  "p '|-' '<((' sc '))>' '-->*_' ds '^^' os '^^' n '<((' sct '))>'"
+      (at level 40, sc constr, sct constr).
+
+Inductive multi_spec_inst (p : prog) (sc : spec_cfg) : spec_cfg -> dirs -> obs -> nat -> Prop :=
+  | multi_spec_inst_refl : p |- <(( sc ))> -->*_[]^^[]^^0 <(( sc ))>
+  | multi_spec_inst_trans (sc' sc'' : spec_cfg) (ds1 ds2 : dirs) (os1 os2 : obs) (n : nat) : 
+      p |- <(( sc ))> -->_ds1^^os1 <(( sc' ))> -> 
+      p |- <(( sc' ))> -->*_ds2^^os2^^n <(( sc'' ))> ->
+      p |- <(( sc ))> -->*_(ds1 ++ ds2)^^(os1 ++ os2)^^(S n) <(( sc'' ))>
+
+  where "p |- <(( sc ))> -->*_ds^^os^^n <(( sct ))>" :=
+      (multi_seq_inst p sc sct ds os n).
 
 (* Reserved Notation *)
 (*   "p '|-' '<((' c , st , ast , b '))>' '-->*_' ds '^^' os '^^' n '<((' ct , stt , astt , bt '))>'" *)
