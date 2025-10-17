@@ -1,12 +1,12 @@
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
-From Coq Require Import Strings.String.
+From Stdlib Require Import Strings.String.
 From SECF Require Import Maps.
-From Coq Require Import Bool.Bool.
-From Coq Require Import Arith.Arith.
-From Coq Require Import Arith.EqNat.
-From Coq Require Import Arith.PeanoNat.
-From Coq Require Import Lia.
-From Coq Require Import List. Import ListNotations.
+From Stdlib Require Import Bool.Bool.
+From Stdlib Require Import Arith.Arith.
+From Stdlib Require Import Arith.EqNat.
+From Stdlib Require Import Arith.PeanoNat.
+From Stdlib Require Import Lia.
+From Stdlib Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 
 From QuickChick Require Import QuickChick Tactics.
@@ -14,9 +14,9 @@ Import QcNotation QcDefaultNotation. Open Scope qc_scope.
 Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Data.List.
 Export MonadNotation.
-From Coq Require Import String.
+From Stdlib Require Import String.
 From SECF Require Import ListMaps.
-Require Import Coq.Classes.EquivDec.
+Require Import Stdlib.Classes.EquivDec.
 
 (** ** Type system for cryptographic constant-time programming *)
 
