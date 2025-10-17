@@ -221,7 +221,7 @@ Reserved Notation
       (at level 40, sc constr, sct constr).
 
 Inductive multi_spec_inst (p : prog) (sc : spec_cfg) : spec_cfg -> dirs -> obs -> nat -> Prop :=
-  | multi_spec_inst_refl : p |- <(( sc ))> -->*_[]^^[] <(( sc ))>
+  | multi_spec_inst_refl : p |- <(( sc ))> -->*_[]^^[]^^0 <(( sc ))>
   | multi_spec_inst_trans (sc' sc'' : spec_cfg) (ds1 ds2 : dirs) (os1 os2 : obs) (n : nat) : 
       p |- <(( sc ))> -->_ds1^^os1 <(( sc' ))> -> 
       p |- <(( sc' ))> -->*_ds2^^os2^^n <(( sc'' ))> ->
