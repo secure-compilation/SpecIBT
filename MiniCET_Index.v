@@ -216,37 +216,20 @@ Inductive spec_eval_small_step (p:prog):
   where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
     (spec_eval_small_step p sc sct ds os).
 
-Reserved Notation 
+
+Reserved Notation
   "p '|-' '<((' sc '))>' '-->*_' ds '^^' os '^^' n '<((' sct '))>'"
-      (at level 40, sc constr, sct constr).
+  (at level 40, sc constr, sct constr).
 
-Inductive multi_spec_inst (p : prog) (sc : spec_cfg) : spec_cfg -> dirs -> obs -> nat -> Prop :=
-  | multi_spec_inst_refl : p |- <(( sc ))> -->*_[]^^[]^^0 <(( sc ))>
-  | multi_spec_inst_trans (sc' sc'' : spec_cfg) (ds1 ds2 : dirs) (os1 os2 : obs) (n : nat) : 
-      p |- <(( sc ))> -->_ds1^^os1 <(( sc' ))> ->
-      p |- <(( sc' ))> -->*_ds2^^os2^^n <(( sc'' ))> ->
-      p |- <(( sc ))> -->*_(ds1 ++ ds2)^^(os1 ++ os2)^^(S n) <(( sc'' ))>
-
-  where "p |- <(( sc ))> -->*_ds^^os^^n <(( sct ))>" :=
-      (multi_seq_inst p sc sct ds os n).
-
-(* Reserved Notation *)
-(*   "p '|-' '<((' c , st , ast , b '))>' '-->*_' ds '^^' os '^^' n '<((' ct , stt , astt , bt '))>'" *)
-(*   (at level 40, c custom com at level 99, ct custom com at level 99, *)
-(*    st constr, ast constr, stt constr, astt constr at next level). *)
-
-(* Inductive multi_spec (p:prog) (c:com) (st:state) (ast:astate) (b:bool) : *)
-(*   com -> state -> astate -> bool -> dirs -> obs -> nat -> Prop := *)
-(*   | multi_spec_refl : p |- <((c, st, ast, b))> -->*_[]^^[]^^0 <((c, st, ast, b))> *)
-(*   | multi_spec_trans (c':com) (st':state) (ast':astate) (b':bool) *)
-(*                 (c'':com) (st'':state) (ast'':astate) (b'':bool) *)
-(*                 (ds1 ds2 : dirs) (os1 os2 : obs) (n : nat) : *)
-(*       p |- <((c, st, ast, b))> -->_ds1^^os1 <((c', st', ast', b'))> -> *)
-(*       p |- <((c', st', ast', b'))> -->*_ds2^^os2^^n <((c'', st'', ast'', b''))> -> *)
-(*       p |- <((c, st, ast, b))> -->*_(ds1++ds2)^^(os1++os2)^^(S n) <((c'', st'', ast'', b''))> *)
-
-(*     where "p |- <(( c , st , ast , b ))> -->*_ ds ^^ os ^^ n <(( ct ,  stt , astt , bt ))>" := *)
-(*     (multi_spec p c st ast b ct stt astt bt ds os n). *)
+Inductive multi_spec_inst (p:prog) :
+  spec_cfg -> spec_cfg -> dirs -> obs -> nat -> Prop :=
+  | multi_spec_inst_refl sc : p |- <(( sc ))> -->*_[]^^[]^^0 <(( sc ))>
+  | multi_spec_inst_trans sc1 sc2 sc3 ds1 ds2 os1 os2 n :
+      p |- <(( sc1 ))> -->_ds1^^os1 <(( sc2 ))> ->
+      p |- <(( sc2 ))> -->*_ds2^^os2^^n <(( sc3 ))> ->
+      p |- <(( sc1 ))> -->*_(ds1++ds2)^^(os1++os2)^^(S n) <(( sc3 ))>
+  where "p |- <(( sc ))> -->*_ ds ^^ os ^^ n <(( sct ))>" :=
+    (multi_spec_inst p sc sct ds os n).
 
 (** Ideal small-step semantics for MiniCET *)
 
