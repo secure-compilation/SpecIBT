@@ -233,93 +233,119 @@ Inductive multi_spec_inst (p:prog) :
 
 (** Ideal small-step semantics for MiniCET *)
 
-(** * Ideal small-step evaluation *)
+Reserved Notation
+  "p '|-' '<((' sc '))>' '-->i_' ds '^^' os '<((' sct '))>'"
+  (at level 40, sc constr, sct constr).
 
-(* Reserved Notation *)
-(*   "p '|-' '<((' c , st , ast , b '))>' '-->i_' ds '^^' os '<((' ct , stt , astt , bt '))>'" *)
-(*   (at level 40, c custom com at level 99, ct custom com at level 99, *)
-(*    st constr, ast constr, stt constr, astt constr at next level). *)
+Inductive ideal_eval_small_step_inst (p:prog) : 
+  spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
+  | ISMI_Skip  :  forall pc r m sk ms,
+      p[[pc]] = Some <{{ skip }}> ->
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
+  | ISMI_Asgn : forall pc r m sk ms e x,
+      p[[pc]] = Some <{{ x := e }}> ->
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
+  | ISMI_Branch : forall pc pc' r m sk ms ms' b b' e n n' l l', 
+      p[[pc]] = Some <{{ branch e to l }}> ->
+      to_nat (eval r e) = Some n -> 
+      n' = (if (ms =? 1) then 0 else n) -> (* mask branch condition *)
+      b = (not_zero n') ->
+      add_block_M <{{ i[(msf := ((~n') ? 1 : msf)); jump l] }}> = M l' -> (* not sure if this is right but need l' *)     
+      pc' = if n' then (l',0) else pc+1 ->
+      ms' = ms || (negb (Bool.eqb b b')) ->
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), false, ms') ))>
+  | ISMI_Jump : forall l pc r m sk ms,
+      p[[pc]] = Some <{{ jump l }}> -> 
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( (((l,0), r, m, sk), false, ms) ))>
+  | ISMI_Load : forall pc r m sk x e e' n v' ms,
+      p[[pc]] = Some <{{ x <- load[e] }}> ->
+      e' = (if (ms =? 1) then 0 else e) ->
+      to_nat (eval r e') = Some n ->
+      nth_error m n = Some v' ->
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n] <(( ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
+  | ISMI_Store : forall pc r m sk e e' e'' n ms,
+      p[[pc]] = Some <{{ store[e] <- e' }}> ->
+      e'' = (if (ms =? 1) then 0 else e) ->
+      to_nat (eval r e'') = Some n ->
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore n] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
+  | ISMI_Call : forall pc pc' r m sk e l ms ms',
+      p[[pc]] = Some <{{ call e }}> ->
+      e' = if (ms =? 1) then (FP 0) else e ->
+      to_fp (eval r e') = Some l -> 
+      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
+  | ISMI_CTarget : forall pc r m sk ms,
+      p[[pc]] = Some <{{ ctarget }}> ->
+      p |- <(( ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
+  | ISMI_Ret : forall pc r m sk pc' ms,
+      p[[pc]] = Some <{{ ret }}> ->
+      p |- <(( ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( ((pc', r, m, sk), false, ms) ))>
 
-(* Inductive ideal_eval_small_step (p:prog): *)
-(*     com -> state -> astate -> bool -> *)
-(*     com -> state -> astate -> bool -> dirs -> obs -> Prop := *)
-(*   | ISM_Asgn  : forall st ast b e n x, *)
-(*       aeval st e = n -> *)
-(*       p |- <((x := e, st, ast, b))> -->i_[]^^[] <((skip, x !-> n; st, ast, b))> *)
-(*   | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt c2, *)
-(*       p |- <((c1, st, ast, b))>  -->i_ds^^os <((c1t, stt, astt, bt))>  -> *)
-(*       p |- <(((c1;c2), st, ast, b))>  -->i_ds^^os <(((c1t;c2), stt, astt, bt))> *)
-(*   | ISM_Seq_Skip : forall st ast b c2, *)
-(*       p |- <(((skip;c2), st, ast, b))>  -->i_[]^^[] <((c2, st, ast, b))> *)
-(*   | ISM_If : forall be ct cf st ast b c' b', *)
-(*       b' = (is_empty (vars_bexp be) || negb b) && beval st be -> *)
-(*       c' = (if b' then ct else cf) -> *)
-(*       p |- <((if be then ct else cf end, st, ast, b))> -->i_[DStep]^^[OBranch b'] <((c', st, ast, b))> *)
-(*   | ISM_If_F : forall be ct cf st ast b c' b', *)
-(*       b' = (is_empty (vars_bexp be) || negb b) && beval st be -> *)
-(*       c' = (if b' then cf else ct) -> *)
-(*       p |- <((if be then ct else cf end, st, ast, b))> -->i_[DForce]^^[OBranch b'] <((c', st, ast, true))> *)
-(*   | ISM_While : forall be c st ast b, *)
-(*       p |- <((while be do c end, st, ast, b))> -->i_[]^^[] *)
-(*            <((if be then c; while be do c end else skip end, st, ast, b))> *)
-(*   | ISM_ARead : forall x a ie st ast (b :bool) i, *)
-(*       (if negb (is_empty (vars_aexp ie)) && b then 0 else (aeval st ie)) = i -> *)
-(*       i < length (ast a) -> *)
-(*       p |- <((x <- a[[ie]], st, ast, b))> -->i_[DStep]^^[OARead a i] *)
-(*            <((skip, x !-> nth i (ast a) 0; st, ast, b))> *)
-(*   | ISM_ARead_U : forall x a ie st ast i a' i', *)
-(*       aeval st ie = i -> *)
-(*       is_empty (vars_aexp ie) = true -> *)
-(*       i >= length (ast a) -> *)
-(*       i' < length (ast a') -> *)
-(*       p |- <((x <- a[[ie]], st, ast, true))> -->i_[DLoad a' i']^^[OARead a i] *)
-(*            <((skip, x !-> nth i' (ast a') 0; st, ast, true))> *)
-(*   | ISM_Write : forall a ie e st ast (b :bool) i n, *)
-(*       aeval st e = n -> *)
-(*       (if negb (is_empty (vars_aexp ie)) && b then 0 else (aeval st ie)) = i -> *)
-(*       i < length (ast a) -> *)
-(*       p |- <((a[ie] <- e, st, ast, b))> -->i_[DStep]^^[OAWrite a i] *)
-(*            <((skip, st, a !-> upd i (ast a) n; ast, b))> *)
-(*   | ISM_Write_U : forall a ie e st ast i n a' i', *)
-(*       aeval st e = n -> *)
-(*       is_empty (vars_aexp ie) = true -> *)
-(*       aeval st ie = i -> *)
-(*       i >= length (ast a) -> *)
-(*       i' < length (ast a') -> *)
-(*       p |- <((a[ie] <- e, st, ast, true))> -->i_[DStore a' i']^^[OAWrite a i] *)
-(*            <((skip, st, a' !-> upd i' (ast a') n; ast, true))> *)
-(*   | ISM_Call : forall e i c st ast b, *)
-(*       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i -> *)
-(*       nth_error p i = Some c -> *)
-(*       p |- <((call e, st, ast, b))> -->i_[DStep]^^[OCall i] <((c, st, ast, b))> *)
-(*   | ISM_Call_F : forall e i j c st ast b, *)
-(*       (if negb (is_empty (vars_aexp e)) && b then 0 else aeval st e) = i -> *)
-(*       i <> j -> *)
-(*       nth_error p j = Some c -> *)
-(*       p |- <((call e, st, ast, b))> -->i_[DForceCall j]^^[OForceCall] <((c, st, ast, true))> *)
+  where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
+    (ideal_eval_small_step_inst p sc sct ds os).
+(* 
+  
+uslh: 
 
-(*     where "p |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" := *)
-(*     (ideal_eval_small_step p c st ast b ct stt astt bt ds os). *)
+   Definition M (A: Type) := nat -> A * prog.
 
-(* (* HIDE: This one now has again `_U` cases because of out-of-bounds array *)
-(*    accesses at constant indices. Since the array sizes are also statically *)
-(*    known, we could easily reject such programs statically.  *) *)
+Definition u_ret {A: Type} (x: A) : M A :=
+  fun c => (x, []).
 
-(* Reserved Notation *)
-(*   "p '|-' '<((' c , st , ast , b '))>' '-->i*_' ds '^^' os '<((' ct , stt , astt , bt '))>'" *)
-(*   (at level 40, c custom com at level 99, ct custom com at level 99, *)
-(*    st constr, ast constr, stt constr, astt constr at next level). *)
+Definition u_bind {A B: Type} (m: M A) (f: A -> M B) : M B :=
+  fun c =>
+    let '(r, p) := m c in
+    let '(r', p') := f r (c + Datatypes.length p) in
+    (r', p ++ p').
 
-(* Inductive multi_ideal (p:prog) (c:com) (st:state) (ast:astate) (b:bool) : *)
-(*     com -> state -> astate -> bool -> dirs -> obs -> Prop := *)
-(*   | multi_ideal_refl : p |- <((c, st, ast, b))> -->i*_[]^^[] <((c, st, ast, b))> *)
-(*   | multi_ideal_trans (c':com) (st':state) (ast':astate) (b':bool) *)
-(*                 (c'':com) (st'':state) (ast'':astate) (b'':bool) *)
-(*                 (ds1 ds2 : dirs) (os1 os2 : obs) : *)
-(*       p |-<((c, st, ast, b))> -->i_ds1^^os1 <((c', st', ast', b'))> -> *)
-(*       p |-<((c', st', ast', b'))> -->i*_ds2^^os2 <((c'', st'', ast'', b''))> -> *)
-(*       p |-<((c, st, ast, b))> -->i*_(ds1++ds2)^^(os1++os2) <((c'', st'', ast'', b''))> *)
+#[export] Instance monad : Monad M :=
+  { ret := @u_ret;
+    bind := @u_bind
+  }.
 
-(*           where "p |- <(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" := *)
-(*     (multi_ideal p c st ast b ct stt astt bt ds os). *)
+Definition mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
+  sequence (List.map f l).
 
+Definition concatM {A: Type} (m: M (list (list A))) : M (list A) :=
+  xss <- m;; ret (List.concat xss).
+
+Definition add_block (bl: list inst) (c: nat) := (c, [(bl, false)]).
+
+Definition add_block_M (bl: list inst) : M nat :=
+  fun c => add_block bl c.
+
+Definition u_inst (i: inst) : M (list inst) :=
+  match i with
+  | <{{ctarget}}> => ret [<{{skip}}>]
+  | <{{x<-load[e]}}> =>
+      let e' := <{ (msf=1) ? 0 : e }> in
+      ret [<{{x<-load[e']}}>]
+  | <{{store[e] <- e1}}> =>
+      let e' := <{ (msf=1) ? 0 : e }> in
+      ret [<{{store[e'] <- e1}}>]
+  | <{{branch e to l}}> =>
+      let e' := <{ (msf=1) ? 0 : e }> in (* if mispeculating always pc+1 *)
+      l' <- add_block_M <{{ i[(msf := ((~e') ? 1 : msf)); jump l] }}>;;
+      ret <{{ i[branch e' to l'; (msf := (e' ? 1 : msf))] }}>
+  | <{{call e}}> =>
+      let e' := <{ (msf=1) ? &0 : e }> in
+      ret <{{ i[callee:=e'; call e'] }}>
+  | _ => ret [i]
+  end.
+
+Definition u_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
+  let '(l, (bl, is_proc)) := nblk in
+  bl' <- concatM (mapM u_inst bl);;
+  if is_proc then
+    ret (<{{ i[ctarget; msf := (callee = &l) ? msf : 1] }}> ++ bl', true)
+  else
+    ret (bl', false).
+
+Definition u_prog (p: prog) : prog :=
+  let idx_p := (add_index p) in
+  let '(p',newp) := mapM u_blk idx_p (Datatypes.length p) in
+  (p' ++ newp).
+
+*)
+
+   
