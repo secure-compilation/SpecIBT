@@ -271,8 +271,7 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      (* this line might be unnecessarily tortured as far as type, it wouldn't compile without this but there's probably a better way *)
-      (if ms then 0 else l) = l' -> (* mask fp under spec, use for obs *)
+      l' = (if ms then 0 else l) -> (* mask fp under spec, use for obs *)
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | ISMI_CTarget : forall pc r m sk ms,
@@ -284,6 +283,22 @@ Inductive ideal_eval_small_step_inst (p:prog) :
 
   where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
     (ideal_eval_small_step_inst p sc sct ds os).
+
+Reserved Notation
+  "p '|-' '<((' ic '))>' '-->*_' ds '^^' os '<((' ict '))>'"
+  (at level 40, ic constr, ict constr).
+
+Inductive multi_ideal_inst (p:prog) :
+  spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
+  | multi_ideal_inst_refl ic : p |- <(( ic ))> -->*_[]^^[] <(( ic ))>
+  | multi_ideal_inst_trans ic1 ic2 ic3 ds1 ds2 os1 os2 :
+      p |- <(( ic1 ))> -->_ds1^^os1 <(( ic2 ))> ->
+      p |- <(( ic2 ))> -->*_ds2^^os2 <(( ic3 ))> ->
+      p |- <(( ic1 ))> -->*_(ds1++ds2)^^(os1++os2) <(( ic3 ))>
+  where "p |- <(( ic ))> -->*_ ds ^^ os <(( ict ))>" :=
+    (multi_ideal_inst p ic ict ds os).
+
+
 (* 
   
 uslh: 
