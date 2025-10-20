@@ -211,40 +211,15 @@ Inductive multi_ideal_inst (p:prog) :
   where "p |- <(( ic ))> -->*_ ds ^^ os <(( ict ))>" :=
     (multi_ideal_inst p ic ict ds os).
 
-Definition nonempty_mem (m : mem) :Prop := 0 < length m.
-
-Fixpoint e_unused (x:string) (e:exp) : Prop :=
-  match e with
-  | ANum n      => True
-  | AId y       => y <> x
-  | FPtr _      => True
-  | ACTIf e1 e2 e3 => e_unused x e1 /\ e_unused x e2 /\ e_unused x e3
-  | ABin _ e1 e2 => e_unused x e1 /\ e_unused x e2
-  end.
-
-Fixpoint i_unused (x:string) (i:inst) : Prop :=
-
-Definition unused_prog (x: string) (p:prog) : Prop :=
-  Forall (fun c => unused x c) p.
-
-  nonempty_arrs ast ->
-  unused_prog "b" p ->
-  unused "b" c ->
-  unused_prog "callee" p ->
-  unused "callee" c ->
-  st "b" = (if b then 1 else 0) ->
-
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
-Lemma ultimate_slh_bcc_generalized (p:prog) : forall n c ds st ast (b b' : bool) c' st' ast' os,
-  nonempty_arrs ast ->
-  unused_prog "b" p ->
-  unused "b" c ->
-  unused_prog "callee" p ->
-  unused "callee" c ->
-  st "b" = (if b then 1 else 0) ->
-  ultimate_slh_prog p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os^^n <((c', st', ast', b'))> ->
-      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
-  /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
+Lemma ultimate_slh_bcc (p:prog) : forall n pc r m sk ct (ms: bool) pc' r' m' sk' ct' ms' ds os,
+  nonempty_mem m ->
+  unused_prog msf p ->
+  unused_prog callee p ->
+  apply r msf = N (if ms then 1 else 0) ->
+  uslh_prog p |- <(( ((pc, r, m, sk), ct, ms) ))> -->*_ds^^os^^n <(( ((pc', r', m', sk'), ct', ms') ))> ->
+  p |- <(( ((pc, r, m, sk), ct, ms) ))> -->*_ ds ^^ os <(( ((pc', r', m', sk'), ct', ms') ))>.
 Proof.
+Admitted.
 
