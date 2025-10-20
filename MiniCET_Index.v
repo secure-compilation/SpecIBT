@@ -146,7 +146,9 @@ Inductive multi_spec_inst (p:prog) :
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->i_' ds '^^' os '<((' sct '))>'"
   (at level 40, sc constr, sct constr).
-Print val.
+
+(* Print val. *)
+
 Inductive ideal_eval_small_step_inst (p:prog) :
   spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
   | ISMI_Skip  :  forall pc r m sk ms,
@@ -208,4 +210,41 @@ Inductive multi_ideal_inst (p:prog) :
       p |- <(( ic1 ))> -->*_(ds1++ds2)^^(os1++os2) <(( ic3 ))>
   where "p |- <(( ic ))> -->*_ ds ^^ os <(( ict ))>" :=
     (multi_ideal_inst p ic ict ds os).
+
+Definition nonempty_mem (m : mem) :Prop := 0 < length m.
+
+Fixpoint e_unused (x:string) (e:exp) : Prop :=
+  match e with
+  | ANum n      => True
+  | AId y       => y <> x
+  | FPtr _      => True
+  | ACTIf e1 e2 e3 => e_unused x e1 /\ e_unused x e2 /\ e_unused x e3
+  | ABin _ e1 e2 => e_unused x e1 /\ e_unused x e2
+  end.
+
+Fixpoint i_unused (x:string) (i:inst) : Prop :=
+
+Definition unused_prog (x: string) (p:prog) : Prop :=
+  Forall (fun c => unused x c) p.
+
+  nonempty_arrs ast ->
+  unused_prog "b" p ->
+  unused "b" c ->
+  unused_prog "callee" p ->
+  unused "callee" c ->
+  st "b" = (if b then 1 else 0) ->
+
+(** * Relative Security of Ultimate Speculative Load Hardening *)
+
+Lemma ultimate_slh_bcc_generalized (p:prog) : forall n c ds st ast (b b' : bool) c' st' ast' os,
+  nonempty_arrs ast ->
+  unused_prog "b" p ->
+  unused "b" c ->
+  unused_prog "callee" p ->
+  unused "callee" c ->
+  st "b" = (if b then 1 else 0) ->
+  ultimate_slh_prog p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os^^n <((c', st', ast', b'))> ->
+      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
+  /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
+Proof.
 
