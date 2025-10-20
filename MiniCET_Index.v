@@ -232,12 +232,13 @@ Inductive multi_spec_inst (p:prog) :
     (multi_spec_inst p sc sct ds os n).
 
 (** Ideal small-step semantics for MiniCET *)
+(* Source program executing speculatively with uslh protections encoded in semantics *)
 
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->i_' ds '^^' os '<((' sct '))>'"
   (at level 40, sc constr, sct constr).
 
-Inductive ideal_eval_small_step_inst (p:prog) : 
+Inductive ideal_eval_small_step_inst (p:prog) :
   spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
   | ISMI_Skip  :  forall pc r m sk ms,
       p[[pc]] = Some <{{ skip }}> ->
@@ -245,35 +246,34 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
-  | ISMI_Branch : forall pc pc' r m sk ms ms' b b' e n n' l l', 
+  | ISMI_Branch : forall pc pc' r m sk (ms ms' b b' : bool) e n n' l, (* uslh protection is to mask branch condition under speculation *)
       p[[pc]] = Some <{{ branch e to l }}> ->
-      to_nat (eval r e) = Some n -> 
-      n' = (if (ms =? 1) then 0 else n) -> (* mask branch condition *)
-      b = (not_zero n') ->
-      add_block_M <{{ i[(msf := ((~n') ? 1 : msf)); jump l] }}> = M l' -> (* not sure if this is right but need l' *)     
-      pc' = if n' then (l',0) else pc+1 ->
-      ms' = ms || (negb (Bool.eqb b b')) ->
+      to_nat (eval r e) = Some n ->
+      n' = (if ms then 0 else n) -> (* mask branch condition under speculation *)
+      b = (not_zero n') -> (* information leak uses potentially masked value *)
+      pc' = (if b' then (l,0) else pc+1) -> (* control flow uses attacker's value *)
+      ms' = (ms || (negb (Bool.eqb b b'))) -> (* set ms according to whether these are different *)
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), false, ms') ))>
   | ISMI_Jump : forall l pc r m sk ms,
-      p[[pc]] = Some <{{ jump l }}> -> 
+      p[[pc]] = Some <{{ jump l }}> ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( (((l,0), r, m, sk), false, ms) ))>
-  | ISMI_Load : forall pc r m sk x e e' n v' ms,
+  | ISMI_Load : forall pc r m sk x e n n' v' (ms : bool), (* uslh : mask addr under spec *)
       p[[pc]] = Some <{{ x <- load[e] }}> ->
-      e' = (if (ms =? 1) then 0 else e) ->
-      to_nat (eval r e') = Some n ->
+      to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n] <(( ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
-  | ISMI_Store : forall pc r m sk e e' e'' n ms,
+      n' = (if ms then 0 else n) -> (* mask addr under speculation, use for obs *)
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n'] <(( ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
+  | ISMI_Store : forall pc r m sk e e' e'' n (ms : bool),
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
-      e'' = (if (ms =? 1) then 0 else e) ->
-      to_nat (eval r e'') = Some n ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore n] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
-  | ISMI_Call : forall pc pc' r m sk e l ms ms',
+      to_nat (eval r e) = Some n ->
+      e'' = (if ms then 0 else n) -> (* mask addr under spec, use for obs *)
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore e''] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
+  | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
-      e' = if (ms =? 1) then (FP 0) else e ->
-      to_fp (eval r e') = Some l -> 
+      to_fp (eval r e) = Some l ->
+      l' = (if ms then <{ &0 }> else l) -> (* mask fp under spec, use for obs *)
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | ISMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
