@@ -693,3 +693,35 @@ Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (os: obs) (ds: dirs) :
 
 Definition spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (ds: dirs) : spec_exec_result :=
   _spec_steps_acc f p sc [] ds.
+
+
+(* Some Auxiliary functions *)
+
+Definition nonempty_mem (m : mem) :Prop := (0 < Datatypes.length m)%nat.
+
+Fixpoint e_unused (x:string) (e:exp) : Prop :=
+  match e with
+  | ANum n      => True
+  | AId y       => y <> x
+  | FPtr _      => True
+  | ACTIf e1 e2 e3 => e_unused x e1 /\ e_unused x e2 /\ e_unused x e3
+  | ABin _ e1 e2 => e_unused x e1 /\ e_unused x e2
+  end.
+
+Fixpoint i_unused (x:string) (i:inst) : Prop :=
+  match i with
+  | <{{skip}}> | <{{jump _}}> | <{{ret}}> | <{{ctarget}}> => True
+  | <{{y := e}}> => y <> x /\ e_unused x e
+  | <{{branch e to l}}> => e_unused x e
+  | <{{y <- load[i]}}> => y <> x /\ e_unused x i
+  | <{{store[i] <- e}}> => e_unused x i /\ e_unused x e
+  | <{{call e}}> => e_unused x e
+  end.
+
+Definition b_unused (x: string) (blk: list inst) : Prop :=
+  Forall (fun i => i_unused x i) blk.
+
+Definition unused_prog (x: string) (p:prog) : Prop :=
+  let '(bs, cts) := split p in
+  Forall (fun b => b_unused x b) bs.
+
