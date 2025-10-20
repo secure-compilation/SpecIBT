@@ -272,7 +272,7 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       (* this line might be unnecessarily tortured as far as type, it wouldn't compile without this but there's probably a better way *)
-      to_nat (if ms then (FP 0) else (FP l)) = Some l' -> (* mask fp under spec, use for obs *)
+      (if ms then 0 else l) = l' -> (* mask fp under spec, use for obs *)
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | ISMI_CTarget : forall pc r m sk ms,
