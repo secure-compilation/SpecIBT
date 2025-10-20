@@ -237,7 +237,7 @@ Inductive multi_spec_inst (p:prog) :
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->i_' ds '^^' os '<((' sct '))>'"
   (at level 40, sc constr, sct constr).
-
+Print val.
 Inductive ideal_eval_small_step_inst (p:prog) :
   spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
   | ISMI_Skip  :  forall pc r m sk ms,
@@ -271,7 +271,8 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      l' = (if ms then <{ &0 }> else l) -> (* mask fp under spec, use for obs *)
+      (* this line might be unnecessarily tortured as far as type, it wouldn't compile without this but there's probably a better way *)
+      to_nat (if ms then (FP 0) else (FP l)) = Some l' -> (* mask fp under spec, use for obs *)
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | ISMI_CTarget : forall pc r m sk ms,
