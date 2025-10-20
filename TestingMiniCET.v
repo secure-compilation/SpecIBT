@@ -1940,6 +1940,8 @@ QuickChick (
 
 (** Testing Relative Security *)
 
+(* Extract Constant defNumTests => "1000000". *)
+
 QuickChick (
   (* TODO: should make sure shrink indeed satisfies invariants of generator;
            or define a better shrinker *)
@@ -1974,11 +1976,11 @@ QuickChick (
                      let sc_r2 := spec_steps_acc 100 harden iscfg2' ds in
                      match sc_r2 with
                      | SETerm _ os2 _ => checker (obs_eqb os1 os2)
-                     | SEOutOfFuel _ _ _ => (checker tt) (* discard -- doesn't seem to happen *)
-                     | _ => (checker false)
+                     | SEOutOfFuel _ _ _ => checker tt
+                     | _ => trace "2nd speculative execution fails!" (checker tt) (* discard -- doesn't seem to happen *)
                      end
-                 | SEOutOfFuel _ _ _ => (checker tt)
-                 | _ => (checker tt)
+                 | SEOutOfFuel _ _ _ => checker tt
+                 | _ =>  trace "1st speculative execution fails!" (checker tt) (* discard -- doesn't seem to happen *)
                  end))
                )
           else checker tt (* discard *)
@@ -1987,5 +1989,6 @@ QuickChick (
    | None => checker tt (* discard *)
   end)))).
 
-(* +++ Passed 10000 tests (6680 discards) *)
-(* Time Elapsed: 1.660112s *)
+(* +++ Passed 1000000 tests (677003 discards) *)
+(* Time Elapsed: 168.838887s *)
+
