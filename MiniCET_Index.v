@@ -211,15 +211,89 @@ Inductive multi_ideal_inst (p:prog) :
   where "p |- <(( ic ))> -->*_ ds ^^ os <(( ict ))>" :=
     (multi_ideal_inst p ic ict ds os).
 
-(** * Relative Security of Ultimate Speculative Load Hardening *)
+(** * Backwards Compiler Correctness of Ultimate Speculative Load Hardening *)
 
-Lemma ultimate_slh_bcc (p:prog) : forall n pc r m sk ct (ms: bool) pc' r' m' sk' ct' ms' ds os,
-  nonempty_mem m ->
+Definition ms_flag (sc: spec_cfg) : val :=
+  let '(c, ct, ms) := sc in
+  let '(pc, r, m, stk) := c in
+  apply r msf.
+
+Definition is_ms (sc: spec_cfg) : bool :=
+  let '(c, ct, ms) := sc in ms.
+
+Section BCC.
+
+Variable p: prog.
+Definition tp : prog := uslh_prog p.
+
+Definition pc_sync (pc: cptr) : cptr.
+Admitted.
+
+Definition r_sync (r: reg) (* (ms: bool) *) : reg.
+Admitted.
+
+Definition spec_cfg_sync (sc: spec_cfg) : spec_cfg :=
+  let '(c, ct, ms) := sc in
+  let '(pc, r, m, stk) := c in
+  let tc := (pc_sync pc, r_sync r, m, stk) in
+  (tc, ct, ms).
+
+Definition to_sync_point (tsc: spec_cfg) : nat.
+Admitted.
+
+
+(* BCC lemma for one single instruction *)
+Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
   unused_prog msf p ->
   unused_prog callee p ->
-  apply r msf = N (if ms then 1 else 0) ->
-  uslh_prog p |- <(( ((pc, r, m, sk), ct, ms) ))> -->*_ds^^os^^n <(( ((pc', r', m', sk'), ct', ms') ))> ->
-  p |- <(( ((pc, r, m, sk), ct, ms) ))> -->*_ ds ^^ os <(( ((pc', r', m', sk'), ct', ms') ))>.
+  ms_flag tsc1 = N (if (is_ms tsc1) then 1 else 0) ->
+  n = to_sync_point tsc1 ->
+  tsc1 = spec_cfg_sync sc1 ->
+  uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
+  exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync sc2.
 Proof.
 Admitted.
+
+End BCC.
+
+Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
+  unused_prog msf p ->
+  unused_prog callee p ->
+  ms_flag tsc1 = N (if (is_ms tsc1) then 1 else 0) ->
+  tsc1 = spec_cfg_sync p sc1 ->
+  uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
+  exists sc2, p |- <(( sc1 ))> -->*_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync p sc2.
+Proof.
+Admitted.
+
+(* (** * Definition of Relative Secure *) *)
+
+(* Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop := *)
+(*   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2, *)
+(*     p |- <(( (pc1, r1, m1, stk1) ))> -->*^ os1 <(( (pc1', r1', m1', stk1') ))> -> *)
+(*     p |- <(( (pc2, r2, m2, stk2) ))> -->*^ os2 <(( (pc2', r2', m2', stk2') ))> -> *)
+(*     (prefix os1 os2) \/ (prefix os2 os1).  *)
+
+(* Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop := *)
+(*   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 n c1 c2, *)
+(*     p |- <((c, st1, ast1, false))> -->*_ds^^os1^^n <((c1, stt1, astt1, bt1))> -> *)
+(*     p |- <((c, st2, ast2, false))> -->*_ds^^os2^^n <((c2, stt2, astt2, bt2))> -> *)
+(*     os1 = os2.  *)
+
+(* (* The new definition adds the extra program transformation we  *)
+(*    needed to check for speculation at the target of a call instruction. *)
+(*    This was needed to apply the bcc proof in the final theorem. *) *)
+
+(* (*  old definition: *)
+(*    Definition relative_secure (p:prog) (trans : com -> com) *)
+(*     (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop := *)
+(*   seq_same_obs p c st1 st2 ast1 ast2 -> *)
+(*    spec_same_obs p (trans c) st1 st2 ast1 ast2. *) *)
+
+(* Definition relative_secure (p:prog) (trans1 : prog -> prog) (trans2 : com -> com) *)
+(*     (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop := *)
+(*   seq_same_obs p c st1 st2 ast1 ast2 -> *)
+(*   spec_same_obs (trans1 p) (trans2 c) st1 st2 ast1 ast2. *)
+
+(* (** * Ultimate Speculative Load Hardening *) *)
 
