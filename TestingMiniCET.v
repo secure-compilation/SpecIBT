@@ -1976,17 +1976,17 @@ QuickChick (
                      let sc_r2 := spec_steps_acc 100 harden iscfg2' ds in
                      match sc_r2 with
                      | SETerm _ os2 _ => checker (obs_eqb os1 os2)
-                     | SEOutOfFuel _ _ _ => checker tt
-                     | _ => trace "2nd speculative execution fails!" (checker tt) (* discard -- doesn't seem to happen *)
+                     | SEOutOfFuel _ _ _ => collect "se2 oof"%string (checker tt)
+                     | _ => collect "2nd speculative execution fails!"%string (checker tt) (* discard -- doesn't seem to happen *)
                      end
-                 | SEOutOfFuel _ _ _ => checker tt
-                 | _ =>  trace "1st speculative execution fails!" (checker tt) (* discard -- doesn't seem to happen *)
+                 | SEOutOfFuel _ _ _ => collect "se1 oof"%string (checker tt)
+                 | _ =>  collect "1st speculative execution fails!"%string (checker tt) (* discard -- doesn't seem to happen *)
                  end))
                )
-          else checker tt (* discard *)
-      | None => checker tt (* discard *)
+          else collect "seq obs differ"%string (checker tt) (* discard *)
+      | None => collect "tt2 failed"%string (checker tt) (* discard *)
       end))
-   | None => checker tt (* discard *)
+   | None => collect "tt1 failed"%string (checker tt) (* discard *)
   end)))).
 
 (* +++ Passed 1000000 tests (677003 discards) *)
