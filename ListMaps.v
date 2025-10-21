@@ -1,6 +1,5 @@
-
-From Coq Require Import Strings.String.
-From Coq Require Import List. Import ListNotations.
+From Stdlib Require Import Strings.String.
+From Stdlib Require Import List. Import ListNotations.
 From QuickChick Require Import QuickChick Tactics.
 
 Definition Map A := list (string * A).

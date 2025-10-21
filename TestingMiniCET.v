@@ -897,18 +897,18 @@ Definition gen_store_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst 
 
 Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_store_wt c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
 
-Definition gen_call_wt (pst: list nat) : G inst :=
-  l <- elems_ 0 (proc_hd pst);;
-  ret <{ call &l }>.
+Definition gen_call_wt (c: rctx) (pst: list nat) : G inst :=
+  e <- gen_exp_ptr_wt 1 c pst;;
+  ret <{ call e }>.
 
-Sample (gen_call_wt [3; 3; 1; 1]).
+Sample (c <- arbitrary;; gen_call_wt c [3; 3; 1; 1]).
 
 Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
                         (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
                         (gen_jump : nat -> list nat -> nat -> G inst)
                         (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
                         (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
-                        (gen_call : list nat -> G inst)
+                        (gen_call : rctx -> list nat -> G inst)
                         (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
   let insts := 
      [ (1, ret ISkip);
@@ -916,7 +916,7 @@ Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
        (sz, t <- arbitrary;; gen_asgn t c pst);
        (sz, t <- arbitrary;; gen_load t c tm pl pst);
        (sz, gen_store c tm pl pst);
-       (sz, gen_call pst) ] in
+       (sz, gen_call c pst) ] in
   let non_proc_labels := list_minus (seq 0 pl) (proc_hd pst) in
   match non_proc_labels with
   | nil => freq_ (ret ISkip) insts
@@ -927,13 +927,13 @@ Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
 Definition gen_nonterm_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
                           (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
                           (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
-                          (gen_call : list nat -> G inst)
+                          (gen_call : rctx -> list nat -> G inst)
                           (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
   freq [ (1, ret ISkip);
          (sz, t <- arbitrary;; gen_asgn t c pst);
          (sz, t <- arbitrary;; gen_load t c tm pl pst);
          (sz, gen_store c tm pl pst);
-         (sz, gen_call pst)].
+         (sz, gen_call c pst)].
 
 Definition _gen_term_wt (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
                       (gen_jump : nat -> list nat -> nat -> G inst)
@@ -1927,7 +1927,7 @@ QuickChick (
   let icfg' := (ipc, rs', m, istk) in
   let iscfg := (icfg', true, false) in
   let h_pst := pst_calc harden in
-  forAll (gen_spec_steps_sized 100 harden h_pst iscfg) (fun ods =>
+  forAll (gen_spec_steps_sized 200 harden h_pst iscfg) (fun ods =>
   (match ods with
    | SETerm sc os ds => checker true
    | SEError (c', _, _) _ ds => (checker false)
@@ -1949,7 +1949,7 @@ QuickChick (
   forAll (gen_reg_wt c pst) (fun rs1 =>
   forAll (gen_wt_mem tm pst) (fun m1 =>
   let icfg1 := (ipc, rs1, m1, istk) in
-  let r1 := taint_tracking 100 p icfg1 in
+  let r1 := taint_tracking 1000 p icfg1 in
   match r1 with
   | Some (os1', tvars, tms) =>
       let P := (false, map (fun x => (x,true)) tvars) in
@@ -1957,7 +1957,7 @@ QuickChick (
       forAll (gen_pub_equiv_same_ty P rs1) (fun rs2 =>
       forAll (gen_pub_mem_equiv_same_ty PM m1) (fun m2 =>
       let icfg2 := (ipc, rs2, m2, istk) in
-      let r2 := taint_tracking 100 p icfg2 in
+      let r2 := taint_tracking 1000 p icfg2 in
       match r2 with
       | Some (os2', _, _) =>
           if (obs_eqb os1' os2') (* The source program produces the same leakage for a pair of inputs. *)
@@ -1966,14 +1966,14 @@ QuickChick (
                 let icfg1' := (ipc, rs1', m1, istk) in
                 let iscfg1' := (icfg1', true, false) in
                 let h_pst := pst_calc harden in
-                forAll (gen_spec_steps_sized 100 harden h_pst iscfg1') (fun ods1 =>
+                forAll (gen_spec_steps_sized 1000 harden h_pst iscfg1') (fun ods1 =>
                 (match ods1 with
                  | SETerm _ os1 ds =>
                      (* checker true *)
                      let rs2' := spec_rs rs2 in
                      let icfg2' := (ipc, rs2', m2, istk) in
                      let iscfg2' := (icfg2', true, false) in
-                     let sc_r2 := spec_steps_acc 100 harden iscfg2' ds in
+                     let sc_r2 := spec_steps_acc 1000 harden iscfg2' ds in
                      match sc_r2 with
                      | SETerm _ os2 _ => checker (obs_eqb os1 os2)
                      | SEOutOfFuel _ _ _ => collect "se2 oof"%string (checker tt)

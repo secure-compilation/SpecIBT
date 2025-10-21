@@ -1,4 +1,4 @@
-From Coq Require Import List. Import ListNotations.
+From Stdlib Require Import List. Import ListNotations.
 
 (* Tail recursive append to prevent stack overflows when testing *)
 Fixpoint rev_append {A:Type} (l1 l2 : list A) : list A :=
