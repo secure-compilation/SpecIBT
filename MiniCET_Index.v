@@ -213,12 +213,24 @@ Inductive multi_ideal_inst (p:prog) :
 
 (** * Backwards Compiler Correctness of Ultimate Speculative Load Hardening *)
 
-Definition ms_flag (sc: spec_cfg) : val :=
+(* Print msf.
+==>
+msf = "msf"%string
+   : string 
+
+Print callee.
+==>
+callee = "callee"%string
+   : string *)
+
+(* get value of "msf" bit (program level) given current register state *)
+Definition msf_lookup (sc: spec_cfg) : val :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, stk) := c in
   apply r msf.
 
-Definition is_ms (sc: spec_cfg) : bool :=
+(* returns bool corresponding to state of ms flag (semantics level) *)
+Definition ms_true (sc: spec_cfg) : bool :=
   let '(c, ct, ms) := sc in ms.
 
 Section BCC.
@@ -226,29 +238,52 @@ Section BCC.
 Variable p: prog.
 Definition tp : prog := uslh_prog p.
 
-Definition pc_sync (pc: cptr) : cptr.
-Admitted.
+(* predicate for fold *)
+Definition is_br_or_call (i : inst) :=
+  match i with
+  | <{{branch _ to _}}> | <{{call _}}> => true
+  | _                                  => false
+  end.
+
+(* synchronizing point relation between src and tgt *)
+Definition pc_sync (p : prog) (pc: cptr) : cptr :=
+  match p with
+  | [] => pc (* we probably have assumptions somewhere about nonempty programs and blocks? *)
+  | h::t => match nth_error p (fst pc) with
+                                              (* slice list from beginning to instruction being synchronized on, inclusive *)
+            | Some blk => let blk_until_pc := (firstn (add (snd pc) 1) (fst blk)) in 
+                          let acc1 := if (snd blk) then 2 else 0 in (* uslh adds 2 instructions to procedure blocks *)
+                          (* uslh adds 1 instruction to branch and call instructions *)
+                          let acc2 := fold_left (fun acc (i:inst) => if (is_br_or_call i) then add acc 1 else acc) blk_until_pc acc1 in
+                          (* if instruction being synchronized on is branch, then don't add 1 for it,
+                             because uslh adds an instruction *after* the branch instruction, not before *)
+                          let acc3 := (match p[[pc]] with | Some <{{branch _ to _}}> => pred acc2 | _ => acc2 end) in 
+                          (* return pc w/ adjusted offset *)
+                          ((fst pc), add (snd pc) (acc3))
+            | None => pc
+            end
+  end.
 
 Definition r_sync (r: reg) (* (ms: bool) *) : reg.
 Admitted.
 
 Definition spec_cfg_sync (sc: spec_cfg) : spec_cfg :=
-  let '(c, ct, ms) := sc in
-  let '(pc, r, m, stk) := c in
-  let tc := (pc_sync pc, r_sync r, m, stk) in
-  (tc, ct, ms).
+  let '(c, ct, ms) := sc in (* take apart spec_cfg *)
+  let '(pc, r, m, stk) := c in (* take apart cfg *)
+  let tc := (pc_sync pc, r_sync r, m, stk) in (* replace cfg with synced pc and r *)
+  (tc, ct, ms). (* package it back up *)
 
-Definition to_sync_point (tsc: spec_cfg) : nat.
+Definition steps_to_sync_point (tsc: spec_cfg) : nat.
 Admitted.
-
 
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
-  unused_prog msf p ->
+  unused_prog msf p -> (* variables msf and callee are not used by the program *)
   unused_prog callee p ->
-  ms_flag tsc1 = N (if (is_ms tsc1) then 1 else 0) ->
-  n = to_sync_point tsc1 ->
-  tsc1 = spec_cfg_sync sc1 ->
+  msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) -> (* "msf" must correspond to ms at the outset *)
+  n = steps_to_sync_point tsc1 -> (* given starting target cfg, how many steps to first sync point? *)
+  tsc1 = spec_cfg_sync sc1 -> 
+  (* multiple steps of tgt correspond to one step of src *)
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
   exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync sc2.
 Proof.
@@ -259,7 +294,7 @@ End BCC.
 Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
   unused_prog msf p ->
   unused_prog callee p ->
-  ms_flag tsc1 = N (if (is_ms tsc1) then 1 else 0) ->
+  msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
   tsc1 = spec_cfg_sync p sc1 ->
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
   exists sc2, p |- <(( sc1 ))> -->*_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync p sc2.
