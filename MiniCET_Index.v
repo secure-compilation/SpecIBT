@@ -274,8 +274,11 @@ Definition spec_cfg_sync (sc: spec_cfg) : spec_cfg :=
   let tc := (pc_sync p pc, r_sync r ms, m, stk) in (* replace cfg with synced pc and r *)
   (tc, ct, ms). (* package it back up *)
 
-Definition steps_to_sync_point (tsc: spec_cfg) : nat.
-Admitted.
+(* The number of steps to the sync point is equal to the offset of the target pc *)
+Definition steps_to_sync_point (tsc: spec_cfg) : nat :=
+  let '(tc, ct, ms) := tsc in
+  let '(pc, r, m, sk) := tc in
+  snd pc.
 
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
