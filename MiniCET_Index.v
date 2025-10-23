@@ -245,27 +245,36 @@ Definition is_br_or_call (i : inst) :=
   | _                                  => false
   end.
 
+(* Implementing pc_sync:
+    
+    - Don't add 1 if inst being synchronized to is the first inst of blk.
+    - Don't add 1 to the inst being synchronized, since it's necessary to synchronize to start of decoration 
+      (and sometimes this is added before the inst, as in call)
+    - Add 1 to any br or call insts between the first one and the one being synchronized. 
+    - Add 2 if the blk is proc start.
+
+*)
+
 (* synchronizing point relation between src and tgt *)
 Definition pc_sync (p : prog) (pc: cptr) : cptr :=
   match p with
-  | [] => pc (* we probably have assumptions somewhere about nonempty programs and blocks? *)
+  | [] => pc
   | h::t => match nth_error p (fst pc) with
-                                              (* slice list from beginning to instruction being synchronized on, inclusive *)
-            | Some blk => let blk_until_pc := (firstn (add (snd pc) 1) (fst blk)) in 
-                          let acc1 := if (snd blk) then 2 else 0 in (* uslh adds 2 instructions to procedure blocks *)
-                          (* uslh adds 1 instruction to branch and call instructions *)
-                          let acc2 := fold_left (fun acc (i:inst) => if (is_br_or_call i) then add acc 1 else acc) blk_until_pc acc1 in
-                          (* if instruction being synchronized on is branch, then don't add 1 for it,
-                             because uslh adds an instruction *after* the branch instruction, not before *)
-                          let acc3 := (match p[[pc]] with | Some <{{branch _ to _}}> => pred acc2 | _ => acc2 end) in 
-                          (* return pc w/ adjusted offset *)
-                          ((fst pc), add (snd pc) (acc3))
+            | Some blk => let acc1 := if (snd blk) then 2 else 0 in
+              match (snd pc) with
+              | 0   => ((fst pc), add (snd pc) acc1) 
+              | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in
+                       let acc2 := fold_left (fun acc (i:inst) => if (is_br_or_call i)
+                                                                  then (add acc 1)
+                                                                  else acc) insts_before_pc acc1 in
+                           ((fst pc), add (snd pc) acc2)
+              end
             | None => pc
             end
   end.
 
-Definition r_sync (r: reg) (* (ms: bool) *) : reg.
-Admitted.
+(* Definition r_sync (r: reg) (* (ms: bool) *) : reg.
+   Admitted. *)
 
 Definition spec_cfg_sync (sc: spec_cfg) : spec_cfg :=
   let '(c, ct, ms) := sc in (* take apart spec_cfg *)
