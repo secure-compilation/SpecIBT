@@ -247,7 +247,7 @@ Definition is_br_or_call (i : inst) :=
 
 (* Implementing pc_sync:
     
-    - Add 1 to any br or call insts between the first one and the one being synchronized. 
+    - Add 1 to any br or call insts before the one being synchronized. 
     - Add 2 if the blk is proc start.
 
 *)
