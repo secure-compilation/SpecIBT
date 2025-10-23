@@ -213,16 +213,6 @@ Inductive multi_ideal_inst (p:prog) :
 
 (** * Backwards Compiler Correctness of Ultimate Speculative Load Hardening *)
 
-(* Print msf.
-==>
-msf = "msf"%string
-   : string 
-
-Print callee.
-==>
-callee = "callee"%string
-   : string *)
-
 (* get value of "msf" bit (program level) given current register state *)
 Definition msf_lookup (sc: spec_cfg) : val :=
   let '(c, ct, ms) := sc in
@@ -273,6 +263,10 @@ Definition pc_sync (p : prog) (pc: cptr) : cptr :=
 Definition r_sync (r: reg) (ms: bool) : reg :=
   let ms_map := t_update r msf (if ms then (N 1) else (N 0)) in 
   t_update ms_map callee (if ms then (N 0) else apply r callee).
+(* apply r callee : my attempt to approximate "callee" !-> st "callee" in previous proofs.
+   It doesn't seem right though. The src prog doesn't use "callee". But in the tgt prog, 
+   if we're not speculating and there's a call inst it'll have the value of call arg. 
+   And we don't even specify an initial value for it, so if there aren't any call insts then what is it? *)
 
 Definition spec_cfg_sync (sc: spec_cfg) : spec_cfg :=
   let '(c, ct, ms) := sc in (* take apart spec_cfg *)
