@@ -255,28 +255,29 @@ Definition is_br_or_call (i : inst) :=
 (* synchronizing point relation between src and tgt *)
 Definition pc_sync (p : prog) (pc: cptr) : cptr :=
   match p with
-  | [] => pc
+  | []   => pc
   | h::t => match nth_error p (fst pc) with
             | Some blk => let acc1 := if (snd blk) then 2 else 0 in
-              match (snd pc) with
-              | 0   => ((fst pc), add (snd pc) acc1) 
-              | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in
-                       let acc2 := fold_left (fun acc (i:inst) => if (is_br_or_call i)
-                                                                  then (add acc 1)
-                                                                  else acc) insts_before_pc acc1 in
-                           ((fst pc), add (snd pc) acc2)
-              end
-            | None => pc
+                            match (snd pc) with
+                            | 0   => ((fst pc), add (snd pc) acc1)
+                            | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in
+                                     let acc2 := fold_left (fun acc (i:inst) => if (is_br_or_call i)
+                                                                                then (add acc 1)
+                                                                                else acc) insts_before_pc acc1 in
+                                        ((fst pc), add (snd pc) acc2)
+                            end
+            | None     => pc
             end
   end.
 
-(* Definition r_sync (r: reg) (* (ms: bool) *) : reg.
-   Admitted. *)
+Definition r_sync (r: reg) (ms: bool) : reg :=
+  let ms_map := t_update r msf (if ms then (N 1) else (N 0)) in 
+  t_update ms_map callee (if ms then (N 0) else apply r callee).
 
 Definition spec_cfg_sync (sc: spec_cfg) : spec_cfg :=
   let '(c, ct, ms) := sc in (* take apart spec_cfg *)
   let '(pc, r, m, stk) := c in (* take apart cfg *)
-  let tc := (pc_sync pc, r_sync r, m, stk) in (* replace cfg with synced pc and r *)
+  let tc := (pc_sync p pc, r_sync r ms, m, stk) in (* replace cfg with synced pc and r *)
   (tc, ct, ms). (* package it back up *)
 
 Definition steps_to_sync_point (tsc: spec_cfg) : nat.
