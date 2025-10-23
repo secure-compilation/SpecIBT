@@ -247,9 +247,6 @@ Definition is_br_or_call (i : inst) :=
 
 (* Implementing pc_sync:
     
-    - Don't add 1 if inst being synchronized to is the first inst of blk.
-    - Don't add 1 to the inst being synchronized, since it's necessary to synchronize to start of decoration 
-      (and sometimes this is added before the inst, as in call)
     - Add 1 to any br or call insts between the first one and the one being synchronized. 
     - Add 2 if the blk is proc start.
 
