@@ -1,13 +1,13 @@
 (** * Testing MiniCET *)
 
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
-From Stdlib Require Import Strings.String.
-From Stdlib Require Import Bool.Bool.
-From Stdlib Require Import Arith.Arith.
-From Stdlib Require Import Arith.EqNat.
-From Stdlib Require Import Arith.PeanoNat. Import Nat.
-From Stdlib Require Import Lia.
-From Stdlib Require Import List. Import ListNotations.
+From Coq Require Import Strings.String.
+From Coq Require Import Bool.Bool.
+From Coq Require Import Arith.Arith.
+From Coq Require Import Arith.EqNat.
+From Coq Require Import Arith.PeanoNat. Import Nat.
+From Coq Require Import Lia.
+From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 
 From QuickChick Require Import QuickChick Tactics.
@@ -18,11 +18,11 @@ Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
 Export MonadNotation. Open Scope monad_scope.
 From SECF Require Import TestingLib.
-From Stdlib Require Import String.
+From Coq Require Import String.
 
 From SECF Require Import Utils.
 From SECF Require Import ListMaps.
-Require Import Stdlib.Classes.EquivDec.
+Require Import Coq.Classes.EquivDec.
 
 (** The factoring of expressions is taken from the latest SpecCT chapter *)
 
@@ -433,7 +433,7 @@ Fixpoint spec_steps (f:nat) (p:prog) (c:spec_cfg) (ds:dirs)
   end.
 
 (* SOONER: define monad used by uslh *)
-
+(* Writer monad *)
 Definition M (A: Type) := nat -> A * prog.
 
 Definition uslh_ret {A: Type} (x: A) : M A :=
@@ -454,6 +454,18 @@ Definition uslh_bind {A B: Type} (m: M A) (f: A -> M B) : M B :=
 (* YH: We can use mapGen from QuickChick library instead.  *)
 Definition mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
   sequence (List.map f l).
+
+Fixpoint foldM {A B: Type} (f : B -> A -> M B) (acc : B) (l: list A) : M B :=
+  match l with
+  | nil => ret acc
+  | hd :: tl => el <- f acc hd;; foldM f el tl
+  end.
+
+Fixpoint fold_rightM {A B : Type} (f : A -> B -> M B) (l : list A) (init : B) : M B :=
+  match l with
+  | [] => ret init
+  | hd :: tl => r <- fold_rightM f tl init;; f hd r
+  end.
 
 Definition concatM {A: Type} (m: M (list (list A))) : M (list A) :=
   xss <- m;; ret (List.concat xss).
