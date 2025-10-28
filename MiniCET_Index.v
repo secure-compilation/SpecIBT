@@ -16,6 +16,7 @@ Require Import Stdlib.Setoids.Setoid.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
+(* %s/\s\+$//e to strip trailing whitespace *)
 
 (** Sequential small-step semantics for MiniCET *)
 
@@ -23,7 +24,7 @@ Reserved Notation
   "p '|-' '<((' c '))>' '-->^' os '<((' ct '))>'"
   (at level 40, c constr, ct constr).
 
-Inductive seq_eval_small_step_inst (p:prog) : 
+Inductive seq_eval_small_step_inst (p:prog) :
   cfg -> cfg -> obs -> Prop :=
   | SSMI_Skip : forall pc rs m stk,
       p[[pc]] = Some <{{ skip }}> ->
@@ -63,14 +64,14 @@ Inductive seq_eval_small_step_inst (p:prog) :
 
 (** Sequential multi-step relation *)
 
-Reserved Notation 
+Reserved Notation
   "p '|-' '<((' c '))>' '-->*^' os '<((' ct '))>'"
       (at level 40, c constr, ct constr).
 
 Inductive multi_seq_inst (p : prog) (c : cfg) : cfg -> obs -> Prop :=
   | multi_seq_inst_refl : p |- <(( c ))> -->*^[] <(( c ))>
-  | multi_seq_inst_trans (c' c'' : cfg) (os1 os2 : obs) : 
-      p |- <(( c ))> -->^os1 <(( c' ))> -> 
+  | multi_seq_inst_trans (c' c'' : cfg) (os1 os2 : obs) :
+      p |- <(( c ))> -->^os1 <(( c' ))> ->
       p |- <(( c' ))> -->*^os2 <(( c'' ))> ->
       p |- <(( c ))> -->*^(os1 ++ os2) <(( c'' ))>
 
@@ -99,7 +100,7 @@ Inductive spec_eval_small_step (p:prog):
       ms' = ms || negb (Bool.eqb b b') ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), false, ms') ))>
   | SpecSMI_Jump : forall l pc r m sk ms,
-      p[[pc]] = Some <{{ jump l }}> -> 
+      p[[pc]] = Some <{{ jump l }}> ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( (((l,0), r, m, sk), false, ms) ))>
   | SpecSMI_Load : forall pc r m sk x e n v' ms,
       p[[pc]] = Some <{{ x <- load[e] }}> ->
@@ -147,8 +148,6 @@ Reserved Notation
   "p '|-' '<((' sc '))>' '-->i_' ds '^^' os '<((' sct '))>'"
   (at level 40, sc constr, sct constr).
 
-(* Print val. *)
-
 Inductive ideal_eval_small_step_inst (p:prog) :
   spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
   | ISMI_Skip  :  forall pc r m sk ms,
@@ -157,32 +156,32 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
-  | ISMI_Branch : forall pc pc' r m sk (ms ms' b b' : bool) e n n' l, 
+  | ISMI_Branch : forall pc pc' r m sk (ms ms' b b' : bool) e n n' l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
-      n' = (if ms then 0 else n) -> 
-      b = (not_zero n') -> 
-      pc' = (if b' then (l,0) else pc+1) -> 
-      ms' = (ms || (negb (Bool.eqb b b'))) -> 
+      n' = (if ms then 0 else n) ->
+      b = (not_zero n') ->
+      pc' = (if b' then (l,0) else pc+1) ->
+      ms' = (ms || (negb (Bool.eqb b b'))) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), false, ms') ))>
   | ISMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( (((l,0), r, m, sk), false, ms) ))>
-  | ISMI_Load : forall pc r m sk x e n n' v' (ms : bool), 
+  | ISMI_Load : forall pc r m sk x e n n' v' (ms : bool),
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
-      n' = (if ms then 0 else n) -> 
+      n' = (if ms then 0 else n) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n'] <(( ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
   | ISMI_Store : forall pc r m sk e e' e'' n (ms : bool),
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
-      e'' = (if ms then 0 else n) -> 
+      e'' = (if ms then 0 else n) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore e''] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
   | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      l' = (if ms then 0 else l) -> 
+      l' = (if ms then 0 else l) ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | ISMI_CTarget : forall pc r m sk ms,
@@ -219,6 +218,11 @@ Definition msf_lookup (sc: spec_cfg) : val :=
   let '(pc, r, m, stk) := c in
   apply r msf.
 
+Definition callee_lookup (sc: spec_cfg) : val :=
+  let '(c, ct, ms) := sc in
+  let '(pc, r, m, stk) := c in
+  apply r callee.
+
 (* returns bool corresponding to state of ms flag (semantics level) *)
 Definition ms_true (sc: spec_cfg) : bool :=
   let '(c, ct, ms) := sc in ms.
@@ -236,8 +240,8 @@ Definition is_br_or_call (i : inst) :=
   end.
 
 (* Implementing pc_sync:
-    
-    - Add 1 to any br or call insts before the one being synchronized. 
+
+    - Add 1 to any br or call insts before the one being synchronized.
     - Add 2 if the blk is proc start.
 
 *)
@@ -246,33 +250,33 @@ Definition is_br_or_call (i : inst) :=
 Definition pc_sync (p : prog) (pc: cptr) : cptr :=
   match p with
   | []   => pc
-  | h::t => match nth_error p (fst pc) with
-            | Some blk => let acc1 := if (snd blk) then 2 else 0 in
-                            match (snd pc) with
-                            | 0   => ((fst pc), add (snd pc) acc1)
-                            | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in
-                                     let acc2 := fold_left (fun acc (i:inst) => if (is_br_or_call i)
-                                                                                then (add acc 1)
-                                                                                else acc) insts_before_pc acc1 in
-                                        ((fst pc), add (snd pc) acc2)
-                            end
-            | None     => pc
-            end
+  | h::t =>
+      match nth_error p (fst pc) with
+      | Some blk => let acc1 := if (snd blk) then 2 else 0 in
+                      match (snd pc) with
+                      | 0   => ((fst pc), add (snd pc) acc1)
+                      | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in
+                                 let acc2 :=
+                                   fold_left (fun acc (i:inst) =>
+                                              if (is_br_or_call i) then (add acc 1) else acc) insts_before_pc acc1 in
+                                     ((fst pc), add (snd pc) acc2)
+                      end
+      | None     => pc
+      end
   end.
 
+(* given a source register, sync with target register *)
+(* can't deal with callee variable here *)
 Definition r_sync (r: reg) (ms: bool) : reg :=
-  let ms_map := t_update r msf (if ms then (N 1) else (N 0)) in 
-  t_update ms_map callee (if ms then (N 0) else apply r callee).
-(* apply r callee : my attempt to approximate "callee" !-> st "callee" in previous proofs.
-   It doesn't seem right though. The src prog doesn't use "callee". But in the tgt prog, 
-   if we're not speculating and there's a call inst it'll have the value of call arg. 
-   And we don't even specify an initial value for it, so if there aren't any call insts then what is it? *)
+  msf !-> N (if ms then 1 else 0); r.
 
+(* given a source config, return the corresponding target config *)
+(*  *)
 Definition spec_cfg_sync (sc: spec_cfg) : spec_cfg :=
-  let '(c, ct, ms) := sc in (* take apart spec_cfg *)
-  let '(pc, r, m, stk) := c in (* take apart cfg *)
-  let tc := (pc_sync p pc, r_sync r ms, m, stk) in (* replace cfg with synced pc and r *)
-  (tc, ct, ms). (* package it back up *)
+  let '(c, ct, ms) := sc in
+  let '(pc, r, m, stk) := c in
+  let tc := (pc_sync p pc, r_sync r ms, m, stk) in
+  (tc, ct, ms).
 
 (* The number of steps to the sync point is equal to the offset of the target pc *)
 Definition steps_to_sync_point (tsc: spec_cfg) : nat :=
@@ -280,18 +284,45 @@ Definition steps_to_sync_point (tsc: spec_cfg) : nat :=
   let '(pc, r, m, sk) := tc in
   snd pc.
 
+Definition get_reg (spc: spec_cfg) : reg :=
+  let '(c, ct, ms) := spc in
+  let '(pc, r, m, sk) := c in
+  r.
+
+Definition get_pc (spc: spec_cfg) : cptr :=
+  let '(c, ct, ms) := spc in
+  let '(pc, r, m, sk) := c in
+  pc.
+
+
+(*
+  Lemma ultimate_slh_bcc_generalized (p:prog) : forall n c ds st ast (b b' : bool) c' st' ast' os,
+  nonempty_arrs ast ->
+  unused_prog "b" p ->
+  unused "b" c ->
+  unused_prog "callee" p ->
+  unused "callee" c ->
+  st "b" = (if b then 1 else 0) ->
+  ultimate_slh_prog p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os^^n <((c', st', ast', b'))> ->
+      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
+  /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
+
+*)
+
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
   unused_prog msf p -> (* variables msf and callee are not used by the program *)
   unused_prog callee p ->
   msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) -> (* "msf" must correspond to ms at the outset *)
   n = steps_to_sync_point tsc1 -> (* given starting target cfg, how many steps to first sync point? *)
-  tsc1 = spec_cfg_sync sc1 -> 
+  tsc1 = spec_cfg_sync sc1 ->
   (* multiple steps of tgt correspond to one step of src *)
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-  exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync sc2.
+  exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync sc2 /\ callee_lookup sc1 = callee_lookup sc2.
+
 Proof.
-Admitted.
+  intros until os. intros unused_msf unused_callee msf_ms n_steps sync_1 tgt.
+  
 
 End BCC.
 
