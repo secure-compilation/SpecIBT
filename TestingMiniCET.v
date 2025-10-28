@@ -2000,6 +2000,6 @@ QuickChick (
    | None => collect "tt1 failed"%string (checker tt) (* discard *)
   end)))).
 
-(* +++ Passed 1000000 tests (677003 discards) *)
-(* Time Elapsed: 168.838887s *)
+(* +++ Passed 1000000 tests (0 discards) *)
+(* Time Elapsed: 1308.843714s *)
 
