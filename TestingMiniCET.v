@@ -1,13 +1,13 @@
 (** * Testing MiniCET *)
 
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
-From Coq Require Import Strings.String.
-From Coq Require Import Bool.Bool.
-From Coq Require Import Arith.Arith.
-From Coq Require Import Arith.EqNat.
-From Coq Require Import Arith.PeanoNat. Import Nat.
-From Coq Require Import Lia.
-From Coq Require Import List. Import ListNotations.
+From Stdlib Require Import Strings.String.
+From Stdlib Require Import Bool.Bool.
+From Stdlib Require Import Arith.Arith.
+From Stdlib Require Import Arith.EqNat.
+From Stdlib Require Import Arith.PeanoNat. Import Nat.
+From Stdlib Require Import Lia.
+From Stdlib Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 
 From QuickChick Require Import QuickChick Tactics.
@@ -18,11 +18,11 @@ Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
 Export MonadNotation. Open Scope monad_scope.
 From SECF Require Import TestingLib.
-From Coq Require Import String.
+From Stdlib Require Import String.
 
 From SECF Require Import Utils.
 From SECF Require Import ListMaps.
-Require Import Coq.Classes.EquivDec.
+Require Import Stdlib.Classes.EquivDec.
 
 (** The factoring of expressions is taken from the latest SpecCT chapter *)
 
@@ -450,7 +450,7 @@ Definition uslh_bind {A B: Type} (m: M A) (f: A -> M B) : M B :=
     bind := @uslh_bind
   }.
 
-(* No mapM in ExtLib, seems it got removed: https://github.com/rocq-community/coq-ext-lib/commit/ef2e35f43b2d1db4cb64188e9521948fdd1e0527 *)
+(* No mapM in ExtLib, seems it got removed: https://github.com/rocq-community/Stdlib-ext-lib/commit/ef2e35f43b2d1db4cb64188e9521948fdd1e0527 *)
 (* YH: We can use mapGen from QuickChick library instead.  *)
 Definition mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
   sequence (List.map f l).
