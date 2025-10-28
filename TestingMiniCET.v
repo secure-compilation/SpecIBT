@@ -1488,7 +1488,9 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
   let tc := (tpc, trs, tm, ts) in
   let ist := (c, tc, []) in
   match (TaintTracking.steps_taint_track f p ist []) with
-  | TaintTracking.ETerm (_, _, tobs) os =>
+    (* JB: also return the (partial) trace in the oof case, even if the taint tracking won't be sound in this case. *)
+    (* This should be fine if the speculative execution does not get more fuel than the sequential one *)
+  | TaintTracking.ETerm (_, _, tobs) os | TaintTracking.EOutOfFuel (_, _, tobs) os =>
       let (ids, mems) := split_sum_list tobs in
       Some (os, remove_dupes String.eqb ids,
                 remove_dupes Nat.eqb mems)
@@ -1979,7 +1981,16 @@ QuickChick (
                      | SEOutOfFuel _ _ _ => collect "se2 oof"%string (checker tt)
                      | _ => collect "2nd speculative execution fails!"%string (checker tt) (* discard -- doesn't seem to happen *)
                      end
-                 | SEOutOfFuel _ _ _ => collect "se1 oof"%string (checker tt)
+                 | SEOutOfFuel _ os1 ds => 
+                     let rs2' := spec_rs rs2 in
+                     let icfg2' := (ipc, rs2', m2, istk) in
+                     let iscfg2' := (icfg2', true, false) in
+                     let sc_r2 := spec_steps_acc 1000 harden iscfg2' ds in
+                     match sc_r2 with
+                     | SETerm _ os2 _ => collect "se1 oof but se2 term"%string (checker tt) (* this would be very weird *)
+                     | SEOutOfFuel _ os2 _ => checker (obs_eqb os1 os2) (* equality should hold because essentially lockstep *)
+                     | _ => collect "2nd speculative execution fails!"%string (checker tt) (* discard -- doesn't seem to happen *)
+                     end
                  | _ =>  collect "1st speculative execution fails!"%string (checker tt) (* discard -- doesn't seem to happen *)
                  end))
                )
