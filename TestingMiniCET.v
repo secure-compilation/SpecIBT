@@ -484,6 +484,52 @@ Definition uslh_inst (i: inst) : M (list inst) :=
   | _ => ret [i]
   end.
 
+Definition transform_load_store_inst (mem_l : nat) (merge : nat) (i : inst) : M (bool * list inst) :=
+  match i with
+  | <{{ x <- load[e] }}> =>
+      new <- add_block_M <{{ i[ x <- load[e]; jump merge] }}>;;
+      ret (true, <{{ i[branch (e < mem_l) to new; jump merge] }}>)
+  | <{{ store[e] <- e1 }}> =>
+      let l := 0 in
+      new <- add_block_M <{{ i[store[e] <- e1; jump merge] }}>;;
+      ret (true, <{{ i[branch (e < mem_l) to new; jump merge] }}>)
+  | _ => ret (false, [i])
+  end.
+
+Definition construct_and_merge (mem_l : nat) (i : inst) (acc : nat * list inst) : M (nat * list inst) :=
+  let '(merge, prev_insts) := acc in
+  tr <- transform_load_store_inst mem_l merge i;;
+  let '(is_split, new_insts) := tr in
+  let prev_insts' := match prev_insts with
+    | [] => <{{ i[jump merge] }}>
+    | x => x end in
+  (* If we split the block in two because of "load"/"store", then all previous instructions *)
+  (* get saved in the new block. New ones stay, and the "merge" lnk gets updated. *)
+  if is_split then
+    l <- add_block_M prev_insts';;
+    ret (l, new_insts)
+  (* If we don't split, than we concat new instructions to previous instructions and last "merge" link stays the same *)
+  else
+    ret (merge, new_insts ++ prev_insts').
+
+#[local] Parameter (bl : list inst).
+Check (fold_rightM (construct_and_merge 0) bl).
+
+Definition transform_load_store_blk (mem_l : nat) (nblk : nat * (list inst * bool)): M (list inst * bool) :=
+  let '(l, (bl, is_proc)) := nblk in
+  skip <- add_block_M <{{ i[ skip ] }}>;;
+  folded <- fold_rightM (construct_and_merge mem_l) bl (skip, []);; (* Is using "l" as default link correct? Should be, see "uslh_bind" with "c + Datatypes.length p"*)
+  ret (snd folded, is_proc).
+
+Definition transform_load_store_prog (m : mem) (p : prog) :=
+  let idx_p := (add_index p) in
+  let '(p', newp) := mapM (transform_load_store_blk (Datatypes.length m)) idx_p (Datatypes.length p) in
+  (p' ++ newp).
+
+Example transform := transform_load_store_prog [FP 0; N 1; FP 2] [(<{{ i[ctarget; X := 1; Y <- load[X]; store[Y] <- X] }}>, true)]. 
+Eval compute in transform.
+Eval compute in (nth_error transform 1).
+
 Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
   let '(l, (bl, is_proc)) := nblk in
   bl' <- concatM (mapM uslh_inst bl);;
