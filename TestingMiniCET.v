@@ -496,52 +496,6 @@ Definition uslh_inst (i: inst) : M (list inst) :=
   | _ => ret [i]
   end.
 
-Definition transform_load_store_inst (mem_l : nat) (merge : nat) (i : inst) : M (bool * list inst) :=
-  match i with
-  | <{{ x <- load[e] }}> =>
-      new <- add_block_M <{{ i[ x <- load[e]; jump merge] }}>;;
-      ret (true, <{{ i[branch (e < mem_l) to new; jump merge] }}>)
-  | <{{ store[e] <- e1 }}> =>
-      let l := 0 in
-      new <- add_block_M <{{ i[store[e] <- e1; jump merge] }}>;;
-      ret (true, <{{ i[branch (e < mem_l) to new; jump merge] }}>)
-  | _ => ret (false, [i])
-  end.
-
-Definition construct_and_merge (mem_l : nat) (i : inst) (acc : nat * list inst) : M (nat * list inst) :=
-  let '(merge, prev_insts) := acc in
-  tr <- transform_load_store_inst mem_l merge i;;
-  let '(is_split, new_insts) := tr in
-  let prev_insts' := match prev_insts with
-    | [] => <{{ i[jump merge] }}>
-    | x => x end in
-  (* If we split the block in two because of "load"/"store", then all previous instructions *)
-  (* get saved in the new block. New ones stay, and the "merge" lnk gets updated. *)
-  if is_split then
-    l <- add_block_M prev_insts';;
-    ret (l, new_insts)
-  (* If we don't split, than we concat new instructions to previous instructions and last "merge" link stays the same *)
-  else
-    ret (merge, new_insts ++ prev_insts').
-
-#[local] Parameter (bl : list inst).
-Check (fold_rightM (construct_and_merge 0) bl).
-
-Definition transform_load_store_blk (mem_l : nat) (nblk : nat * (list inst * bool)): M (list inst * bool) :=
-  let '(l, (bl, is_proc)) := nblk in
-  skip <- add_block_M <{{ i[ skip ] }}>;;
-  folded <- fold_rightM (construct_and_merge mem_l) bl (skip, []);; (* Is using "l" as default link correct? Should be, see "uslh_bind" with "c + Datatypes.length p"*)
-  ret (snd folded, is_proc).
-
-Definition transform_load_store_prog (m : mem) (p : prog) :=
-  let idx_p := (add_index p) in
-  let '(p', newp) := mapM (transform_load_store_blk (Datatypes.length m)) idx_p (Datatypes.length p) in
-  (p' ++ newp).
-
-Example transform := transform_load_store_prog [FP 0; N 1; FP 2] [(<{{ i[ctarget; X := 1; Y <- load[X]; store[Y] <- X] }}>, true)]. 
-Eval compute in transform.
-Eval compute in (nth_error transform 1).
-
 Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
   let '(l, (bl, is_proc)) := nblk in
   bl' <- concatM (mapM uslh_inst bl);;
@@ -930,14 +884,18 @@ Sample (gen_jump_wt 8 [3; 3; 1; 1] 2).
 Definition gen_load_wt (t: ty) (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
   let tlst := filter (fun '(_, t') => ty_eqb t t') (snd c) in
   let vars := map_dom tlst in
-  (* SOONER: YH: now it just supports numbers. extend this later. *)
-  let indices := seq 0 (Datatypes.length tm) in
-  let idx_tm := combine indices tm in
+  (* We only generate indices of identifiers with type "TNum" *)
+  let indices : list string := map_dom (filter (fun '(_, t') => ty_eqb TNum t') (snd c)) in
+  let indicesGen : list (G exp) := map (fun x => ret (AId x)) indices in
+  let mem_l := Datatypes.length tm in
+  let indexExpsGen : G exp := freq [ (1, liftM ANum (choose (0, mem_l))); (1, oneOf_ (ret (ANum 0)) indicesGen) ] in
+  exps <- vectorOf mem_l indexExpsGen;;
+  let idx_tm := combine (exps : list exp) tm in
   let idxt := fst (split (filter (fun '(_, t') => ty_eqb t t') idx_tm)) in
   if (seq.nilp vars) || (seq.nilp idxt)
   then ret <{ skip }>
   else
-    n <- elems_ 0 idxt;;
+    n <- elems_ (ANum 0) idxt;;
     x <- elems_ "X0"%string vars;;
     ret <{ x <- load[n] }>.
 
@@ -954,6 +912,44 @@ Definition gen_store_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst 
     ret <{ store[n] <- e2 }>.
 
 Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_store_wt c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
+
+Definition transform_load_store_inst (mem_l : nat) (acc : list inst) (i : inst) : M (bool * list inst) :=
+  match i with
+  | <{{ x <- load[e] }}> =>
+      merge <- add_block_M acc;;
+      new <- add_block_M <{{ i[ x <- load[e]; jump merge] }}>;;
+      ret (true, <{{ i[branch (e < mem_l) to new; jump merge] }}>)
+  | <{{ store[e] <- e1 }}> =>
+      merge <- add_block_M acc;;
+      new <- add_block_M <{{ i[store[e] <- e1; jump merge] }}>;;
+      ret (true, <{{ i[branch (e < mem_l) to new; jump merge] }}>)
+  | _ => ret (false, [i])
+  end.
+
+Definition split_and_merge (mem_l : nat) (i : inst) (acc : list inst) : M (list inst) :=
+  tr <- transform_load_store_inst mem_l acc i;;
+  let '(is_split, new_insts) := tr in
+  (* If we split the block in two because of "load"/"store", then all previous instructions *)
+  (* get saved in the new block. New ones stay, and the "merge" lnk gets updated. *)
+  if is_split then
+    ret new_insts
+  (* If we don't split, than we concat new instructions to previous instructions and last "merge" link stays the same *)
+  else
+    ret (new_insts ++ acc).
+
+Definition transform_load_store_blk (mem_l : nat) (nblk : list inst * bool): M (list inst * bool) :=
+  let (bl, is_proc) := nblk in
+  folded <- fold_rightM (split_and_merge mem_l) bl <{{ i[ skip ] }}>;; (* Is using "l" as default link correct? Should be, see "uslh_bind" with "c + Datatypes.length p"*)
+  ret (folded, is_proc).
+
+Definition transform_load_store_prog (m : tmem) (p : prog) :=
+  let '(p', newp) := mapM (transform_load_store_blk (Datatypes.length m)) p (Datatypes.length p) in
+  (p' ++ newp).
+
+(* Example transform := transform_load_store_prog [FP 0; N 1; FP 2] [(<{{ i[ ctarget; X := 0; Y <- load[X]; store[Y] <- X] }}>, true)]. 
+Eval compute in transform.
+Eval compute in (Datatypes.length transform).
+Eval compute in (nth_error transform 3). *)
 
 Definition gen_call_wt (c: rctx) (pst: list nat) : G inst :=
   e <- gen_exp_ptr_wt 1 c pst;;
@@ -1081,7 +1077,8 @@ Definition gen_prog_with_term_wt_example (pl: nat) :=
   tm <- arbitrary;;
   pst <- gen_partition pl;;
   let bsz := 5%nat in
-  _gen_prog_with_term_wt c tm bsz pl pst pst.
+  prog <- _gen_prog_with_term_wt c tm bsz pl pst pst;;
+  ret (transform_load_store_prog tm prog).
 
 Definition prog_basic_block_checker (p: prog) : bool :=
   forallb (fun bp => (basic_block_checker (fst bp))) p.
@@ -1142,7 +1139,8 @@ Definition gen_prog_wt (bsz pl: nat) :=
   c <- arbitrary;;
   tm <- arbitrary;;
   pst <- gen_partition pl;;
-  _gen_prog_wt c tm bsz pl pst pst.
+  progLoadStoreUnsecure <- _gen_prog_wt c tm bsz pl pst pst;;
+  ret (transform_load_store_prog tm progLoadStoreUnsecure).
 
 Definition gen_prog_wt' (c : rctx) (pst : list nat) (bsz pl : nat) :=
   tm <- arbitrary;;
