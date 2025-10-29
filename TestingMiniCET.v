@@ -935,6 +935,7 @@ Definition split_and_merge (mem_l : nat) (i : inst) (acc : list inst) : M (list 
     ret new_insts
   (* If we don't split, than we concat new instructions to previous instructions and last "merge" link stays the same *)
   else
+  (* NOTE: We are folding from the right, so new instructions are appended to the beginning of current block *)
     ret (new_insts ++ acc).
 
 Definition transform_load_store_blk (mem_l : nat) (nblk : list inst * bool): M (list inst * bool) :=
