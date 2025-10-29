@@ -939,7 +939,7 @@ Definition split_and_merge (mem_l : nat) (i : inst) (acc : list inst) : M (list 
 
 Definition transform_load_store_blk (mem_l : nat) (nblk : list inst * bool): M (list inst * bool) :=
   let (bl, is_proc) := nblk in
-  folded <- fold_rightM (split_and_merge mem_l) bl <{{ i[ skip ] }}>;; (* Is using "l" as default link correct? Should be, see "uslh_bind" with "c + Datatypes.length p"*)
+  folded <- fold_rightM (split_and_merge mem_l) bl <{{ i[ skip ] }}>;;
   ret (folded, is_proc).
 
 Definition transform_load_store_prog (m : tmem) (p : prog) :=
