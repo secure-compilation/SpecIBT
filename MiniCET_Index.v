@@ -178,10 +178,14 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       to_nat (eval r e) = Some n ->
       e'' = (if ms then 0 else n) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore e''] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
-  | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool),
+  | ISMI_Call : forall pc pc' blk r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       l' = (if ms then 0 else l) ->
+      (* Jonathan suggested the second stipulation below, I added the other two *)
+      nth_error p (fst pc') = Some blk ->
+      snd blk = true ->
+      snd pc' = 0 ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | ISMI_CTarget : forall pc r m sk ms,
@@ -247,10 +251,11 @@ Definition is_br_or_call (i : inst) :=
 *)
 
 (* synchronizing point relation between src and tgt *)
-Definition pc_sync (p : prog) (pc: cptr) : cptr :=
+(* this is incorrect and I still need to fix it *)
+Definition pc_sync (pc: cptr) : cptr :=
   match p with
   | []   => pc
-  | h::t =>
+  | _    =>
       match nth_error p (fst pc) with
       | Some blk => let acc1 := if (snd blk) then 2 else 0 in
                       match (snd pc) with
@@ -266,23 +271,44 @@ Definition pc_sync (p : prog) (pc: cptr) : cptr :=
   end.
 
 (* given a source register, sync with target register *)
-(* can't deal with callee variable here *)
+(* can't handle callee here, not enough info if not speculating *)
 Definition r_sync (r: reg) (ms: bool) : reg :=
   msf !-> N (if ms then 1 else 0); r.
 
 (* given a source config, return the corresponding target config *)
-(*  *)
 Definition spec_cfg_sync (sc: spec_cfg) : spec_cfg :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, stk) := c in
-  let tc := (pc_sync p pc, r_sync r ms, m, stk) in
+  let tc := (pc_sync pc, r_sync r ms, m, stk) in
   (tc, ct, ms).
 
-(* The number of steps to the sync point is equal to the offset of the target pc *)
-Definition steps_to_sync_point (tsc: spec_cfg) : nat :=
+(* How many steps does it take for target program to reach the
+   program point the source reaches in one step? *)
+Definition steps_to_sync_point (tsc: spec_cfg) (d : direction) : nat :=
   let '(tc, ct, ms) := tsc in
   let '(pc, r, m, sk) := tc in
-  snd pc.
+  match p[[pc]] with (* number of steps for T -> T' depends on which inst *)
+  | Some i => match i with
+              | <{{branch e' to l'}}> => match d with
+                                         | DBranch b' => if b' then 3 else 2
+                                         | _ => 0 (* not valid *)
+                                         end
+                (* if attacker directive is true, 3 steps. otherwise 2. *)
+              | <{{call e}}> => match d with
+                                | DCall lo => let '(l, o) := lo in
+                                              match nth_error p l with
+                                              | Some blk => if snd blk && (o =? 0) then 4 else 0
+                                              | _ => 0
+                                              end
+                                | _ => 0
+                                end
+                (* if attacker steers to beginning of proc block then 4 steps to ideal 1.
+                  (should I also consider the possibility of attacker steering to non-proc block,
+                  or middle of either kind of block?) *)
+              | _ => 1 (* no other inst decorations add steps *)
+              end
+  | _ => 0 (* this would be an error. Should I be programming this monadically instead of with match statements? *)
+  end.
 
 Definition get_reg (spc: spec_cfg) : reg :=
   let '(c, ct, ms) := spc in
@@ -318,11 +344,11 @@ Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
   tsc1 = spec_cfg_sync sc1 ->
   (* multiple steps of tgt correspond to one step of src *)
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-  exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync sc2 /\ callee_lookup sc1 = callee_lookup sc2.
+  exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync sc2.
 
 Proof.
   intros until os. intros unused_msf unused_callee msf_ms n_steps sync_1 tgt.
-  
+Admitted.
 
 End BCC.
 
