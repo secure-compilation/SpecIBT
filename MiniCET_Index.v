@@ -182,7 +182,8 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       l' = (if ms then 0 else l) ->
-      (* Jonathan suggested the second stipulation below, I added the other two *)
+      (* attacker isn't allowed to jump to non-proc blocks, nor to jump over ctarget to middle of proc block *)
+      (* may need to change this, depending on how Intel CET handles OOB attacker pc *)
       nth_error p (fst pc') = Some blk ->
       snd blk = true ->
       snd pc' = 0 ->
@@ -251,22 +252,21 @@ Definition is_br_or_call (i : inst) :=
 *)
 
 (* synchronizing point relation between src and tgt *)
-(* this is incorrect and I still need to fix it *)
-Definition pc_sync (pc: cptr) : cptr :=
+Definition pc_sync (pc: cptr) : option cptr :=
   match p with
-  | []   => pc
+  | []   => None
   | _    =>
       match nth_error p (fst pc) with
       | Some blk => let acc1 := if (snd blk) then 2 else 0 in
                       match (snd pc) with
-                      | 0   => ((fst pc), add (snd pc) acc1)
+                      | 0   => Some ((fst pc), add (snd pc) acc1)
                       | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in
                                  let acc2 :=
                                    fold_left (fun acc (i:inst) =>
                                               if (is_br_or_call i) then (add acc 1) else acc) insts_before_pc acc1 in
-                                     ((fst pc), add (snd pc) acc2)
+                                     Some ((fst pc), add (snd pc) acc2)
                       end
-      | None     => pc
+      | None     => None
       end
   end.
 
@@ -276,38 +276,33 @@ Definition r_sync (r: reg) (ms: bool) : reg :=
   msf !-> N (if ms then 1 else 0); r.
 
 (* given a source config, return the corresponding target config *)
-Definition spec_cfg_sync (sc: spec_cfg) : spec_cfg :=
+Definition spec_cfg_sync (sc: spec_cfg) : option spec_cfg :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, stk) := c in
-  let tc := (pc_sync pc, r_sync r ms, m, stk) in
-  (tc, ct, ms).
+  match pc_sync pc with
+  | Some pc => let tc := (pc, r_sync r ms, m, stk) in
+                Some (tc, ct, ms)
+  | _ => None
+  end.
 
 (* How many steps does it take for target program to reach the
    program point the source reaches in one step? *)
-Definition steps_to_sync_point (tsc: spec_cfg) (d : direction) : nat :=
+Definition steps_to_sync_point (tsc: spec_cfg) (ds : dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
   let '(pc, r, m, sk) := tc in
   match p[[pc]] with (* number of steps for T -> T' depends on which inst *)
-  | Some i => match i with
-              | <{{branch e' to l'}}> => match d with
-                                         | DBranch b' => if b' then 3 else 2
-                                         | _ => 0 (* not valid *)
-                                         end
-                (* if attacker directive is true, 3 steps. otherwise 2. *)
-              | <{{call e}}> => match d with
-                                | DCall lo => let '(l, o) := lo in
+  | Some i => match (i, ds) with
+              | (<{{branch e to l}}>, [DBranch b]) => Some (if b then 3 else 2)
+              | (<{{call e}}>, [DCall lo]) => let '(l, o) := lo in
                                               match nth_error p l with
-                                              | Some blk => if snd blk && (o =? 0) then 4 else 0
-                                              | _ => 0
+                                              (* not sure how to handle sync point steps if attacker jumped to a totally different block *)
+                                              (* currently just forbidding it as in current ideal semantics *)
+                                              | Some blk => if (snd blk) && (o =? 0) then Some 4 else None
+                                              | _ => None
                                               end
-                                | _ => 0
-                                end
-                (* if attacker steers to beginning of proc block then 4 steps to ideal 1.
-                  (should I also consider the possibility of attacker steering to non-proc block,
-                  or middle of either kind of block?) *)
-              | _ => 1 (* no other inst decorations add steps *)
+              | _ => Some 1
               end
-  | _ => 0 (* this would be an error. Should I be programming this monadically instead of with match statements? *)
+  | _ => None
   end.
 
 Definition get_reg (spc: spec_cfg) : reg :=
@@ -340,11 +335,11 @@ Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
   unused_prog msf p -> (* variables msf and callee are not used by the program *)
   unused_prog callee p ->
   msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) -> (* "msf" must correspond to ms at the outset *)
-  n = steps_to_sync_point tsc1 -> (* given starting target cfg, how many steps to first sync point? *)
-  tsc1 = spec_cfg_sync sc1 ->
+  steps_to_sync_point tsc1 ds = Some n -> (* given starting target cfg, how many steps to first sync point? *)
+  spec_cfg_sync sc1 = Some tsc1 ->
   (* multiple steps of tgt correspond to one step of src *)
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-  exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync sc2.
+  exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2.
 
 Proof.
   intros until os. intros unused_msf unused_callee msf_ms n_steps sync_1 tgt.
