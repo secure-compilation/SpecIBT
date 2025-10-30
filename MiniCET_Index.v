@@ -111,14 +111,21 @@ Inductive spec_eval_small_step (p:prog):
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore n] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
-  | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
+  | SpecSMI_Call : forall pc pc' blk o r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
+      (* stuck state if attacker pc is OOB for label/program or offset/label, as per today's discussion *)
+      nth_error p (fst pc') = Some blk ->
+      nth_error (fst blk) (snd pc') = Some o ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
+  (* Could add this, but would probably need to add some "fault" flag to set? and specify that it be false for any other step to occur?
+  | ISMI_CTarget_Fault : forall pc r m sk ms, 
+      p[[pc]] = Some <{{ ctarget }}> ->
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc, r, m, sk), false, ms) ))> *)
   | SpecSMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( ((pc', r, m, sk), false, ms) ))>
@@ -178,20 +185,22 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       to_nat (eval r e) = Some n ->
       e'' = (if ms then 0 else n) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore e''] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
-  | ISMI_Call : forall pc pc' blk r m sk e l l' (ms ms' : bool),
+  | ISMI_Call : forall pc pc' blk o r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       l' = (if ms then 0 else l) ->
-      (* attacker isn't allowed to jump to non-proc blocks, nor to jump over ctarget to middle of proc block *)
-      (* may need to change this, depending on how Intel CET handles OOB attacker pc *)
+      (* stuck state if attacker pc is OOB for label/program or offset/label, as per today's discussion *)
       nth_error p (fst pc') = Some blk ->
-      snd blk = true ->
-      snd pc' = 0 ->
+      nth_error (fst blk) (snd pc') = Some o ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | ISMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
+(* Could add this, but would probably need to add some "fault" flag to set? and specify that it be false for any other step to occur?
+   | ISMI_CTarget_Fault : forall pc r m sk ms, 
+      p[[pc]] = Some <{{ ctarget }}> ->
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc, r, m, sk), false, ms) ))> *)
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( ((pc', r, m, sk), false, ms) ))>
@@ -305,6 +314,53 @@ Definition steps_to_sync_point (tsc: spec_cfg) (ds : dirs) : option nat :=
   | _ => None
   end.
 
+(* need to specify what sort of termination we have:
+
+  - if instruction is ret and stack is empty: normal 
+  - if ctarget is expected and the current instruction ≠ ctarget: fault
+  - any other sort of termination: stuck
+
+*)
+
+Definition is_fault (final: spec_cfg) : bool :=
+  let '(c, ct, ms) := final in
+  let '(pc, rs, m, sk) := c in
+  match p[[pc]] with 
+  | Some i => match i with
+              | <{{ ctarget }}> => if ct then false else true
+              | _ => false
+              end
+  | None => false
+  end.
+
+Definition is_normal_termination (final: spec_cfg) : bool :=
+  let '(c, ct, ms) := final in
+  let '(pc, rs, m, sk) := c in
+  match p[[pc]] with
+  | Some i => match i with
+              | <{{ ret }}> => if seq.nilp sk then true else false
+              | _ => false
+              end
+  | None => false
+  end.
+
+Definition is_stuck (final: spec_cfg) : bool :=
+  negb ((is_fault final) || (is_normal_termination final)).
+
+(* from testing file -- modified to the above three
+Definition final_spec_cfg (sc: spec_cfg) : bool :=
+  let '(c, ct, ms) := sc in
+  let '(pc, rs, m, stk) := c in
+  match p[[pc]] with
+  | Some i => match i with
+             | <{{ ret }}> => if seq.nilp stk then true else false
+             | <{{ ctarget }}> => if ct then false else true
+             | _ => false
+             end
+  | None => false
+   end. *)
+
+
 Definition get_reg (spc: spec_cfg) : reg :=
   let '(c, ct, ms) := spc in
   let '(pc, r, m, sk) := c in
@@ -335,8 +391,8 @@ Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
   unused_prog msf p -> (* variables msf and callee are not used by the program *)
   unused_prog callee p ->
   msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) -> (* "msf" must correspond to ms at the outset *)
-  steps_to_sync_point tsc1 ds = Some n -> (* given starting target cfg, how many steps to first sync point? *)
-  spec_cfg_sync sc1 = Some tsc1 ->
+  steps_to_sync_point tsc1 ds = Some n ->
+  spec_cfg_sync sc1 = Some tsc1 -> (* start states invariant *)
   (* multiple steps of tgt correspond to one step of src *)
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
   exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2.
