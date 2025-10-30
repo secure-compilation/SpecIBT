@@ -432,7 +432,8 @@ Fixpoint spec_steps (f:nat) (p:prog) (c:spec_cfg) (ds:dirs)
       None (* Q: Do we need more precise out-of-fuel error here? *)
   end.
 
-(* SOONER: define monad used by uslh *)
+(* YH: What do you think about moving the writer monad-related code to Util.v *)
+
 (* Writer monad *)
 Definition M (A: Type) := nat -> A * prog.
 
@@ -1666,8 +1667,9 @@ QuickChick (
   | TaintTracking.EError st os => checker false
   end)))).
 
-(* +++ Passed 1000000 tests (639932 discards) *)
-(* Time Elapsed: 801.286811s *)
+(* YH: stuck_free failed. *)
+(* *** Failed after 9 tests and 0 shrinks. (4 discards) *)
+(* Time Elapsed: 0.009606s *)
 
 (* +++ Passed 10000 tests (6403 discards) *)
 
@@ -2057,6 +2059,12 @@ QuickChick (
    | None => collect "tt1 failed"%string (checker tt) (* discard *)
   end)))).
 
+
+(* 1118 : (Discarded) "tt1 failed" *)
+(* +++ Passed 10000 tests (1118 discards) *)
+(* Time Elapsed: 14.019411s *)
+
+(* Outdated. available commit: 58fa2d5c090d764b548c967ff4c40a6d6f2fb679*)
 (* +++ Passed 1000000 tests (0 discards) *)
 (* Time Elapsed: 1308.843714s *)
 
