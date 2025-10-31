@@ -226,7 +226,7 @@ Inductive multi_ideal_inst (p:prog) :
 
 (** * Backwards Compiler Correctness of Ultimate Speculative Load Hardening *)
 
-(* get value of "msf" bit (program level) given current register state *)
+(* get value of msf or callee variables given current register state *)
 Definition msf_lookup (sc: spec_cfg) : val :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, stk) := c in
@@ -237,7 +237,7 @@ Definition callee_lookup (sc: spec_cfg) : val :=
   let '(pc, r, m, stk) := c in
   apply r callee.
 
-(* returns bool corresponding to state of ms flag (semantics level) *)
+(* are we speculating (semantic level) *)
 Definition ms_true (sc: spec_cfg) : bool :=
   let '(c, ct, ms) := sc in ms.
 
@@ -253,28 +253,31 @@ Definition is_br_or_call (i : inst) :=
   | _                                  => false
   end.
 
-(* Implementing pc_sync:
-
-    - Add 1 to any br or call insts before the one being synchronized.
-    - Add 2 if the blk is proc start.
+(* synchronizing point relation between src and tgt *)
+(* 
+   checks: are label and offset both in-bounds? 
+   If proc block, add 2 
+   If not first instruction in block, accumulate extra steps from all previous insts 
+   For inst in source, always start from beginning of target decoration so we have access to all of it 
 
 *)
-
-(* synchronizing point relation between src and tgt *)
 Definition pc_sync (pc: cptr) : option cptr :=
   match p with
   | []   => None
   | _    =>
       match nth_error p (fst pc) with
-      | Some blk => let acc1 := if (snd blk) then 2 else 0 in
-                      match (snd pc) with
-                      | 0   => Some ((fst pc), add (snd pc) acc1)
-                      | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in
-                                 let acc2 :=
-                                   fold_left (fun acc (i:inst) =>
-                                              if (is_br_or_call i) then (add acc 1) else acc) insts_before_pc acc1 in
-                                     Some ((fst pc), add (snd pc) acc2)
-                      end
+      | Some blk => match nth_error (fst blk) (snd pc) with
+                    | Some i => let acc1 := if (snd blk) then 2 else 0 in
+                                match (snd pc) with
+                                | 0   => Some ((fst pc), add (snd pc) acc1)
+                                | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in
+                                          let acc2 :=
+                                            fold_left (fun acc (i:inst) =>
+                                                        if (is_br_or_call i) then (add acc 1) else acc) insts_before_pc acc1 in
+                                              Some ((fst pc), add (snd pc) acc2)
+                                end
+                    | None => None 
+                    end
       | None     => None
       end
   end.
@@ -299,67 +302,29 @@ Definition spec_cfg_sync (sc: spec_cfg) : option spec_cfg :=
 Definition steps_to_sync_point (tsc: spec_cfg) (ds : dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
   let '(pc, r, m, sk) := tc in
-  match p[[pc]] with (* number of steps for T -> T' depends on which inst *)
-  | Some i => match (i, ds) with
-              | (<{{branch e to l}}>, [DBranch b]) => Some (if b then 3 else 2)
-              | (<{{call e}}>, [DCall lo]) => let '(l, o) := lo in
-                                              match nth_error p l with
-                                              (* not sure how to handle sync point steps if attacker jumped to a totally different block *)
-                                              (* currently just forbidding it as in current ideal semantics *)
-                                              | Some blk => if (snd blk) && (o =? 0) then Some 4 else None
-                                              | _ => None
-                                              end
-              | _ => Some 1
-              end
+  match nth_error p (fst pc) with 
+  | Some blk => 
+      match nth_error (fst blk) (snd pc) with 
+      | Some i => 
+          match (i, ds) with
+          | (<{{branch e to l}}>, [DBranch b]) => Some (if b then 3 else 2)
+          | (<{{call e}}>, [DCall lo]) => 
+              let '(l, o) := lo in
+                match nth_error p l with
+                  (* in speculative semantics program gets stuck if label or offset are OOB *)
+                  (* The attacker can provide any label or offset. If in-bounds: 
+                    - either it's a call target block or not, and either it's the beginning of a block or not.  
+
+                  *)
+                | Some blk => match nth_error (fst blk) o with 
+                              | Some i => if (snd blk) && (o =? 0) then Some 4 else None
+                | _ => None
+                end
+          | _ => Some 1
+          end
+      | None => None 
   | _ => None
   end.
-
-(* need to specify what sort of termination we have:
-
-  - if instruction is ret and stack is empty: normal 
-  - if ctarget is expected and the current instruction ≠ ctarget: fault
-  - any other sort of termination: stuck
-
-*)
-
-Definition is_fault (final: spec_cfg) : bool :=
-  let '(c, ct, ms) := final in
-  let '(pc, rs, m, sk) := c in
-  match p[[pc]] with 
-  | Some i => match i with
-              | <{{ ctarget }}> => if ct then false else true
-              | _ => false
-              end
-  | None => false
-  end.
-
-Definition is_normal_termination (final: spec_cfg) : bool :=
-  let '(c, ct, ms) := final in
-  let '(pc, rs, m, sk) := c in
-  match p[[pc]] with
-  | Some i => match i with
-              | <{{ ret }}> => if seq.nilp sk then true else false
-              | _ => false
-              end
-  | None => false
-  end.
-
-Definition is_stuck (final: spec_cfg) : bool :=
-  negb ((is_fault final) || (is_normal_termination final)).
-
-(* from testing file -- modified to the above three
-Definition final_spec_cfg (sc: spec_cfg) : bool :=
-  let '(c, ct, ms) := sc in
-  let '(pc, rs, m, stk) := c in
-  match p[[pc]] with
-  | Some i => match i with
-             | <{{ ret }}> => if seq.nilp stk then true else false
-             | <{{ ctarget }}> => if ct then false else true
-             | _ => false
-             end
-  | None => false
-   end. *)
-
 
 Definition get_reg (spc: spec_cfg) : reg :=
   let '(c, ct, ms) := spc in
@@ -371,20 +336,87 @@ Definition get_pc (spc: spec_cfg) : cptr :=
   let '(pc, r, m, sk) := c in
   pc.
 
+Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
+  destruct c as (c & sk); destruct c as (c & m); destruct c as (c & r);
+  rename c into pc. 
 
-(*
-  Lemma ultimate_slh_bcc_generalized (p:prog) : forall n c ds st ast (b b' : bool) c' st' ast' os,
-  nonempty_arrs ast ->
-  unused_prog "b" p ->
-  unused "b" c ->
-  unused_prog "callee" p ->
-  unused "callee" c ->
-  st "b" = (if b then 1 else 0) ->
-  ultimate_slh_prog p |- <((ultimate_slh c, st, ast, b))> -->*_ds^^os^^n <((c', st', ast', b'))> ->
-      exists c'', p |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "callee" !-> st "callee"; "b" !-> st "b"; st', ast', b'))>
-  /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
+Lemma fetch_fail : forall tsc ds, 
+  p[[get_pc tsc]] = None -> steps_to_sync_point tsc ds = None.
+Proof.
+  intros. destruct_cfg tsc. simpl in *. rewrite H. reflexivity.
+Qed.
+
+(* need to specify what sort of termination we have:
+
+  - if instruction is ret and stack is empty: normal 
+  - if ctarget is expected and the current instruction ≠ ctarget: fault
+  - any other sort of termination: stuck
 
 *)
+
+Definition is_fault (final: spec_cfg) : option bool :=
+  let '(c, ct, ms) := final in
+  let '(pc, rs, m, sk) := c in
+  match p[[pc]] with 
+  | Some i => match i with
+              | <{{ ctarget }}> => Some (if ct then false else true)
+              | _ => Some false
+              end
+  | None => None
+  end.
+
+Definition is_normal_termination (final: spec_cfg) : option bool :=
+  let '(c, ct, ms) := final in
+  let '(pc, rs, m, sk) := c in
+  match p[[pc]] with
+  | Some i => match i with
+              | <{{ ret }}> => Some (if seq.nilp sk then true else false)
+              | _ => Some false
+              end
+  | None => None
+  end.
+
+Definition is_stuck (final: spec_cfg) : option bool :=
+  let '(c, ct, ms) := final in
+  let '(pc, rs, m, sk) := c in
+  match p[[pc]] with
+  | None => None
+  | _ => match (is_fault final, is_normal_termination final) with 
+         | (Some false, Some false) => Some true 
+         | _ => Some false 
+         end
+  end.
+
+Definition same_termination (sc2 tsc2 : spec_cfg) : bool := 
+  let '(c, ct, ms) := sc2 in 
+  let '(pc, r, m, sk) := c in 
+  let '(tc, tct, tms) := tsc2 in 
+  let '(tpc, tr, tm, tsk) := tc in 
+  match (p[[pc]], p[[tpc]]) with 
+  | (Some i, Some ti) => let iss := is_stuck sc2 in 
+                         let ist := is_stuck tsc2 in 
+                         let ins := is_normal_termination sc2 in 
+                         let intg := is_normal_termination tsc2 in 
+                         let ifs := is_fault sc2 in 
+                         let ift := is_fault tsc2 in 
+                         let stuck_match := 
+                           match (iss, ist) with 
+                           | (Some bs1, Some bt1) => bs1 && bt1 
+                           | _ => false 
+                           end in 
+                         let normal_match := 
+                           match (ins, intg) with 
+                           | (Some bs2, Some bt2) => bs2 && bt2 
+                           | _ => false 
+                           end in 
+                         let fault_match := 
+                           match (ifs, ift) with 
+                           | (Some bs3, Some bt3) => bs3 && bt3 
+                           | _ => false 
+                           end in 
+                             stuck_match || normal_match || fault_match
+  | _ => false
+  end.
 
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
@@ -395,10 +427,16 @@ Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
   spec_cfg_sync sc1 = Some tsc1 -> (* start states invariant *)
   (* multiple steps of tgt correspond to one step of src *)
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-  exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2.
+  exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2 /\ same_termination sc2 tsc2 = true.
 
 Proof.
   intros until os. intros unused_msf unused_callee msf_ms n_steps sync_1 tgt.
+  destruct p[[get_pc tsc1]] eqn:fetched.
+  { destruct i.
+    - 
+
+  }
+  { apply fetch_fail with (ds:=ds) in fetched. rewrite n_steps in fetched. discriminate. }
 Admitted.
 
 End BCC.
