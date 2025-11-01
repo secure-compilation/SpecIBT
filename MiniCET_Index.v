@@ -114,8 +114,7 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Call : forall pc pc' blk o r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      (* stuck state if attacker pc is OOB for label/program or offset/label, as per today's discussion *)
-      nth_error p (fst pc') = Some blk ->
+      nth_error p (fst pc') = Some blk -> (* see comments in ideal semantics about this *)
       nth_error (fst blk) (snd pc') = Some o ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
@@ -123,7 +122,7 @@ Inductive spec_eval_small_step (p:prog):
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
   (* Could add this, but would probably need to add some "fault" flag to set? and specify that it be false for any other step to occur?
-  | ISMI_CTarget_Fault : forall pc r m sk ms, 
+  | ISMI_CTarget_Fault : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc, r, m, sk), false, ms) ))> *)
   | SpecSMI_Ret : forall pc r m sk pc' ms,
@@ -189,16 +188,15 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       l' = (if ms then 0 else l) ->
-      (* stuck state if attacker pc is OOB for label/program or offset/label, as per today's discussion *)
-      nth_error p (fst pc') = Some blk ->
-      nth_error (fst blk) (snd pc') = Some o ->
+      nth_error p (fst pc') = Some blk -> (* should be fault for jumping outside the program, but I still don't know how to represent that in the semantics *)
+      nth_error (fst blk) (snd pc') = Some o -> (* UB for going OOB of a block, which might be in-bounds for some other block and therefore NOT a fault at the next lower level model *)
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | ISMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
 (* Could add this, but would probably need to add some "fault" flag to set? and specify that it be false for any other step to occur?
-   | ISMI_CTarget_Fault : forall pc r m sk ms, 
+   | ISMI_CTarget_Fault : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc, r, m, sk), false, ms) ))> *)
   | ISMI_Ret : forall pc r m sk pc' ms,
@@ -207,6 +205,8 @@ Inductive ideal_eval_small_step_inst (p:prog) :
 
   where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
     (ideal_eval_small_step_inst p sc sct ds os).
+
+(*  *)
 
 (** Ideal multi-step relation *)
 
@@ -254,33 +254,25 @@ Definition is_br_or_call (i : inst) :=
   end.
 
 (* synchronizing point relation between src and tgt *)
-(* 
-   checks: are label and offset both in-bounds? 
-   If proc block, add 2 
-   If not first instruction in block, accumulate extra steps from all previous insts 
-   For inst in source, always start from beginning of target decoration so we have access to all of it 
+(*
+   checks: are label and offset both in-bounds?
+   If proc block, add 2
+   If not first instruction in block, accumulate extra steps from all previous insts
+   For inst in source, always start from beginning of target decoration so we have access to all of it
 
 *)
+
 Definition pc_sync (pc: cptr) : option cptr :=
-  match p with
-  | []   => None
-  | _    =>
-      match nth_error p (fst pc) with
-      | Some blk => match nth_error (fst blk) (snd pc) with
-                    | Some i => let acc1 := if (snd blk) then 2 else 0 in
-                                match (snd pc) with
-                                | 0   => Some ((fst pc), add (snd pc) acc1)
-                                | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in
-                                          let acc2 :=
-                                            fold_left (fun acc (i:inst) =>
-                                                        if (is_br_or_call i) then (add acc 1) else acc) insts_before_pc acc1 in
-                                              Some ((fst pc), add (snd pc) acc2)
-                                end
-                    | None => None 
-                    end
-      | None     => None
-      end
-  end.
+  blk <- nth_error p (fst pc);; (* assuming nonempty program *)
+  i <- nth_error (fst blk) (snd pc);; (* offset in bounds *)
+  let acc1 := if (Bool.eqb (snd blk) true) then 2 else 0 in (* procedure blocks add 2 insts *)
+    match (snd pc) with
+    | 0 => Some ((fst pc), add (snd pc) acc1)
+    | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in (* accumulate extra insts from br and call insts preceding pc inst *)
+               let acc2 := fold_left (fun acc (i: inst) =>
+                 if (is_br_or_call i) then (add acc 1) else acc) insts_before_pc acc1 in
+                   Some ((fst pc), add (snd pc) acc2)
+    end.
 
 (* given a source register, sync with target register *)
 (* can't handle callee here, not enough info if not speculating *)
@@ -297,34 +289,27 @@ Definition spec_cfg_sync (sc: spec_cfg) : option spec_cfg :=
   | _ => None
   end.
 
-(* How many steps does it take for target program to reach the
-   program point the source reaches in one step? *)
-Definition steps_to_sync_point (tsc: spec_cfg) (ds : dirs) : option nat :=
+(* How many steps does it take for target program to reach the program point the source reaches in one step? *)
+(* Here we just consider a single inst, not the slice of the block up to and including pc (in contrast to pc_sync) *)
+(* The only insts that add steps are branch and call. *)
+(* Branch: 2 extra insts when uslh-created block is jumped to, 1 extra otherwise *)
+(* Call: assuming the attacker is in-bounds with both label and offset:  *)
+(* if the block is a procedure block, then 3 extra steps are added (callee assign, ctarget, callee check) *)
+(* if the attacker jumps somewhere else, that means ct is true but we are not going to encounter ctarget inst *)
+(* We've decided this should be a fault, so no steps are taken in this case. *)
+Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
   let '(pc, r, m, sk) := tc in
-  match nth_error p (fst pc) with 
-  | Some blk => 
-      match nth_error (fst blk) (snd pc) with 
-      | Some i => 
-          match (i, ds) with
-          | (<{{branch e to l}}>, [DBranch b]) => Some (if b then 3 else 2)
-          | (<{{call e}}>, [DCall lo]) => 
-              let '(l, o) := lo in
-                match nth_error p l with
-                  (* in speculative semantics program gets stuck if label or offset are OOB *)
-                  (* The attacker can provide any label or offset. If in-bounds: 
-                    - either it's a call target block or not, and either it's the beginning of a block or not.  
-
-                  *)
-                | Some blk => match nth_error (fst blk) o with 
-                              | Some i => if (snd blk) && (o =? 0) then Some 4 else None
-                | _ => None
-                end
-          | _ => Some 1
-          end
-      | None => None 
-  | _ => None
-  end.
+    blk <- nth_error p (fst pc);;
+    i <- nth_error (fst blk) (snd pc);;
+    match (i, ds) with
+    | (<{{branch e to l}}>, [DBranch b]) => Some (if b then 3 else 2)
+    | (<{{call e}}>, [DCall lo]) => let '(l, o) := lo in
+                                      blk <- nth_error p l;;
+                                      i <- nth_error (fst blk) o;;
+                                      if (Bool.eqb (snd blk) true) then Some 4 else None
+    | _ => Some 1
+    end.
 
 Definition get_reg (spc: spec_cfg) : reg :=
   let '(c, ct, ms) := spc in
@@ -338,17 +323,19 @@ Definition get_pc (spc: spec_cfg) : cptr :=
 
 Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
   destruct c as (c & sk); destruct c as (c & m); destruct c as (c & r);
-  rename c into pc. 
+  rename c into pc.
 
-Lemma fetch_fail : forall tsc ds, 
+(* switching from match cases to monads broke this proof, it's probably something simple though *)
+Lemma fetch_fail : forall tsc ds,
   p[[get_pc tsc]] = None -> steps_to_sync_point tsc ds = None.
 Proof.
-  intros. destruct_cfg tsc. simpl in *. rewrite H. reflexivity.
-Qed.
+  intros. destruct_cfg tsc. simpl in H. destruct (nth_error p (fst pc)) eqn:Eq1.
+  (* rewrite H. reflexivity. *)
+Admitted.
 
 (* need to specify what sort of termination we have:
 
-  - if instruction is ret and stack is empty: normal 
+  - if instruction is ret and stack is empty: normal
   - if ctarget is expected and the current instruction ≠ ctarget: fault
   - any other sort of termination: stuck
 
@@ -357,64 +344,59 @@ Qed.
 Definition is_fault (final: spec_cfg) : option bool :=
   let '(c, ct, ms) := final in
   let '(pc, rs, m, sk) := c in
-  match p[[pc]] with 
-  | Some i => match i with
-              | <{{ ctarget }}> => Some (if ct then false else true)
-              | _ => Some false
-              end
-  | None => None
+  i <- p[[pc]];;
+  match i with
+  | <{{ ctarget }}> => Some (if ct then false else true)
+  | _ => Some false
   end.
 
 Definition is_normal_termination (final: spec_cfg) : option bool :=
   let '(c, ct, ms) := final in
   let '(pc, rs, m, sk) := c in
-  match p[[pc]] with
-  | Some i => match i with
-              | <{{ ret }}> => Some (if seq.nilp sk then true else false)
-              | _ => Some false
-              end
-  | None => None
+  i <- p[[pc]];;
+  match i with
+  | <{{ ret }}> => Some (if seq.nilp sk then true else false)
+  | _ => Some false
   end.
 
 Definition is_stuck (final: spec_cfg) : option bool :=
   let '(c, ct, ms) := final in
   let '(pc, rs, m, sk) := c in
-  match p[[pc]] with
-  | None => None
-  | _ => match (is_fault final, is_normal_termination final) with 
-         | (Some false, Some false) => Some true 
-         | _ => Some false 
-         end
+  _ <- p[[pc]];;
+  match (is_fault final, is_normal_termination final) with
+  | (Some false, Some false) => Some true
+  | _ => Some false
   end.
 
-Definition same_termination (sc2 tsc2 : spec_cfg) : bool := 
-  let '(c, ct, ms) := sc2 in 
-  let '(pc, r, m, sk) := c in 
-  let '(tc, tct, tms) := tsc2 in 
-  let '(tpc, tr, tm, tsk) := tc in 
-  match (p[[pc]], p[[tpc]]) with 
-  | (Some i, Some ti) => let iss := is_stuck sc2 in 
-                         let ist := is_stuck tsc2 in 
-                         let ins := is_normal_termination sc2 in 
-                         let intg := is_normal_termination tsc2 in 
-                         let ifs := is_fault sc2 in 
-                         let ift := is_fault tsc2 in 
-                         let stuck_match := 
-                           match (iss, ist) with 
-                           | (Some bs1, Some bt1) => bs1 && bt1 
-                           | _ => false 
-                           end in 
-                         let normal_match := 
-                           match (ins, intg) with 
-                           | (Some bs2, Some bt2) => bs2 && bt2 
-                           | _ => false 
-                           end in 
-                         let fault_match := 
-                           match (ifs, ift) with 
-                           | (Some bs3, Some bt3) => bs3 && bt3 
-                           | _ => false 
-                           end in 
-                             stuck_match || normal_match || fault_match
+Definition same_termination (sc2 tsc2 : spec_cfg) : bool :=
+  let '(c, ct, ms) := sc2 in
+  let '(pc, r, m, sk) := c in
+  let '(tc, tct, tms) := tsc2 in
+  let '(tpc, tr, tm, tsk) := tc in
+  match (p[[pc]], p[[tpc]]) with
+  | (Some i, Some ti) =>
+      let iss := is_stuck sc2 in
+      let ist := is_stuck tsc2 in
+      let ins := is_normal_termination sc2 in
+      let intg := is_normal_termination tsc2 in
+      let ifs := is_fault sc2 in
+      let ift := is_fault tsc2 in
+      let stuck_match :=
+        match (iss, ist) with
+        | (Some bs1, Some bt1) => bs1 && bt1
+        | _ => false
+        end in
+      let normal_match :=
+        match (ins, intg) with
+        | (Some bs2, Some bt2) => bs2 && bt2
+        | _ => false
+        end in
+      let fault_match :=
+        match (ifs, ift) with
+        | (Some bs3, Some bt3) => bs3 && bt3
+        | _ => false
+        end in
+          stuck_match || normal_match || fault_match
   | _ => false
   end.
 
@@ -432,8 +414,7 @@ Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
 Proof.
   intros until os. intros unused_msf unused_callee msf_ms n_steps sync_1 tgt.
   destruct p[[get_pc tsc1]] eqn:fetched.
-  { destruct i.
-    - 
+  { destruct i; admit.
 
   }
   { apply fetch_fail with (ds:=ds) in fetched. rewrite n_steps in fetched. discriminate. }
