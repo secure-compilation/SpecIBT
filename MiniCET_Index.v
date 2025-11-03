@@ -13,6 +13,7 @@ From Stdlib Require Import Arith.PeanoNat. Import Nat.
 From Stdlib Require Import Lia.
 From Stdlib Require Import List. Import ListNotations.
 Require Import Stdlib.Setoids.Setoid.
+Require Import ExtLib.Data.Monads.OptionMonad.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
@@ -114,17 +115,13 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Call : forall pc pc' blk o r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      nth_error p (fst pc') = Some blk -> (* see comments in ideal semantics about this *)
+      nth_error p (fst pc') = Some blk ->
       nth_error (fst blk) (snd pc') = Some o ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
-  (* Could add this, but would probably need to add some "fault" flag to set? and specify that it be false for any other step to occur?
-  | ISMI_CTarget_Fault : forall pc r m sk ms,
-      p[[pc]] = Some <{{ ctarget }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc, r, m, sk), false, ms) ))> *)
   | SpecSMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( ((pc', r, m, sk), false, ms) ))>
@@ -158,10 +155,10 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
   | ISMI_Skip  :  forall pc r m sk ms,
       p[[pc]] = Some <{{ skip }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
   | ISMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[]^^[] <(( ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
   | ISMI_Branch : forall pc pc' r m sk (ms ms' b b' : bool) e n n' l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
@@ -169,41 +166,37 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       b = (not_zero n') ->
       pc' = (if b' then (l,0) else pc+1) ->
       ms' = (ms || (negb (Bool.eqb b b'))) ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), false, ms') ))>
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), false, ms') ))>
   | ISMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( (((l,0), r, m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[]^^[] <(( (((l,0), r, m, sk), false, ms) ))>
   | ISMI_Load : forall pc r m sk x e n n' v' (ms : bool),
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
       n' = (if ms then 0 else n) ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n'] <(( ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[]^^[OLoad n'] <(( ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
   | ISMI_Store : forall pc r m sk e e' e'' n (ms : bool),
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       e'' = (if ms then 0 else n) ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore e''] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[]^^[OStore e''] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
   | ISMI_Call : forall pc pc' blk o r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       l' = (if ms then 0 else l) ->
-      nth_error p (fst pc') = Some blk -> (* should be fault for jumping outside the program, but I still don't know how to represent that in the semantics *)
-      nth_error (fst blk) (snd pc') = Some o -> (* UB for going OOB of a block, which might be in-bounds for some other block and therefore NOT a fault at the next lower level model *)
+      nth_error p (fst pc') = Some blk ->
+      nth_error (fst blk) (snd pc') = Some o ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | ISMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
-      p |- <(( ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
-(* Could add this, but would probably need to add some "fault" flag to set? and specify that it be false for any other step to occur?
-   | ISMI_CTarget_Fault : forall pc r m sk ms,
-      p[[pc]] = Some <{{ ctarget }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc, r, m, sk), false, ms) ))> *)
+      p |- <(( ((pc, r, m, sk), true, ms) ))> -->i_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
-      p |- <(( ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( ((pc', r, m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, pc'::sk), false, ms) ))> -->i_[]^^[] <(( ((pc', r, m, sk), false, ms) ))>
 
-  where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
+  where "p |- <(( sc ))> -->i_ ds ^^ os  <(( sct ))>" :=
     (ideal_eval_small_step_inst p sc sct ds os).
 
 (*  *)
@@ -211,17 +204,17 @@ Inductive ideal_eval_small_step_inst (p:prog) :
 (** Ideal multi-step relation *)
 
 Reserved Notation
-  "p '|-' '<((' ic '))>' '-->*_' ds '^^' os '<((' ict '))>'"
+  "p '|-' '<((' ic '))>' '-->i*_' ds '^^' os '<((' ict '))>'"
   (at level 40, ic constr, ict constr).
 
 Inductive multi_ideal_inst (p:prog) :
   spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
-  | multi_ideal_inst_refl ic : p |- <(( ic ))> -->*_[]^^[] <(( ic ))>
+  | multi_ideal_inst_refl ic : p |- <(( ic ))> -->i*_[]^^[] <(( ic ))>
   | multi_ideal_inst_trans ic1 ic2 ic3 ds1 ds2 os1 os2 :
-      p |- <(( ic1 ))> -->_ds1^^os1 <(( ic2 ))> ->
-      p |- <(( ic2 ))> -->*_ds2^^os2 <(( ic3 ))> ->
-      p |- <(( ic1 ))> -->*_(ds1++ds2)^^(os1++os2) <(( ic3 ))>
-  where "p |- <(( ic ))> -->*_ ds ^^ os <(( ict ))>" :=
+      p |- <(( ic1 ))> -->i_ds1^^os1 <(( ic2 ))> ->
+      p |- <(( ic2 ))> -->i*_ds2^^os2 <(( ic3 ))> ->
+      p |- <(( ic1 ))> -->i*_(ds1++ds2)^^(os1++os2) <(( ic3 ))>
+  where "p |- <(( ic ))> -->i*_ ds ^^ os <(( ict ))>" :=
     (multi_ideal_inst p ic ict ds os).
 
 (** * Backwards Compiler Correctness of Ultimate Speculative Load Hardening *)
@@ -263,7 +256,7 @@ Definition is_br_or_call (i : inst) :=
 *)
 
 Definition pc_sync (pc: cptr) : option cptr :=
-  blk <- nth_error p (fst pc);; (* assuming nonempty program *)
+  blk <- nth_error p (fst pc);; (* label in bounds *)
   i <- nth_error (fst blk) (snd pc);; (* offset in bounds *)
   let acc1 := if (Bool.eqb (snd blk) true) then 2 else 0 in (* procedure blocks add 2 insts *)
     match (snd pc) with
@@ -303,13 +296,13 @@ Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
     blk <- nth_error p (fst pc);;
     i <- nth_error (fst blk) (snd pc);;
     match (i, ds) with
-    | (<{{branch e to l}}>, [DBranch b]) => Some (if b then 3 else 2)
+    | (<{{branch _ to _}}>, [DBranch b]) => Some (if b then 3 else 2)
     | (<{{call e}}>, [DCall lo]) => let '(l, o) := lo in
                                       blk <- nth_error p l;;
                                       i <- nth_error (fst blk) o;;
                                       if (Bool.eqb (snd blk) true) then Some 4 else None
     | _ => Some 1
-    end.
+   end.
 
 Definition get_reg (spc: spec_cfg) : reg :=
   let '(c, ct, ms) := spc in
@@ -325,19 +318,13 @@ Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
   destruct c as (c & sk); destruct c as (c & m); destruct c as (c & r);
   rename c into pc.
 
-(* switching from match cases to monads broke this proof, it's probably something simple though *)
-Lemma fetch_fail : forall tsc ds,
-  p[[get_pc tsc]] = None -> steps_to_sync_point tsc ds = None.
-Proof.
-  intros. destruct_cfg tsc. simpl in H. destruct (nth_error p (fst pc)) eqn:Eq1.
-  (* rewrite H. reflexivity. *)
-Admitted.
+(* Termination: update this function to include our latest discussions
 
-(* need to specify what sort of termination we have:
+   need to specify what sort of termination we have:
 
   - if instruction is ret and stack is empty: normal
   - if ctarget is expected and the current instruction ≠ ctarget: fault
-  - any other sort of termination: stuck
+  - any other sort of termination: stuck/UB
 
 *)
 
@@ -402,23 +389,16 @@ Definition same_termination (sc2 tsc2 : spec_cfg) : bool :=
 
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
-  unused_prog msf p -> (* variables msf and callee are not used by the program *)
+  unused_prog msf p ->
   unused_prog callee p ->
-  msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) -> (* "msf" must correspond to ms at the outset *)
+  msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
   steps_to_sync_point tsc1 ds = Some n ->
-  spec_cfg_sync sc1 = Some tsc1 -> (* start states invariant *)
-  (* multiple steps of tgt correspond to one step of src *)
+  spec_cfg_sync sc1 = Some tsc1 ->
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-  exists sc2, p |- <(( sc1 ))> -->_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2 /\ same_termination sc2 tsc2 = true.
+  exists sc2, p |- <(( sc1 ))> -->i_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2 /\ same_termination sc2 tsc2 = true.
 
 Proof.
-  intros until os. intros unused_msf unused_callee msf_ms n_steps sync_1 tgt.
-  destruct p[[get_pc tsc1]] eqn:fetched.
-  { destruct i; admit.
-
-  }
-  { apply fetch_fail with (ds:=ds) in fetched. rewrite n_steps in fetched. discriminate. }
-Admitted.
+  Admitted.
 
 End BCC.
 
@@ -426,9 +406,9 @@ Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
-  tsc1 = spec_cfg_sync p sc1 ->
+  spec_cfg_sync p sc1 = Some tsc1 ->
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-  exists sc2, p |- <(( sc1 ))> -->*_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync p sc2.
+  exists sc2, p |- <(( sc1 ))> -->i*_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync p sc2 = Some tsc2.
 Proof.
 Admitted.
 
