@@ -188,10 +188,7 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       nth_error p (fst pc') = Some blk ->
       nth_error (fst blk) (snd pc') = Some o ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
-  | ISMI_CTarget : forall pc r m sk ms,
-      p[[pc]] = Some <{{ ctarget }}> ->
-      p |- <(( ((pc, r, m, sk), true, ms) ))> -->i_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), false, ms') ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( ((pc, r, m, pc'::sk), false, ms) ))> -->i_[]^^[] <(( ((pc', r, m, sk), false, ms) ))>
@@ -387,6 +384,27 @@ Definition same_termination (sc2 tsc2 : spec_cfg) : bool :=
   | _ => false
   end.
 
+Definition well_formed_call_directives (ds: dirs) : Prop := 
+  forall (d: direction) (pc: cptr), 
+    In d ds -> 
+    d = DCall pc ->
+    exists blk, nth_error p (fst pc) = Some blk /\ exists i, nth_error (fst blk) (snd pc) = Some i.
+
+Definition nonempty_block (blk : ((list inst) * bool)) : Prop := 
+  Datatypes.length (fst blk) <> 0.
+
+Definition is_return_or_jump (i: inst) : bool :=
+  match i with
+  | <{{ ret }}> | <{{ jump _}}> => true 
+  | _ => false 
+  end.
+
+Definition get_last_inst (blk: ((list inst) * bool)) : inst :=
+  
+
+Definition well_formed_block (blk : ((list inst) * bool)) : Prop :=
+  nonempty_block blk /\ 
+
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
   unused_prog msf p ->
@@ -394,9 +412,9 @@ Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
   msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
   steps_to_sync_point tsc1 ds = Some n ->
   spec_cfg_sync sc1 = Some tsc1 ->
+  well_formed_call_directives ds ->
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
   exists sc2, p |- <(( sc1 ))> -->i_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2 /\ same_termination sc2 tsc2 = true.
-
 Proof.
   Admitted.
 
