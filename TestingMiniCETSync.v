@@ -21,6 +21,7 @@ From Stdlib Require Import String.
 From SECF Require Import Utils.
 From SECF Require Import ListMaps.
 Require Import Stdlib.Classes.EquivDec.
+From SECF Require Import MiniCET.
 From SECF Require Import TestingMiniCET.
 
 Definition ideal_cfg :=  (cfg * bool)%type.

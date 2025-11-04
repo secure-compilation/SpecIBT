@@ -5,7 +5,8 @@ Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
 From SECF Require Import Utils.
 From SECF Require Import ListMaps.
-From SECF Require Import TempMiniCET.
+From SECF Require Import MiniCET.
+From SECF Require Import TestingLib.
 From Stdlib Require Import Bool.Bool.
 From Stdlib Require Import Arith.Arith.
 From Stdlib Require Import Arith.EqNat.
