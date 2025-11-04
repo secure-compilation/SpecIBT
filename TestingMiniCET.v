@@ -319,7 +319,7 @@ Definition gen_load_wt (t: ty) (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : 
   let indices : list string := map_dom (filter (fun '(_, t') => ty_eqb TNum t') (snd c)) in
   let indicesGen : list (G exp) := map (fun x => ret (AId x)) indices in
   let mem_l := Datatypes.length tm in
-  let indexExpsGen : G exp := freq [ (1, liftM ANum (choose (0, mem_l))); (1, oneOf_ (ret (ANum 0)) indicesGen) ] in
+  let indexExpsGen : G exp := eitherOf (liftM ANum (choose (0, mem_l - 1))) (oneOf_ (ret (ANum 0)) indicesGen)in
   exps <- vectorOf mem_l indexExpsGen;;
   let idx_tm := combine (exps : list exp) tm in
   let idxt := fst (split (filter (fun '(_, t') => ty_eqb t t') idx_tm)) in
@@ -333,12 +333,18 @@ Definition gen_load_wt (t: ty) (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : 
 Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_load_wt TPtr c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
 
 Definition gen_store_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
-  let indices := seq 0 (Datatypes.length tm) in
-  let idx_tm := combine indices tm in
+  let indicesNum: list (G exp) := map (fun x => ret (ANum x)) (seq 0 (Datatypes.length tm)) in
+  let indicesString: list (G exp) := map (fun x => ret (AId x)) (map_dom (filter (fun '(_, t') => ty_eqb TNum t') (snd c))) in
+  let indicesNumGen: G exp := oneOf_ (ret (ANum 0)) indicesNum in
+  let indicesStringGen: G exp := oneOf_ (ret (ANum 0)) indicesString in
+  indicesExpGen <- vectorOf 
+    (Datatypes.length tm) 
+    (eitherOf indicesNumGen indicesStringGen);;
+  let idx_tm: list (exp * ty) := combine (indicesExpGen: list exp) tm in
   if seq.nilp idx_tm
   then ret <{ skip }>
   else
-    '(n, t) <- elems_ (0, TNum) idx_tm;;
+    '(n, t) <- elems_ (ANum 0, TNum) idx_tm;;
     e2 <- gen_exp_ty_wt t 1 c pst;;
     ret <{ store[n] <- e2 }>.
 
@@ -371,17 +377,17 @@ Definition split_and_merge (mem_l : nat) (i : inst) (acc : list inst) : M (list 
 
 Definition transform_load_store_blk (mem_l : nat) (nblk : list inst * bool): M (list inst * bool) :=
   let (bl, is_proc) := nblk in
-  folded <- fold_rightM (split_and_merge mem_l) bl <{{ i[ skip ] }}>;;
+  folded <- fold_rightM (split_and_merge mem_l) bl <{{ i[ ret ] }}>;;
   ret (folded, is_proc).
 
 Definition transform_load_store_prog (m : tmem) (p : prog) :=
   let '(p', newp) := mapM (transform_load_store_blk (Datatypes.length m)) p (Datatypes.length p) in
   (p' ++ newp).
 
-(* Example transform := transform_load_store_prog [FP 0; N 1; FP 2] [(<{{ i[ ctarget; X := 0; Y <- load[X]; store[Y] <- X] }}>, true)]. 
+Example transform := transform_load_store_prog [TPtr; TNum; TPtr]%list [(<{{ i[ ctarget; X := 0; Y <- load[X]; store[Y] <- X] }}>, true)]. 
 Eval compute in transform.
 Eval compute in (Datatypes.length transform).
-Eval compute in (nth_error transform 3). *)
+Eval compute in (nth_error transform 3).
 
 Definition gen_call_wt (c: rctx) (pst: list nat) : G inst :=
   e <- gen_exp_ptr_wt 1 c pst;;
@@ -509,8 +515,7 @@ Definition gen_prog_with_term_wt_example (pl: nat) :=
   tm <- arbitrary;;
   pst <- gen_partition pl;;
   let bsz := 5%nat in
-  prog <- _gen_prog_with_term_wt c tm bsz pl pst pst;;
-  ret (transform_load_store_prog tm prog).
+  _gen_prog_with_term_wt c tm bsz pl pst pst.
 
 Definition prog_basic_block_checker (p: prog) : bool :=
   forallb (fun bp => (basic_block_checker (fst bp))) p.
@@ -571,8 +576,7 @@ Definition gen_prog_wt (bsz pl: nat) :=
   c <- arbitrary;;
   tm <- arbitrary;;
   pst <- gen_partition pl;;
-  progLoadStoreUnsecure <- _gen_prog_wt c tm bsz pl pst pst;;
-  ret (transform_load_store_prog tm progLoadStoreUnsecure).
+  _gen_prog_wt c tm bsz pl pst pst.
 
 Definition gen_prog_wt' (c : rctx) (pst : list nat) (bsz pl : nat) :=
   tm <- arbitrary;;
@@ -1072,6 +1076,12 @@ Definition m_wtb (m: mem) (tm: tmem) : bool :=
 
 (* Extract Constant defNumTests => "1000000". *)
 
+(* check 0: load/store transformation creates basic blocks *)
+QuickChick (
+    forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+    List.forallb basic_block_checker (map fst (transform_load_store_prog tm p)))
+).
+
 (* check 1: generated program is stuck-free. *)
 
 Definition stuck_free (f : nat) (p : prog) (c: cfg)
@@ -1089,12 +1099,13 @@ QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
+  let p' := transform_load_store_prog tm p in
   let icfg := (ipc, rs, m, istk) in
-  let r1 := stuck_free 1000 p icfg in
+  let r1 := stuck_free 1000 p' icfg in
   match r1 with
   | TaintTracking.ETerm st os => checker true
   | TaintTracking.EOutOfFuel st os => checker tt
-  | TaintTracking.EError st os => checker false
+  | TaintTracking.EError st os => printTestCase (show p ++ nl) (checker false)
   end)))).
 
 (* YH: stuck_free failed. *)
