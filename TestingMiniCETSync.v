@@ -1,4 +1,5 @@
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
+
 From Stdlib Require Import Strings.String.
 From Stdlib Require Import Bool.Bool.
 From Stdlib Require Import Arith.Arith.
@@ -29,11 +30,13 @@ Definition ideal_cfg :=  (cfg * bool)%type.
 Definition ideal_step (p: prog) (ic: ideal_cfg) (ds:dirs) :option (ideal_cfg * dirs * obs) :=
   let '(c, ms) := ic in 
   let '(pc, r, m, sk) := c in
-  i <- p[[pc]];;
+  match p[[pc]] with 
+    None => trace "lookup fail" None
+  | Some i => 
   match i with 
   | <{{branch e to l}}> => 
     if seq.nilp ds then
-      trace "Branch: directions are empty!" None
+      trace "idealBranch: directions are empty!" None
     else
     d <- hd_error ds;;
     b' <- is_dbranch d;;
@@ -44,7 +47,7 @@ Definition ideal_step (p: prog) (ic: ideal_cfg) (ds:dirs) :option (ideal_cfg * d
     ret ((((pc', r, m, sk), ms'), tl ds), [OBranch b])
   | <{{call e}}> =>
     if seq.nilp ds then
-      trace "Call: directions are empty!" None
+      trace "idealCall: directions are empty!" None
     else
     d <- hd_error ds;;
     pc' <- is_dcall d;;
@@ -55,7 +58,8 @@ Definition ideal_step (p: prog) (ic: ideal_cfg) (ds:dirs) :option (ideal_cfg * d
     co <- step p c;;
     let '(c', o) := co in
     ret ((c', ms), ds, o)
-    end.
+    end
+  end.
 
 
 Fixpoint ideal_steps (f: nat) (p: prog) (ic: ideal_cfg) (ds: dirs)
@@ -105,12 +109,12 @@ Definition r_sync (r: reg) (ms: bool) : reg :=
   msf !-> N (if ms then 1 else 0); r.
 
 (* given a source config, return the corresponding target config *)
-Definition spec_cfg_sync (p: prog) (sc: spec_cfg) : option spec_cfg :=
-  let '(c, ct, ms) := sc in
+Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
+  let '(c, ms) := ic in
   let '(pc, r, m, stk) := c in
   match pc_sync p pc with
   | Some pc => let tc := (pc, r_sync r ms, m, stk) in
-                Some (tc, ct, ms)
+                Some (tc, false, ms)
   | _ => None
   end.
 
@@ -136,17 +140,85 @@ Definition steps_to_sync_point (p: prog) (tsc: spec_cfg) (ds: dirs) : option nat
     | _ => Some 1
    end.
 
+Definition gen_pc_from_prog (p: prog) : G cptr :=
+  iblk <- choose (0, Datatypes.length(p) - 1) ;;
+  let blk := nth_default ([],false) p iblk in
+  off <- choose (0, Datatypes.length(fst blk) - 1);;
+  ret (iblk, off).
+
+Definition gen_directive_from_ideal_cfg (p: prog) (pst: list nat) (ic: ideal_cfg) : G dirs :=
+  let '(c, ms) := ic in
+  let '(pc, r, m, sk) := c in
+  match p[[pc]] with 
+  | Some i => 
+      match i with 
+      | <{{branch _ to _}}> => 
+        d <- gen_dbr;;
+        ret [d]
+      | <{{call _}}> =>
+        d <- gen_dcall pst;;
+        ret [d]
+      | _ => ret []
+      end
+  | None => trace "lookup error" (ret [])
+  end.
+
+Scheme Equality for val.
+(*Instance val_EqDec : EqDec val _ .*)
+(*Proof.*)
+  (*intros x y.*)
+  (*destruct x, y; try (right; discriminate).*)
+  (*- destruct (n == n0).*)
+    (*+ left. now rewrite e.*)
+    (*+ right. intros [= ?]. contradiction.*)
+  (*- destruct (l == l0).*)
+    (*+ left. now rewrite e.*)
+    (*+ right. intros [= ?]. contradiction.*)
+  (*- now left.*)
+(*Qed.*)
+(**)
+
+Definition spec_cfg_eqb_up_to_callee (st1 st2 : spec_cfg) :=
+  let '(pc1, r1, m1, sk1, c1, ms1) := st1 in
+  let '(pc2, r2, m2, sk2, c2, ms2) := st2 in
+  (pc1 ==b pc2)
+  && (sk1 ==b sk2)
+  && (c1 ==b c2) && (ms1 ==b ms2)
+  && (m1 ==b m2)
+  && pub_equivb (t_empty public) r1 (callee !-> (apply r1 callee) ; r2).
+
+Compute ideal_step ([ ([ <{{skip}}> ], true) ]) (((0,0)), (t_empty UV), [UV; UV; UV], [], false) [].
 
 QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 => 
   forAll (gen_wt_mem tm pst) (fun m1 =>
-  let icfg1 := (ipc, rs1, m1, istk) in (* TODO: generate more meaningful stk (some number of possible call locations should do the trick)*)
-  (* TODO: generate a valid program counter *)
-  (* TODO: generate a valid synchronized state *)
-  (* TODO: generate a single directive matching one ideal step *)
-  (* Execute ideal 1 step, spec steps_to_sync_point steps, *)
-  (* check that configs are in sync *Up to `callee`* *)
-
-  checker tt )))).
+  forAll (gen_pc_from_prog p) (fun pc =>
+  let icfg := (pc, rs1, m1, istk, false) in (* TODO: generate more meaningful stk (some number of possible call locations should do the trick)*)
+  match (spec_cfg_sync p icfg) with
+  | None => collect "hello"%string (checker tt)
+  | Some tcfg => 
+      forAll (gen_directive_from_ideal_cfg p pst icfg) (fun ds => 
+      match ideal_step p icfg ds with 
+      | None => collect "ideal step failed"%string (checker tt)
+      | Some (icfg', _, _) => 
+          match (steps_to_sync_point p tcfg ds) with 
+          | None => collect "undefined steps to sync"%string (checker tt)
+          | Some n => match spec_steps n p tcfg ds with 
+                      | None => collect "spec exec fails"%string (checker tt) (* TODO: investigate these cases *)
+                      | Some (tcfg', _, _) => match (spec_cfg_sync p icfg') with
+                                              | None => collect "sync fails"%string (checker tt)
+                                              | Some tcfgref => checker (spec_cfg_eqb_up_to_callee tcfg' tcfgref)
+                                              end
+                      end
+          end
+      end
+      )
+  end
+  ))))).
+(* Results:
+  8338: (Discarded) "spec exec fails"
+  6702: (Discarded) "undefined steps to sync"
+  4960: (Discarded) "ideal step failed"
+*)
 
