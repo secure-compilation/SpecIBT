@@ -176,14 +176,23 @@ Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
 
 (** Type system for soundenss *)
 
-Inductive ty : Type :=
-| TNum | TPtr.
+Inductive ty : Type := | TNum | TPtr.
 
 Derive (Arbitrary, Shrink) for ty.
 Derive Show for ty.
 
 Definition rctx := total_map ty.
 Definition tmem := list ty.
+
+Fixpoint ty_of_exp (c : rctx) (e : exp) : ty :=
+  match e with
+  | ANum _ => TNum
+  | AId x => apply c x
+  | ABin _ _ _ => TNum
+  (* Here we assume that "e" is well-typed and infer the type by the second branch of "ACTIf"  *)
+  | ACTIf _ _ x => ty_of_exp c x
+  | FPtr _ => TPtr
+end.
 
 #[export] Instance genTMem `{Gen ty} : Gen tmem :=
   {arbitrary := t <- arbitrary;;
@@ -312,59 +321,63 @@ Definition gen_jump_wt (pl: nat) (pst: list nat) (default : nat) : G inst :=
 
 Sample (gen_jump_wt 8 [3; 3; 1; 1] 2).
 
+Definition filter_typed {A : Type} (t : ty) (l : list (A * ty)): list A := 
+  map fst (filter (fun '(_, t') => ty_eqb t t') l).
+
+Notation " 'elems' ( h ;;; tl )" := (elems_ h (cons h tl)) 
+  (at level 1, no associativity) : qc_scope.
+
 Definition gen_load_wt (t: ty) (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
-  let tlst := filter (fun '(_, t') => ty_eqb t t') (snd c) in
-  let vars := map_dom tlst in
-  (* We only generate indices of identifiers with type "TNum" *)
-  let indices : list string := map_dom (filter (fun '(_, t') => ty_eqb TNum t') (snd c)) in
-  let indicesGen : list (G exp) := map (fun x => ret (AId x)) indices in
-  let mem_l := Datatypes.length tm in
-  let indexExpsGen : G exp := eitherOf (liftM ANum (choose (0, mem_l - 1))) (oneOf_ (ret (ANum 0)) indicesGen)in
-  exps <- vectorOf mem_l indexExpsGen;;
-  let idx_tm := combine (exps : list exp) tm in
-  let idxt := fst (split (filter (fun '(_, t') => ty_eqb t t') idx_tm)) in
-  if (seq.nilp vars) || (seq.nilp idxt)
-  then ret <{ skip }>
-  else
-    n <- elems_ (ANum 0) idxt;;
-    x <- elems_ "X0"%string vars;;
-    ret <{ x <- load[n] }>.
+  let vars := filter_typed t (snd c) in
+  sz <- choose(1, 3);;
+  exp <- gen_exp_ty_wt TNum sz c pst;;
+  match vars with
+  | h :: tl =>
+    x <- elems ( h ;;; tl);;
+    ret <{ x <- load[exp] }>
+  | _ => ret <{ skip }>
+  end.
 
 Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_load_wt TPtr c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
 
 Definition gen_store_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
-  let indicesNum: list (G exp) := map (fun x => ret (ANum x)) (seq 0 (Datatypes.length tm)) in
-  let indicesString: list (G exp) := map (fun x => ret (AId x)) (map_dom (filter (fun '(_, t') => ty_eqb TNum t') (snd c))) in
-  let indicesNumGen: G exp := oneOf_ (ret (ANum 0)) indicesNum in
-  let indicesStringGen: G exp := oneOf_ (ret (ANum 0)) indicesString in
-  indicesExpGen <- vectorOf 
-    (Datatypes.length tm) 
-    (eitherOf indicesNumGen indicesStringGen);;
-  let idx_tm: list (exp * ty) := combine (indicesExpGen: list exp) tm in
-  if seq.nilp idx_tm
-  then ret <{ skip }>
-  else
-    '(n, t) <- elems_ (ANum 0, TNum) idx_tm;;
+  match tm with
+  | h :: tl =>
+    t <- elems (h ;;; tl);;
+    e1 <- gen_exp_ty_wt TNum 1 c pst;;
     e2 <- gen_exp_ty_wt t 1 c pst;;
-    ret <{ store[n] <- e2 }>.
+    ret <{ store[e1] <- e2 }>
+  | _ => ret <{ skip }>
+  end.
 
 Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_store_wt c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
 
-Definition transform_load_store_inst (mem_l : nat) (acc : list inst) (i : inst) : M (bool * list inst) :=
+Definition compose_load_store_guard (t : ty) (id_exp : exp) (mem : tmem) : exp :=
+  let indices := seq 0 (Datatypes.length mem) in
+  let idx := filter_typed t (combine indices mem) in
+  fold_left 
+    (fun acc x => BOr x acc)
+    (map (fun id => <{{ id_exp = ANum id }}>) idx)
+    <{{ false }}>.
+
+Eval compute in (compose_load_store_guard TNum <{ AId "X0"%string }> [TNum ; TPtr; TNum ]).
+
+Definition transform_load_store_inst (c : rctx) (mem : tmem) (acc : list inst) (i : inst) : M (bool * list inst) :=
   match i with
   | <{{ x <- load[e] }}> =>
+      let t := apply c x in
       merge <- add_block_M acc;;
       new <- add_block_M <{{ i[ x <- load[e]; jump merge] }}>;;
-      ret (true, <{{ i[branch (e < mem_l) to new; jump merge] }}>)
+      ret (true, <{{ i[branch (compose_load_store_guard t e mem) to new; jump merge] }}>)
   | <{{ store[e] <- e1 }}> =>
       merge <- add_block_M acc;;
       new <- add_block_M <{{ i[store[e] <- e1; jump merge] }}>;;
-      ret (true, <{{ i[branch (e < mem_l) to new; jump merge] }}>)
+      ret (true, <{{ i[branch (compose_load_store_guard (ty_of_exp c e1) e mem) to new; jump merge] }}>)
   | _ => ret (false, [i])
   end.
 
-Definition split_and_merge (mem_l : nat) (i : inst) (acc : list inst) : M (list inst) :=
-  tr <- transform_load_store_inst mem_l acc i;;
+Definition split_and_merge (c : rctx) (mem : tmem) (i : inst) (acc : list inst) : M (list inst) :=
+  tr <- transform_load_store_inst c mem acc i;;
   let '(is_split, new_insts) := tr in
   (* If we split the block in two because of "load"/"store", then all previous instructions *)
   (* get saved in the new block. New ones stay, and the "merge" lnk gets updated. *)
@@ -375,19 +388,19 @@ Definition split_and_merge (mem_l : nat) (i : inst) (acc : list inst) : M (list 
   (* NOTE: We are folding from the right, so new instructions are appended to the beginning of current block *)
     ret (new_insts ++ acc).
 
-Definition transform_load_store_blk (mem_l : nat) (nblk : list inst * bool): M (list inst * bool) :=
+Definition transform_load_store_blk (c : rctx) (mem : tmem) (nblk : list inst * bool): M (list inst * bool) :=
   let (bl, is_proc) := nblk in
-  folded <- fold_rightM (split_and_merge mem_l) bl <{{ i[ ret ] }}>;;
+  folded <- fold_rightM (split_and_merge c mem) bl <{{ i[ ret ] }}>;;
   ret (folded, is_proc).
 
-Definition transform_load_store_prog (m : tmem) (p : prog) :=
-  let '(p', newp) := mapM (transform_load_store_blk (Datatypes.length m)) p (Datatypes.length p) in
+Definition transform_load_store_prog (c : rctx) (mem : tmem) (p : prog) :=
+  let '(p', newp) := mapM (transform_load_store_blk c mem) p (Datatypes.length p) in
   (p' ++ newp).
 
-Example transform := transform_load_store_prog [TPtr; TNum; TPtr]%list [(<{{ i[ ctarget; X := 0; Y <- load[X]; store[Y] <- X] }}>, true)]. 
+(* Example transform := transform_load_store_prog [TPtr; TNum; TPtr]%list [(<{{ i[ ctarget; X := 0; Y <- load[X]; store[Y] <- X] }}>, true)]. 
 Eval compute in transform.
 Eval compute in (Datatypes.length transform).
-Eval compute in (nth_error transform 3).
+Eval compute in (nth_error transform 3). *)
 
 Definition gen_call_wt (c: rctx) (pst: list nat) : G inst :=
   e <- gen_exp_ptr_wt 1 c pst;;
@@ -1079,7 +1092,7 @@ Definition m_wtb (m: mem) (tm: tmem) : bool :=
 (* check 0: load/store transformation creates basic blocks *)
 QuickChick (
     forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
-    List.forallb basic_block_checker (map fst (transform_load_store_prog tm p)))
+      List.forallb basic_block_checker (map fst (transform_load_store_prog c tm p)))
 ).
 
 (* check 1: generated program is stuck-free. *)
@@ -1099,20 +1112,16 @@ QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
-  let p' := transform_load_store_prog tm p in
+  let p' := transform_load_store_prog c tm p in
   let icfg := (ipc, rs, m, istk) in
   let r1 := stuck_free 1000 p' icfg in
   match r1 with
   | TaintTracking.ETerm st os => checker true
   | TaintTracking.EOutOfFuel st os => checker tt
-  | TaintTracking.EError st os => printTestCase (show p ++ nl) (checker false)
+  | TaintTracking.EError st os => printTestCase (show p' ++ nl) (checker false)
   end)))).
 
-(* YH: stuck_free failed. *)
-(* *** Failed after 9 tests and 0 shrinks. (4 discards) *)
-(* Time Elapsed: 0.009606s *)
-
-(* +++ Passed 10000 tests (6403 discards) *)
+(* +++ Passed 10000 tests (6173 discards) *)
 
 (* check 2: no observation -> no leaked *)
 
@@ -1216,7 +1225,8 @@ QuickChick (
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
-  match stuck_free 100 p icfg with
+  let p' := transform_load_store_prog c tm p in
+  match stuck_free 100 p' icfg with
   | TaintTracking.ETerm (_, _, tobs) os =>
       let (ids, mems) := split_sum_list tobs in
       let leaked_vars := remove_dupes String.eqb ids in
@@ -1274,7 +1284,8 @@ QuickChick (
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
-  let r1 := taint_tracking 100 p icfg in
+  let p' := transform_load_store_prog c tm p in
+  let r1 := taint_tracking 100 p' icfg in
   match r1 with
   | Some (os1', tvars, tms) =>
       let P := (false, map (fun x => (x,true)) tvars) in
@@ -1282,7 +1293,7 @@ QuickChick (
       forAll (gen_pub_equiv_same_ty P rs) (fun rs' =>
       forAll (gen_pub_mem_equiv_same_ty PM m) (fun m' =>
       let icfg' := (ipc, rs', m', istk) in
-      let r2 := taint_tracking 100 p icfg' in
+      let r2 := taint_tracking 100 p' icfg' in
       match r2 with
       | Some (os2', _, _) => checker (obs_eqb os1' os2')
       | None => checker false (* fail *)
@@ -1424,7 +1435,8 @@ QuickChick (
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
-  let harden := uslh_prog p in
+  let p' := transform_load_store_prog c tm p in
+  let harden := uslh_prog p' in
   let rs' := spec_rs rs in
   let icfg' := (ipc, rs', m, istk) in
   let iscfg := (icfg', true, false) in
@@ -1432,7 +1444,7 @@ QuickChick (
   forAll (gen_spec_steps_sized 200 harden h_pst iscfg) (fun ods =>
   (match ods with
    | SETerm sc os ds => checker true
-   | SEError (c', _, _) _ ds => (checker false)
+   | SEError (c', _, _) _ ds => checker false
    | SEOutOfFuel _ _ ds => checker tt
    end))
   )))).
@@ -1451,7 +1463,8 @@ QuickChick (
   forAll (gen_reg_wt c pst) (fun rs1 =>
   forAll (gen_wt_mem tm pst) (fun m1 =>
   let icfg1 := (ipc, rs1, m1, istk) in
-  let r1 := taint_tracking 1000 p icfg1 in
+  let p' := transform_load_store_prog c tm p in
+  let r1 := taint_tracking 1000 p' icfg1 in
   match r1 with
   | Some (os1', tvars, tms) =>
       let P := (false, map (fun x => (x,true)) tvars) in
@@ -1459,11 +1472,11 @@ QuickChick (
       forAll (gen_pub_equiv_same_ty P rs1) (fun rs2 =>
       forAll (gen_pub_mem_equiv_same_ty PM m1) (fun m2 =>
       let icfg2 := (ipc, rs2, m2, istk) in
-      let r2 := taint_tracking 1000 p icfg2 in
+      let r2 := taint_tracking 1000 p' icfg2 in
       match r2 with
       | Some (os2', _, _) =>
           if (obs_eqb os1' os2') (* The source program produces the same leakage for a pair of inputs. *)
-          then (let harden := uslh_prog p in
+          then (let harden := uslh_prog p' in
                 let rs1' := spec_rs rs1 in
                 let icfg1' := (ipc, rs1', m1, istk) in
                 let iscfg1' := (icfg1', true, false) in
@@ -1501,11 +1514,6 @@ QuickChick (
   end)))).
 
 
-(* 1118 : (Discarded) "tt1 failed" *)
-(* +++ Passed 10000 tests (1118 discards) *)
-(* Time Elapsed: 14.019411s *)
-
 (* Outdated. available commit: 58fa2d5c090d764b548c967ff4c40a6d6f2fb679*)
 (* +++ Passed 1000000 tests (0 discards) *)
 (* Time Elapsed: 1308.843714s *)
-
