@@ -1669,12 +1669,13 @@ QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
+  let p' := transform_load_store_prog tm p in
   let icfg := (ipc, rs, m, istk) in
-  let r1 := stuck_free 1000 p icfg in
+  let r1 := stuck_free 1000 p' icfg in
   match r1 with
   | TaintTracking.ETerm st os => checker true
   | TaintTracking.EOutOfFuel st os => checker tt
-  | TaintTracking.EError st os => checker false
+  | TaintTracking.EError st os => printTestCase (show p ++ nl) (checker false)
   end)))).
 
 (* YH: stuck_free failed. *)
