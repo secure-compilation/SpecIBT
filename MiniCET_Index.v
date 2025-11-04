@@ -183,6 +183,9 @@ Definition uslh_prog (p: prog) : prog :=
 
 *)
 
+(* ct flag here is going to serve as a fault flag to track where the source program would
+   have a fault analogous to the target program executing speculatively and encountering
+   a ctarget instruction but ct = false *)
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->i_' ds '^^' os '<((' sct '))>'"
   (at level 40, sc constr, sct constr).
@@ -200,8 +203,8 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       to_nat (eval r e) = Some n ->
       n' = (if ms then 0 else n) -> (* uslh masking *)
       b = (not_zero n') ->
-      pc' = (if b' then (l,0) else pc+1) -> 
-      ms' = (ms || (negb (Bool.eqb b b'))) -> 
+      pc' = (if b' then (l,0) else pc+1) ->
+      ms' = (ms || (negb (Bool.eqb b b'))) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), false, ms') ))>
   | ISMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
@@ -224,6 +227,8 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       nth_error p (fst pc') = Some blk -> (* attacker pc must be in-bounds wrt label and offset *)
       nth_error (fst blk) (snd pc') = Some o ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) -> (* if attacker pc doesn't match source pc we're speculating *)
+      (* then also we'd like to detect whether, given pc', the next step will fault. It will fault if the place we're
+         speculating to is not the beginning of a proc block. Let's start there. *)
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), false, ms') ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
@@ -231,8 +236,6 @@ Inductive ideal_eval_small_step_inst (p:prog) :
 
   where "p |- <(( sc ))> -->i_ ds ^^ os  <(( sct ))>" :=
     (ideal_eval_small_step_inst p sc sct ds os).
-
-(*  *)
 
 (** Ideal multi-step relation *)
 
@@ -310,7 +313,7 @@ Definition spec_cfg_sync (sc: spec_cfg) : option spec_cfg :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, stk) := c in
   match pc_sync pc with
-  | Some pc => let tc := (pc, r_sync r ms, m, stk) in
+  | Some pc' => let tc := (pc', r_sync r ms, m, stk) in
                 Some (tc, ct, ms)
   | _ => None
   end.
@@ -328,14 +331,26 @@ Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(pc, r, m, sk) := tc in
     blk <- nth_error p (fst pc);;
     i <- nth_error (fst blk) (snd pc);;
-    match (i, ds) with
-    | (<{{branch _ to _}}>, [DBranch b]) => Some (if b then 3 else 2)
-    | (<{{call e}}>, [DCall lo]) => let '(l, o) := lo in
-                                      blk <- nth_error p l;;
-                                      i <- nth_error (fst blk) o;;
-                                      if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
+    match i with
+    | <{{_ := _}}> => match p[[pc+1]] with
+                      | Some i => match i with
+                                  | <{{call _}}> => match ds with
+                                                    | [DCall lo] => let '(l, o) := lo in
+                                                                    blk <- nth_error p l;;
+                                                                    i <- nth_error (fst blk) o;;
+                                                                    if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
+                                                    | _ => None
+                                                    end
+                                  | _ => Some 1
+                                  end
+                      | None => Some 1 (* assignment at end of block *)
+                      end
+    | <{{ branch _ to _ }}> => match ds with
+                               | [DBranch b] => Some (if b then 3 else 2)
+                               | _ => None
+                               end
     | _ => Some 1
-   end.
+    end.
 
 Definition get_reg (spc: spec_cfg) : reg :=
   let '(c, ct, ms) := spc in
@@ -351,18 +366,22 @@ Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
   destruct c as (c & sk); destruct c as (c & m); destruct c as (c & r);
   rename c into pc.
 
-(* Termination: update this function to include our latest discussions
-
-   need to specify what sort of termination we have:
-
+(* Termination:
   - if instruction is ret and stack is empty: normal
   - if ctarget is expected and the current instruction ≠ ctarget: fault
   - any other sort of termination: stuck/UB
 
 *)
 
-Definition is_fault (final: spec_cfg) : option bool :=
-  let '(c, ct, ms) := final in
+Inductive termination : Type :=
+| T_Normal
+| T_Fault
+| T_UB.
+
+(* Target *)
+
+Definition is_fault_tgt (final_t: spec_cfg) : option bool :=
+  let '(c, ct, ms) := final_t in
   let '(pc, rs, m, sk) := c in
   i <- p[[pc]];;
   match i with
@@ -370,8 +389,8 @@ Definition is_fault (final: spec_cfg) : option bool :=
   | _ => Some false
   end.
 
-Definition is_normal_termination (final: spec_cfg) : option bool :=
-  let '(c, ct, ms) := final in
+Definition is_normal_termination_tgt (final_t: spec_cfg) : option bool :=
+  let '(c, ct, ms) := final_t in
   let '(pc, rs, m, sk) := c in
   i <- p[[pc]];;
   match i with
@@ -379,16 +398,20 @@ Definition is_normal_termination (final: spec_cfg) : option bool :=
   | _ => Some false
   end.
 
-Definition is_stuck (final: spec_cfg) : option bool :=
-  let '(c, ct, ms) := final in
+Definition is_stuck_tgt (final_t: spec_cfg) : option bool :=
+  let '(c, ct, ms) := final_t in
   let '(pc, rs, m, sk) := c in
   _ <- p[[pc]];;
-  match (is_fault final, is_normal_termination final) with
+  match (is_fault_tgt final_t, is_normal_termination_tgt final_t) with
   | (Some false, Some false) => Some true
   | _ => Some false
   end.
 
-Definition same_termination (sc2 tsc2 : spec_cfg) : bool :=
+Definition classify_term_tgt (final_t: spec_cfg) : termination :=
+  if (is_fault_tgt final_t) then T_Fault else
+  if (is_normal_termination_tgt final_t) then T_Normal else T_UB.
+
+(* Definition same_termination (sc2 tsc2 : spec_cfg) : bool :=
   let '(c, ct, ms) := sc2 in
   let '(pc, r, m, sk) := c in
   let '(tc, tct, tms) := tsc2 in
@@ -418,21 +441,21 @@ Definition same_termination (sc2 tsc2 : spec_cfg) : bool :=
         end in
           stuck_match || normal_match || fault_match
   | _ => false
-  end.
+   end. *)
 
 (* Well-formedness properties  *)
 
 (* All call directives must be in-bounds wrt label/program and offset/block *)
-Definition well_formed_call_directives (ds: dirs) : Prop := 
-  forall (d: direction) (pc: cptr), 
-    In d ds -> 
+Definition well_formed_call_directives (ds: dirs) : Prop :=
+  forall (d: direction) (pc: cptr),
+    In d ds ->
     d = DCall pc ->
     exists blk, nth_error p (fst pc) = Some blk /\ exists i, nth_error (fst blk) (snd pc) = Some i.
 
 (* Definition nonempty_arrs (ast : astate) :Prop :=
   forall a, 0 < length (ast a). *)
 
-Definition nonempty_program : Prop := 
+Definition nonempty_program : Prop :=
   0 < Datatypes.length p.
 
 (* Last instruction in block must be either ret or jump *)
@@ -441,12 +464,12 @@ Definition nonempty_block (blk : (list inst * bool)) : Prop :=
 
 Definition is_return_or_jump (i: inst) : bool :=
   match i with
-  | <{{ ret }}> | <{{ jump _}}> => true 
-  | _ => false 
+  | <{{ ret }}> | <{{ jump _}}> => true
+  | _ => false
   end.
-Print prog.
+
 Definition get_last_inst (blk: (list inst * bool)) : inst :=
-  let len := Datatypes.length (fst blk) in 
+  let len := Datatypes.length (fst blk) in
   nth (len - 1) (fst blk) <{{ skip }}>.
 
 Definition last_inst_ret_or_jump (blk: (list inst * bool)) : Prop :=
@@ -466,7 +489,7 @@ Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
   well_formed_call_directives ds ->
   (forall (blk: (list inst * bool)), In blk p -> well_formed_block blk) ->
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-  exists sc2, p |- <(( sc1 ))> -->i_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2 /\ same_termination sc2 tsc2 = true.
+      exists sc2, p |- <(( sc1 ))> -->i_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2. (* /\ same_termination sc2 tsc2 = true. Need to redefine same_termination function *)
 Proof.
   Admitted.
 
