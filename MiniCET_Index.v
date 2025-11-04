@@ -147,6 +147,41 @@ Inductive multi_spec_inst (p:prog) :
 
 (** Ideal small-step semantics for MiniCET *)
 
+(*
+Definition uslh_inst (i: inst) : M (list inst) :=
+  match i with
+  | <{{ctarget}}> => ret [<{{skip}}>]
+  | <{{x<-load[e]}}> =>
+      let e' := <{ (msf=1) ? 0 : e }> in
+      ret [<{{x<-load[e']}}>]
+  | <{{store[e] <- e1}}> =>
+      let e' := <{ (msf=1) ? 0 : e }> in
+      ret [<{{store[e'] <- e1}}>]
+  | <{{branch e to l}}> =>
+      let e' := <{ (msf=1) ? 0 : e }> in (* if mispeculating always pc+1 *)
+      l' <- add_block_M <{{ i[(msf := ((~e') ? 1 : msf)); jump l] }}>;;
+      ret <{{ i[branch e' to l'; (msf := (e' ? 1 : msf))] }}>
+  | <{{call e}}> =>
+      let e' := <{ (msf=1) ? &0 : e }> in
+      ret <{{ i[callee:=e'; call e'] }}>
+  | _ => ret [i]
+  end.
+
+Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
+  let '(l, (bl, is_proc)) := nblk in
+  bl' <- concatM (mapM uslh_inst bl);;
+  if is_proc then
+    ret (<{{ i[ctarget; msf := (callee = &l) ? msf : 1] }}> ++ bl', true)
+  else
+    ret (bl', false).
+
+Definition uslh_prog (p: prog) : prog :=
+  let idx_p := (add_index p) in
+  let '(p',newp) := mapM uslh_blk idx_p (Datatypes.length p) in
+  (p' ++ newp).
+
+*)
+
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->i_' ds '^^' os '<((' sct '))>'"
   (at level 40, sc constr, sct constr).
@@ -162,10 +197,10 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Branch : forall pc pc' r m sk (ms ms' b b' : bool) e n n' l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
-      n' = (if ms then 0 else n) ->
+      n' = (if ms then 0 else n) -> (* uslh masking *)
       b = (not_zero n') ->
-      pc' = (if b' then (l,0) else pc+1) ->
-      ms' = (ms || (negb (Bool.eqb b b'))) ->
+      pc' = (if b' then (l,0) else pc+1) -> 
+      ms' = (ms || (negb (Bool.eqb b b'))) -> 
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), false, ms') ))>
   | ISMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
@@ -184,10 +219,10 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Call : forall pc pc' blk o r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      l' = (if ms then 0 else l) ->
-      nth_error p (fst pc') = Some blk ->
+      l' = (if ms then 0 else l) -> (* uslh masking *)
+      nth_error p (fst pc') = Some blk -> (* attacker pc must be in-bounds wrt label and offset *)
       nth_error (fst blk) (snd pc') = Some o ->
-      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
+      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) -> (* if attacker pc doesn't match source pc we're speculating *)
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), false, ms') ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
@@ -285,8 +320,8 @@ Definition spec_cfg_sync (sc: spec_cfg) : option spec_cfg :=
 (* Branch: 2 extra insts when uslh-created block is jumped to, 1 extra otherwise *)
 (* Call: assuming the attacker is in-bounds with both label and offset:  *)
 (* if the block is a procedure block, then 3 extra steps are added (callee assign, ctarget, callee check) *)
-(* if the attacker jumps somewhere else, that means ct is true but we are not going to encounter ctarget inst *)
-(* We've decided this should be a fault, so no steps are taken in this case. *)
+(* Not sure about None if attacker jumps to a non-procedure block. *)
+(* Currently this function doesn't address case where attacker jumps anywhere else in the program than the beginning of a procedure block *)
 Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
   let '(pc, r, m, sk) := tc in
@@ -297,7 +332,7 @@ Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
     | (<{{call e}}>, [DCall lo]) => let '(l, o) := lo in
                                       blk <- nth_error p l;;
                                       i <- nth_error (fst blk) o;;
-                                      if (Bool.eqb (snd blk) true) then Some 4 else None
+                                      if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
     | _ => Some 1
    end.
 
@@ -384,13 +419,23 @@ Definition same_termination (sc2 tsc2 : spec_cfg) : bool :=
   | _ => false
   end.
 
+(* Well-formedness properties  *)
+
+(* All call directives must be in-bounds wrt label/program and offset/block *)
 Definition well_formed_call_directives (ds: dirs) : Prop := 
   forall (d: direction) (pc: cptr), 
     In d ds -> 
     d = DCall pc ->
     exists blk, nth_error p (fst pc) = Some blk /\ exists i, nth_error (fst blk) (snd pc) = Some i.
 
-Definition nonempty_block (blk : ((list inst) * bool)) : Prop := 
+(* Definition nonempty_arrs (ast : astate) :Prop :=
+  forall a, 0 < length (ast a). *)
+
+Definition nonempty_program : Prop := 
+  0 < Datatypes.length p.
+
+(* Last instruction in block must be either ret or jump *)
+Definition nonempty_block (blk : (list inst * bool)) : Prop :=
   Datatypes.length (fst blk) <> 0.
 
 Definition is_return_or_jump (i: inst) : bool :=
@@ -398,21 +443,27 @@ Definition is_return_or_jump (i: inst) : bool :=
   | <{{ ret }}> | <{{ jump _}}> => true 
   | _ => false 
   end.
+Print prog.
+Definition get_last_inst (blk: (list inst * bool)) : inst :=
+  let len := Datatypes.length (fst blk) in 
+  nth (len - 1) (fst blk) <{{ skip }}>.
 
-Definition get_last_inst (blk: ((list inst) * bool)) : inst :=
-  
+Definition last_inst_ret_or_jump (blk: (list inst * bool)) : Prop :=
+  is_return_or_jump (get_last_inst blk) = true.
 
-Definition well_formed_block (blk : ((list inst) * bool)) : Prop :=
-  nonempty_block blk /\ 
+Definition well_formed_block (blk : (list inst * bool)) : Prop :=
+  last_inst_ret_or_jump blk.
 
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
+  nonempty_program ->
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
   steps_to_sync_point tsc1 ds = Some n ->
   spec_cfg_sync sc1 = Some tsc1 ->
   well_formed_call_directives ds ->
+  (forall (blk: (list inst * bool)), In blk p -> well_formed_block blk) ->
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
   exists sc2, p |- <(( sc1 ))> -->i_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2 /\ same_termination sc2 tsc2 = true.
 Proof.
