@@ -53,7 +53,6 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Call : forall pc r m sk e l blk,
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      nth_error p l = Some blk -> 
       p |- <(( (pc, r, m, sk) ))> -->^[OCall l] <(( ((l,0), r, m, ((pc+1)::sk)) ))>
   | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
@@ -114,6 +113,7 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Call : forall pc pc' blk o r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
+      (* wf attacker pc property maybe obviates the below two premises *)
       nth_error p (fst pc') = Some blk ->
       nth_error (fst blk) (snd pc') = Some o ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
