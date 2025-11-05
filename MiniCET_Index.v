@@ -50,7 +50,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( (pc, r, m, sk) ))> -->^[OStore n] <(( (pc+1, r, upd n m (eval r e'), sk) ))>
-  | SSMI_Call : forall pc r m sk e l blk,
+  | SSMI_Call : forall pc r m sk e l,
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       p |- <(( (pc, r, m, sk) ))> -->^[OCall l] <(( ((l,0), r, m, ((pc+1)::sk)) ))>
@@ -113,9 +113,6 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Call : forall pc pc' blk o r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      (* wf attacker pc property maybe obviates the below two premises *)
-      nth_error p (fst pc') = Some blk ->
-      nth_error (fst blk) (snd pc') = Some o ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
@@ -506,14 +503,11 @@ Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
 
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
-  nonempty_program ->
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
   steps_to_sync_point tsc1 ds = Some n ->
   spec_cfg_sync sc1 = Some tsc1 ->
-  well_formed_call_directives ds ->
-  (forall (blk: (list inst * bool)), In blk p -> well_formed_block blk) ->
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
       exists sc2, p |- <(( sc1 ))> -->i_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2. (* /\ same_termination sc2 tsc2 = true. Need to redefine same_termination function *)
 Proof.
