@@ -108,37 +108,55 @@ Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
 Definition r_sync (r: reg) (ms: bool) : reg :=
   msf !-> N (if ms then 1 else 0); r.
 
+Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
+  match l with 
+  | [] => Some []
+  | a :: l' => a' <- f a;;
+      l'' <- map_opt f l';; 
+      ret (a' :: l'')
+  end.
+
 (* given a source config, return the corresponding target config *)
 Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   let '(c, ms) := ic in
   let '(pc, r, m, stk) := c in
-  match pc_sync p pc with
-  | Some pc => let tc := (pc, r_sync r ms, m, stk) in
-                Some (tc, false, ms)
-  | _ => None
-  end.
+  pc' <- pc_sync p pc;;
+  stk' <- map_opt (pc_sync p) stk;;
+  ret (pc', r_sync r ms, m, stk', false, ms).
 
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
-(* Here we just consider a single inst, not the slice of the block up to and including pc (in contrast to pc_sync) *)
-(* The only insts that add steps are branch and call. *)
-(* Branch: 2 extra insts when uslh-created block is jumped to, 1 extra otherwise *)
-(* Call: assuming the attacker is in-bounds with both label and offset:  *)
-(* if the block is a procedure block, then 3 extra steps are added (callee assign, ctarget, callee check) *)
-(* if the attacker jumps somewhere else, that means ct is true but we are not going to encounter ctarget inst *)
-(* We've decided this should be a fault, so no steps are taken in this case. *)
 Definition steps_to_sync_point (p: prog) (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
   let '(pc, r, m, sk) := tc in
+    (* check pc is well-formed *)
     blk <- nth_error p (fst pc);;
     i <- nth_error (fst blk) (snd pc);;
-    match (i, ds) with
-    | (<{{branch _ to _}}>, [DBranch b]) => Some (if b then 3 else 2)
-    | (<{{call e}}>, [DCall lo]) => let '(l, o) := lo in
-                                      blk <- nth_error p l;;
-                                      i <- nth_error (fst blk) o;;
-                                      if (Bool.eqb (snd blk) true) then Some 4 else None
-    | _ => Some 1
-   end.
+    match i with
+    | <{{_ := _}}> => match p[[pc+1]] with
+                      | Some i => match i with
+                                  | <{{call _}}> => match ds with
+                                                    | DCall lo :: _ => (* decorated call with correct directive *)
+                                                                    let '(l, o) := lo in
+                                                                    (* check attacker pc is well-formed *)
+                                                                    blk <- nth_error p l;;
+                                                                    i <- nth_error (fst blk) o;;
+                                                                    (* 4 steps if procedure block *)
+                                                                    if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
+                                                    | [] => trace "empty directives for call" None
+                                                    | _ => trace "incorrect directive for call" None (* incorrect directive for call *)
+                                                    end
+                                  | _ => Some 1 (* assignment from source program, not decoration *)
+                                  end
+                      | None => Some 1 (* assignment from source program, last instruction in block *)
+                      end
+    | <{{ branch _ to _ }}> => (* branch decorations all come after the instruction itself, so this is the sync point *)
+                               match ds with
+                               | DBranch b :: _ => Some (if b then 3 else 2)
+                                | [] => trace "empty directives for branch" None
+                               | _ => trace "missing directive for branch" None
+                               end
+    | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
+    end.
 
 Definition gen_pc_from_prog (p: prog) : G cptr :=
   iblk <- choose (0, Datatypes.length(p) - 1) ;;
@@ -194,21 +212,25 @@ QuickChick (
   forAll (gen_reg_wt c pst) (fun rs1 => 
   forAll (gen_wt_mem tm pst) (fun m1 =>
   forAll (gen_pc_from_prog p) (fun pc =>
-  let icfg := (pc, rs1, m1, istk, false) in (* TODO: generate more meaningful stk (some number of possible call locations should do the trick)*)
+  let icfg := (pc, rs1, m1, [(0,0)], false) in (* TODO: generate more meaningful stk (some number of possible call locations should do the trick)*)
   match (spec_cfg_sync p icfg) with
   | None => collect "hello"%string (checker tt)
   | Some tcfg => 
       forAll (gen_directive_from_ideal_cfg p pst icfg) (fun ds => 
       match ideal_step p icfg ds with 
-      | None => collect "ideal step failed"%string (checker tt)
+      | None =>  collect ("ideal step failed"%string ++ show (p[[pc]]))%string (checker tt)
+          (* TODO: handle return on empty stack?*)
       | Some (icfg', _, _) => 
-          match (steps_to_sync_point p tcfg ds) with 
+          match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
           | None => collect "undefined steps to sync"%string (checker tt)
-          | Some n => match spec_steps n p tcfg ds with 
+          | Some n => match spec_steps n (uslh_prog p) tcfg ds with 
                       | None => collect "spec exec fails"%string (checker tt) (* TODO: investigate these cases *)
                       | Some (tcfg', _, _) => match (spec_cfg_sync p icfg') with
                                               | None => collect "sync fails"%string (checker tt)
-                                              | Some tcfgref => checker (spec_cfg_eqb_up_to_callee tcfg' tcfgref)
+                                              | Some tcfgref => match (spec_cfg_eqb_up_to_callee tcfg' tcfgref) with 
+                                                                | true => checker true
+                                                                | false => trace (show tcfg' ++ "|||||" ++ show tcfgref) (checker false)
+                                                                end
                                               end
                       end
           end
@@ -217,8 +239,6 @@ QuickChick (
   end
   ))))).
 (* Results:
-  8338: (Discarded) "spec exec fails"
-  6702: (Discarded) "undefined steps to sync"
-  4960: (Discarded) "ideal step failed"
+  Passed 10000 tests (211 discards)
 *)
 

@@ -441,7 +441,8 @@ Fixpoint spec_steps (f:nat) (p:prog) (c:spec_cfg) (ds:dirs)
       let '(c2,ds2,o2) := cdo2 in
       ret (c2,ds2,o1++o2)
   | 0 =>
-      None (* Q: Do we need more precise out-of-fuel error here? *)
+      ret (c, ds, []) (* JB: executing for 0 steps should be just the identity... *)
+      (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
   end.
 
 (* YH: What do you think about moving the writer monad-related code to Util.v *)
