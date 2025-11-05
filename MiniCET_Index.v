@@ -50,13 +50,11 @@ Inductive seq_eval_small_step_inst (p:prog) :
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( (pc, r, m, sk) ))> -->^[OStore n] <(( (pc+1, r, upd n m (eval r e'), sk) ))>
-  | SSMI_Call : forall pc r m sk e l,
+  | SSMI_Call : forall pc r m sk e l blk,
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
+      nth_error p l = Some blk -> 
       p |- <(( (pc, r, m, sk) ))> -->^[OCall l] <(( ((l,0), r, m, ((pc+1)::sk)) ))>
-  | SSMI_CTarget : forall pc r m sk,
-      p[[pc]] = Some <{{ ctarget }}> ->
-      p |- <(( (pc, r, m, sk) ))> -->^[] <(( (pc+1, r, m, sk) ))>
   | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( (pc, r, m, pc'::sk) ))> -->^[] <(( (pc', r, m, sk) ))>
@@ -319,37 +317,35 @@ Definition spec_cfg_sync (sc: spec_cfg) : option spec_cfg :=
   end.
 
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
-(* Here we just consider a single inst, not the slice of the block up to and including pc (in contrast to pc_sync) *)
-(* The only insts that add steps are branch and call. *)
-(* Branch: 2 extra insts when uslh-created block is jumped to, 1 extra otherwise *)
-(* Call: assuming the attacker is in-bounds with both label and offset:  *)
-(* if the block is a procedure block, then 3 extra steps are added (callee assign, ctarget, callee check) *)
-(* Not sure about None if attacker jumps to a non-procedure block. *)
-(* Currently this function doesn't address case where attacker jumps anywhere else in the program than the beginning of a procedure block *)
 Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
   let '(pc, r, m, sk) := tc in
+    (* check pc is well-formed *)
     blk <- nth_error p (fst pc);;
     i <- nth_error (fst blk) (snd pc);;
     match i with
     | <{{_ := _}}> => match p[[pc+1]] with
                       | Some i => match i with
                                   | <{{call _}}> => match ds with
-                                                    | [DCall lo] => let '(l, o) := lo in
+                                                    | [DCall lo] => (* decorated call with correct directive *)
+                                                                    let '(l, o) := lo in
+                                                                    (* check attacker pc is well-formed *)
                                                                     blk <- nth_error p l;;
                                                                     i <- nth_error (fst blk) o;;
+                                                                    (* 4 steps if procedure block *)
                                                                     if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
-                                                    | _ => None
+                                                    | _ => None (* incorrect directive for call *)
                                                     end
-                                  | _ => Some 1
+                                  | _ => Some 1 (* assignment from source program, not decoration *)
                                   end
-                      | None => Some 1 (* assignment at end of block *)
+                      | None => Some 1 (* assignment from source program, last instruction in block *)
                       end
-    | <{{ branch _ to _ }}> => match ds with
+    | <{{ branch _ to _ }}> => (* branch decorations all come after the instruction itself, so this is the sync point *)
+                               match ds with
                                | [DBranch b] => Some (if b then 3 else 2)
                                | _ => None
                                end
-    | _ => Some 1
+    | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
     end.
 
 Definition get_reg (spc: spec_cfg) : reg :=
@@ -362,9 +358,6 @@ Definition get_pc (spc: spec_cfg) : cptr :=
   let '(pc, r, m, sk) := c in
   pc.
 
-Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
-  destruct c as (c & sk); destruct c as (c & m); destruct c as (c & r);
-  rename c into pc.
 
 (* Termination:
   - if instruction is ret and stack is empty: normal
@@ -373,22 +366,26 @@ Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
 
 *)
 
+(* would it help to give T_Fault or T_UB arguments carrying information from final state? *)
 Inductive termination : Type :=
 | T_Normal
 | T_Fault
 | T_UB.
 
-(* Target *)
+(* Target/speculative semantics *)
 
+(* Target program faults when ctarget instruction / ct is false, 
+   or any other instruction / ct is true *)
 Definition is_fault_tgt (final_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := final_t in
   let '(pc, rs, m, sk) := c in
   i <- p[[pc]];;
   match i with
   | <{{ ctarget }}> => Some (if ct then false else true)
-  | _ => Some false
+  | _ => Some (if ct then true else false)
   end.
 
+(* Normal termination: ret + empty stack *)
 Definition is_normal_termination_tgt (final_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := final_t in
   let '(pc, rs, m, sk) := c in
@@ -398,6 +395,7 @@ Definition is_normal_termination_tgt (final_t: spec_cfg) : option bool :=
   | _ => Some false
   end.
 
+(* any other final state means the program got stuck because of UB *)
 Definition is_stuck_tgt (final_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := final_t in
   let '(pc, rs, m, sk) := c in
@@ -410,6 +408,30 @@ Definition is_stuck_tgt (final_t: spec_cfg) : option bool :=
 Definition classify_term_tgt (final_t: spec_cfg) : termination :=
   if (is_fault_tgt final_t) then T_Fault else
   if (is_normal_termination_tgt final_t) then T_Normal else T_UB.
+
+(* Source/ideal semantics *)
+
+(* The source program doesn't have the ct flag, nor does it have the 
+   ctarget instruction. 
+
+   The ideal semantics is supposed to refine the speculative semantics so that 
+   uslh protection is built in. So the source program ought to have the same two 
+   types of fault as the target program: 
+
+   1) The kind of fault where we have ctarget but ct is false happens because the attacker 
+      speculated to the beginning of a procedure block 
+
+   ct flag set just means that we have just stepped from a call instruction.
+      ctarget instruction just means that we're at the beginning of some 
+      procedure block. Can I recover this information from a final source config?
+
+      I would need to know what the starting pc was in order to know whether 
+      the previous instruction was a call.
+
+      It is easier to determine whether we are currently at the beginning of a 
+      procedure block: just check the current pc 
+
+*)
 
 (* Definition same_termination (sc2 tsc2 : spec_cfg) : bool :=
   let '(c, ct, ms) := sc2 in
@@ -445,22 +467,19 @@ Definition classify_term_tgt (final_t: spec_cfg) : termination :=
 
 (* Well-formedness properties  *)
 
-(* All call directives must be in-bounds wrt label/program and offset/block *)
+(* All program counters supplied by the attacker must be in-bounds *)
 Definition well_formed_call_directives (ds: dirs) : Prop :=
   forall (d: direction) (pc: cptr),
     In d ds ->
     d = DCall pc ->
     exists blk, nth_error p (fst pc) = Some blk /\ exists i, nth_error (fst blk) (snd pc) = Some i.
 
-(* Definition nonempty_arrs (ast : astate) :Prop :=
-  forall a, 0 < length (ast a). *)
-
-Definition nonempty_program : Prop :=
+Definition nonempty_program (* (p: prog) *) : Prop :=
   0 < Datatypes.length p.
 
 (* Last instruction in block must be either ret or jump *)
 Definition nonempty_block (blk : (list inst * bool)) : Prop :=
-  Datatypes.length (fst blk) <> 0.
+  0 < Datatypes.length (fst blk).
 
 Definition is_return_or_jump (i: inst) : bool :=
   match i with
@@ -468,6 +487,7 @@ Definition is_return_or_jump (i: inst) : bool :=
   | _ => false
   end.
 
+(* Should never get default value here, but if we do, skip will make wf fail anyway *)
 Definition get_last_inst (blk: (list inst * bool)) : inst :=
   let len := Datatypes.length (fst blk) in
   nth (len - 1) (fst blk) <{{ skip }}>.
@@ -476,7 +496,13 @@ Definition last_inst_ret_or_jump (blk: (list inst * bool)) : Prop :=
   is_return_or_jump (get_last_inst blk) = true.
 
 Definition well_formed_block (blk : (list inst * bool)) : Prop :=
-  last_inst_ret_or_jump blk.
+  nonempty_block blk /\ last_inst_ret_or_jump blk.
+
+(* Tactics *)
+
+Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
+  destruct c as (c & sk); destruct c as (c & m); destruct c as (c & r);
+  rename c into pc.
 
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
