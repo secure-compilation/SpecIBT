@@ -599,18 +599,18 @@ Definition nonempty_block (blk: list inst * bool) : bool :=
 Definition nonempty_block_prog (p: prog) : bool :=
   forallb nonempty_block p.
 
-Definition no_branch_end (blk: list inst * bool) : bool :=
+Definition block_terminator (blk: list inst * bool) : bool :=
   match (rev (fst blk)) with
   | [] => true (* unreachable *)
   | ihd::itl =>
       match ihd with
-      | IBranch _ _ => false
-      | _ => true
+      | IRet | IJump _ => true
+      | _ => false
       end
   end.
 
-Definition no_branch_end_prog (p: prog) : bool :=
-  forallb no_branch_end p.
+Definition block_terminator_prog (p: prog) : bool :=
+  forallb block_terminator p.
 
 Definition wf_direction (pc: cptr) (p: prog) (d: direction) : bool :=
   match d, p[[pc]] with
