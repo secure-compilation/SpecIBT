@@ -24,6 +24,17 @@ From SECF Require Import Utils.
 From SECF Require Import ListMaps.
 Require Import Stdlib.Classes.EquivDec.
 
+(* ** Property testing of MiniCET *)
+
+(* Simple utility function to check if a value is Some.
+  TODO: Check if there is an Stdlib or Extlib function with the same
+  functionality. *)
+
+Definition is_some {A} (v : option A) : bool := match v with
+  | Some _ => true
+  | None => false
+  end.
+
 
 (** The factoring of expressions is taken from the latest SpecCT chapter *)
 
@@ -580,21 +591,45 @@ Definition wf_blk (p:prog) (blb : list inst * bool) : bool :=
 Definition wf (p:prog) : bool :=
   forallb (wf_blk p) p.
 
+(* Additional wf definitions *)
+
+Definition nonempty_block (blk: list inst * bool) : bool :=
+  negb (seq.nilp (fst blk)).
+
+Definition nonempty_block_prog (p: prog) : bool :=
+  forallb nonempty_block p.
+
+Definition no_branch_end (blk: list inst * bool) : bool :=
+  match (rev (fst blk)) with
+  | [] => true (* unreachable *)
+  | ihd::itl =>
+      match ihd with
+      | IBranch _ _ => false
+      | _ => true
+      end
+  end.
+
+Definition no_branch_end_prog (p: prog) : bool :=
+  forallb no_branch_end p.
+
+Definition cptr_in_bound (pc: cptr) (p: prog) : option inst :=
+  blk <- nth_error p (fst pc);; i <- nth_error (fst blk) (snd pc);; ret i.
+
+Definition wf_direction (pc: cptr) (p: prog) (d: direction) : bool :=
+  match d, p[[pc]] with
+  | DBranch b, Some (IBranch e l) => is_some (cptr_in_bound (l, 0) p)
+  (* We can ignore the fall-through case. See no_branch_end_prog *)
+  | DCall pc', Some (ICall e) => is_some (cptr_in_bound pc' p)
+  | _, _ =>  false
+  end.
+
+Definition wf_dirs (pc: cptr) (p: prog) (ds: dirs) : bool :=
+  forallb (wf_direction pc p) ds.
+
 (* PROPERTY: uslh produces well-formed programs from well-formed programs
    probably need generator for well-formed programs *)
 
 (* May (not) need separate check for no ctarget, only for source *)
-
-(* ** Property testing of MiniCET *)
-
-(* Simple utility function to check if a value is Some.
-  TODO: Check if there is an Stdlib or Extlib function with the same
-  functionality. *)
-
-Definition is_some {A} (v : option A) : bool := match v with
-  | Some _ => true
-  | None => false
-  end.
 
 (* Some Auxiliary functions *)
 
