@@ -612,14 +612,11 @@ Definition no_branch_end (blk: list inst * bool) : bool :=
 Definition no_branch_end_prog (p: prog) : bool :=
   forallb no_branch_end p.
 
-Definition cptr_in_bound (pc: cptr) (p: prog) : option inst :=
-  blk <- nth_error p (fst pc);; i <- nth_error (fst blk) (snd pc);; ret i.
-
 Definition wf_direction (pc: cptr) (p: prog) (d: direction) : bool :=
   match d, p[[pc]] with
-  | DBranch b, Some (IBranch e l) => is_some (cptr_in_bound (l, 0) p)
+  | DBranch b, Some (IBranch e l) => is_some p[[(l, 0)]]
   (* We can ignore the fall-through case. See no_branch_end_prog *)
-  | DCall pc', Some (ICall e) => is_some (cptr_in_bound pc' p)
+  | DCall pc', Some (ICall e) => is_some p[[pc']]
   | _, _ =>  false
   end.
 
