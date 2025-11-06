@@ -522,15 +522,14 @@ Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
   rename c into pc.
 
 (* BCC lemma for one single instruction *)
-Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
+Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   unused_prog msf p ->
   unused_prog callee p ->
-  msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
-  steps_to_sync_point tsc1 ds = Some n ->
-  spec_cfg_sync sc1 = Some tsc1 ->
-  uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-      exists sc2, p |- <(( sc1 ))> -->i_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2. 
-(* /\ same_termination sc2 tsc2 = true. Need to redefine same_termination function *)
+  msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
+  steps_to_sync_point sc1 ds = Some n ->
+  spec_cfg_sync ic1 = Some sc1 ->
+  uslh_prog p |- <(( sc1 ))> -->*_ds^^os^^n <(( sc2 ))> ->
+      exists ic2, p |- <(( ic1 ))> -->i_ ds ^^ os <(( ic2 ))> /\ spec_cfg_sync ic2 = Some sc2 /\ same_termination sc2 ic2 = true. 
 Proof.
   Admitted.
 
