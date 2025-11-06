@@ -77,9 +77,9 @@ Reserved Notation
   "p '|-' '<((' c '))>' '-->*^' os '<((' ct '))>'"
       (at level 40, c constr, ct constr).
 
-Inductive multi_seq_inst (p : prog) (c : cfg) : cfg -> obs -> Prop :=
+Inductive multi_seq_inst (p : prog) (c : @state cfg) : @state cfg -> obs -> Prop :=
   | multi_seq_inst_refl : p |- <(( c ))> -->*^[] <(( c ))>
-  | multi_seq_inst_trans (c' c'' : cfg) (os1 os2 : obs) :
+  | multi_seq_inst_trans (c' c'' : @state cfg) (os1 os2 : obs) :
       p |- <(( c ))> -->^os1 <(( c' ))> ->
       p |- <(( c' ))> -->*^os2 <(( c'' ))> ->
       p |- <(( c ))> -->*^(os1 ++ os2) <(( c'' ))>
@@ -94,43 +94,46 @@ Reserved Notation
   (at level 40, sc constr, sct constr).
 
 Inductive spec_eval_small_step (p:prog):
-    spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
+    @state spec_cfg -> @state spec_cfg -> dirs -> obs -> Prop :=
   | SpecSMI_Skip  :  forall pc r m sk ms,
       p[[pc]] = Some <{{ skip }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   | SpecSMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
   | SpecSMI_Branch : forall pc pc' r m sk ms ms' b (b': bool) e n l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
       b = (not_zero n) ->
       pc' = (if b' then (l, 0) else (pc+1)) ->
       ms' = ms || negb (Bool.eqb b b') ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), false, ms') ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DBranch b']^^[OBranch b] <(( S_Running ((pc', r, m, sk), false, ms') ))>
   | SpecSMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( (((l,0), r, m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running (((l,0), r, m, sk), false, ms) ))>
   | SpecSMI_Load : forall pc r m sk x e n v' ms,
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n] <(( ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n] <(( S_Running ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
   | SpecSMI_Store : forall pc r m sk e e' n ms,
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore n] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore n] <(( S_Running ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
   | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( ((pc', r, m, (pc+1)::sk), true, ms') ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
-      p |- <(( ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
+  | SpecSMI_CTarget_F : forall pc r m sk ms,
+      p[[pc]] = Some <{{ ctarget }}> ->
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))>
   | SpecSMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
-      p |- <(( ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( ((pc', r, m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( S_Term ))>
 
   where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
     (spec_eval_small_step p sc sct ds os).
@@ -142,7 +145,7 @@ Reserved Notation
   (at level 40, sc constr, sct constr).
 
 Inductive multi_spec_inst (p:prog) :
-  spec_cfg -> spec_cfg -> dirs -> obs -> nat -> Prop :=
+  @state spec_cfg -> @state spec_cfg -> dirs -> obs -> nat -> Prop :=
   | multi_spec_inst_refl sc : p |- <(( sc ))> -->*_[]^^[]^^0 <(( sc ))>
   | multi_spec_inst_trans sc1 sc2 sc3 ds1 ds2 os1 os2 n :
       p |- <(( sc1 ))> -->_ds1^^os1 <(( sc2 ))> ->
@@ -194,13 +197,13 @@ Reserved Notation
   (at level 40, ic constr, ict constr).
 
 Inductive ideal_eval_small_step_inst (p:prog) :
-  ideal_cfg -> ideal_cfg -> dirs -> obs -> Prop :=
+  @state ideal_cfg -> @state ideal_cfg -> dirs -> obs -> Prop :=
   | ISMI_Skip  :  forall pc r m sk ms,
       p[[pc]] = Some <{{ skip }}> ->
-      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( ((pc+1, r, m, sk), ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( S_Running ((pc+1, r, m, sk), ms) ))>
   | ISMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
-      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( ((pc+1, (x !-> (eval r e); r), m, sk), ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), ms) ))>
   | ISMI_Branch : forall pc pc' r m sk (ms ms' b b' : bool) e n n' l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
@@ -209,30 +212,30 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       pc' = (if b' then (l,0) else pc+1) ->
       ms' = (ms || (negb (Bool.eqb b b'))) ->
       (* uslh imposes that if we're already speculating the branch condition is always false *)
-      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), ms') ))>
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DBranch b']^^[OBranch b] <(( S_Running ((pc', r, m, sk), ms') ))>
   | ISMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
-      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( (((l,0), r, m, sk), ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( S_Running (((l,0), r, m, sk), ms) ))>
   | ISMI_Load : forall pc r m sk x e n n' v' (ms : bool),
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
       n' = (if ms then 0 else n) ->
-      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[OLoad n'] <(( ((pc+1, (x !-> v'; r), m, sk), ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OLoad n'] <(( S_Running ((pc+1, (x !-> v'; r), m, sk), ms) ))>
   | ISMI_Store : forall pc r m sk e e' e'' n (ms : bool),
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       e'' = (if ms then 0 else n) ->
-      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore e''] <(( ((pc+1, r, upd n m (eval r e'), sk), ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore e''] <(( S_Running ((pc+1, r, upd n m (eval r e'), sk), ms) ))>
   | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       l' = (if ms then 0 else l) -> (* uslh masking *)
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
-      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), ms') ))>
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Fault ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
-      p |- <(( ((pc, r, m, pc'::sk), ms) ))> -->i_[]^^[] <(( ((pc', r, m, sk), ms) ))>
+      p |- <(( S_Running ((pc, r, m, pc'::sk), ms) ))> -->i_[]^^[] <(( S_Term ))>
 
   where "p |- <(( ic ))> -->i_ ds ^^ os  <(( ict ))>" :=
     (ideal_eval_small_step_inst p ic ict ds os).
@@ -244,7 +247,7 @@ Reserved Notation
   (at level 40, ic constr, ict constr).
 
 Inductive multi_ideal_inst (p:prog) :
-  ideal_cfg -> ideal_cfg -> dirs -> obs -> Prop :=
+  @state ideal_cfg -> @state ideal_cfg -> dirs -> obs -> Prop :=
   | multi_ideal_inst_refl ic : p |- <(( ic ))> -->i*_[]^^[] <(( ic ))>
   | multi_ideal_inst_trans ic1 ic2 ic3 ds1 ds2 os1 os2 :
       p |- <(( ic1 ))> -->i_ds1^^os1 <(( ic2 ))> ->
