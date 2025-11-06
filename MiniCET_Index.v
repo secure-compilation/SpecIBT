@@ -187,7 +187,6 @@ Definition uslh_prog (p: prog) : prog :=
   let idx_p := (add_index p) in
   let '(p',newp) := mapM uslh_blk idx_p (Datatypes.length p) in
   (p' ++ newp).
-
 *)
 
 Reserved Notation
@@ -209,6 +208,7 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       b = (not_zero n') ->
       pc' = (if b' then (l,0) else pc+1) ->
       ms' = (ms || (negb (Bool.eqb b b'))) ->
+      (* uslh imposes that if we're already speculating the branch condition is always false *)
       p |- <(( ((pc, r, m, sk), ms) ))> -->i_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), ms') ))>
   | ISMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
@@ -224,15 +224,11 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       to_nat (eval r e) = Some n ->
       e'' = (if ms then 0 else n) ->
       p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore e''] <(( ((pc+1, r, upd n m (eval r e'), sk), ms) ))>
-  | ISMI_Call : forall pc pc' blk o r m sk e l l' (ms ms' : bool),
+  | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       l' = (if ms then 0 else l) -> (* uslh masking *)
-      nth_error p (fst pc') = Some blk -> (* attacker pc must be in-bounds wrt label and offset *)
-      nth_error (fst blk) (snd pc') = Some o ->
-      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) -> (* if attacker pc doesn't match source pc we're speculating *)
-      (* then also we'd like to detect whether, given pc', the next step will fault. It will fault if the place we're
-         speculating to is not the beginning of a proc block. Let's start there. *)
+      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), ms') ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
