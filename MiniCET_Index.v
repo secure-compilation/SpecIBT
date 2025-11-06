@@ -298,7 +298,7 @@ Definition pc_sync (pc: cptr) : option cptr :=
                    Some ((fst pc), add (snd pc) acc2)
     end.
 
-(* given a source register, sync with target register *)
+(* sync src and tgt registers *)
 (* can't handle callee here, not enough info if not speculating *)
 Definition r_sync (r: reg) (ms: bool) : reg :=
   msf !-> N (if ms then 1 else 0); r.
@@ -311,7 +311,7 @@ Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
       ret (a' :: l'')
   end.
 
-(* given a source config, return the corresponding target config *)
+(* sync src/ideal and target cfg (affects pc, register state, and stack) *)
 Definition spec_cfg_sync (*(p: prog)*) (ic: ideal_cfg): option spec_cfg :=
   let '(c, ms) := ic in
   let '(pc, r, m, stk) := c in
@@ -481,20 +481,18 @@ Definition same_termination (sc: spec_cfg) (ic: ideal_cfg) : bool :=
   | _ => false
    end.
 
-(* Well-formedness properties : do I still need these since Yonghyun has defined a more 
-complete set of wf functions for testing?  
+(* Well-formedness properties *)
 
-(* All program counters supplied by the attacker must be in-bounds *)
-Definition well_formed_call_directives (ds: dirs) : Prop :=
-  forall (d: direction) (pc: cptr),
-    In d ds ->
-    d = DCall pc ->
-    exists blk, nth_error p (fst pc) = Some blk /\ exists i, nth_error (fst blk) (snd pc) = Some i.
+Definition wf_dir (pc: cptr) (d: direction) : Prop :=
+  match d, p[[pc]] with
+  | DBranch b, Some (IBranch e l) => is_some p[[(l, 0)]] = true
+  | DCall pc', Some (ICall e) => is_some p[[pc']] = true
+  | _, _ => False
+  end.
 
-Definition nonempty_program (* (p: prog) *) : Prop :=
-  0 < Datatypes.length p.
+Definition wf_ds (pc: cptr) (ds: dirs) : Prop :=
+  Forall (wf_dir pc) ds.
 
-(* Last instruction in block must be either ret or jump *)
 Definition nonempty_block (blk : (list inst * bool)) : Prop :=
   0 < Datatypes.length (fst blk).
 
@@ -504,16 +502,42 @@ Definition is_return_or_jump (i: inst) : bool :=
   | _ => false
   end.
 
-(* Should never get default value here, but if we do, skip will make wf fail anyway *)
-Definition get_last_inst (blk: (list inst * bool)) : inst :=
-  let len := Datatypes.length (fst blk) in
-  nth (len - 1) (fst blk) <{{ skip }}>.
-
 Definition last_inst_ret_or_jump (blk: (list inst * bool)) : Prop :=
-  is_return_or_jump (get_last_inst blk) = true.
+  match (rev (fst blk)) with 
+  | [] => False (* unreachable *)
+  | h::t => (is_return_or_jump h = true)
+  end.
 
-Definition well_formed_block (blk : (list inst * bool)) : Prop :=
-   nonempty_block blk /\ last_inst_ret_or_jump blk. *)
+Definition wf_lbl (is_proc: bool) (l: nat) : Prop :=
+  match nth_error p l with 
+  | Some (_,b) => is_proc = b
+  | None => False
+  end.
+
+Fixpoint wf_expr (e: exp) : Prop :=
+  match e with
+  | ANum _ | AId _ => True
+  | ABin _ e1 e2  | <{_ ? e1 : e2}> => wf_expr e1 /\ wf_expr e2
+  | <{&l}> => wf_lbl true l
+  end.
+
+Definition wf_instr (i: inst) : Prop := 
+  match i with
+  | <{{skip}}> | <{{ctarget}}> | <{{ret}}> => True
+  | <{{_:=e}}> | <{{_<-load[e]}}> | <{{call e}}> => wf_expr e
+  | <{{store[e]<-e'}}> => wf_expr e /\ wf_expr e'
+  | <{{branch e to l}}> => wf_expr e /\ wf_lbl false l
+  | <{{jump l}}> => wf_lbl false l
+  end.
+
+Definition wf_block (blk : (list inst * bool)) : Prop :=
+   nonempty_block blk /\ last_inst_ret_or_jump blk /\ Forall wf_instr (fst blk).
+
+Definition nonempty_program : Prop :=
+  0 < Datatypes.length p.
+
+Definition wf_prog : Prop :=
+  nonempty_program /\ Forall wf_block p.
 
 (* Tactics *)
 
@@ -522,14 +546,24 @@ Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
   rename c into pc.
 
 (* BCC lemma for one single instruction *)
+(* Starting conditions:
+    - program and directives are well-formed
+    - msf and callee variables are unused by the source program 
+    - The msf variable in the target start state matches the ms flag in the semantics 
+    - synchronization relation between source/ideal and target start states:
+      • It takes n steps for the target to reach the sync point the source reaches in one ideal step 
+      • The start states are synchronized wrt pc, register state, and stack 
+*)
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
+  wf_prog ->
+  wf_ds (get_pc_sc sc1) ds ->
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
   steps_to_sync_point sc1 ds = Some n ->
   spec_cfg_sync ic1 = Some sc1 ->
   uslh_prog p |- <(( sc1 ))> -->*_ds^^os^^n <(( sc2 ))> ->
-      exists ic2, p |- <(( ic1 ))> -->i_ ds ^^ os <(( ic2 ))> /\ spec_cfg_sync ic2 = Some sc2 /\ same_termination sc2 ic2 = true. 
+      exists ic2, p |- <(( ic1 ))> -->i_ ds ^^ os <(( ic2 ))> /\ spec_cfg_sync ic2 = Some sc2 /\ same_termination sc2 ic2 = true.
 Proof.
   Admitted.
 
