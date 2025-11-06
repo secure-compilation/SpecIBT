@@ -20,6 +20,12 @@ Set Default Goal Selector "!".
 
 (* %s/\s\+$//e to strip trailing whitespace *)
 
+Inductive state {A} : Type :=
+  | S_Running (a: A)
+  | S_Undef
+  | S_Fault
+  | S_Term.
+
 (** Sequential small-step semantics for MiniCET *)
 
 Reserved Notation
@@ -27,36 +33,40 @@ Reserved Notation
   (at level 40, c constr, ct constr).
 
 Inductive seq_eval_small_step_inst (p:prog) :
-  cfg -> cfg -> obs -> Prop :=
+  @state cfg -> @state cfg -> obs -> Prop :=
   | SSMI_Skip : forall pc rs m stk,
       p[[pc]] = Some <{{ skip }}> ->
-      p |- <(( (pc, rs, m, stk) ))> -->^[] <(( (pc+1, rs, m, stk) ))>
+      p |- <(( S_Running (pc, rs, m, stk) ))> -->^[] <(( S_Running (pc+1, rs, m, stk) ))>
   | SSMI_Asgn : forall pc r m sk e x,
       p[[pc]] = Some <{{ x := e }}> ->
-      p |- <(( (pc, r, m, sk) ))> -->^[] <(( (pc+1, (x !-> (eval r e); r), m, sk) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running (pc+1, (x !-> (eval r e); r), m, sk) ))>
   | SSMI_Branch : forall pc pc' r m sk e n l,
       to_nat (eval r e) = Some n ->
       pc' = (if (not_zero n) then (l,0) else pc+1) ->
-      p |- <(( (pc, r, m, sk) ))> -->^[OBranch (not_zero n)] <(( (pc', r, m, sk) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OBranch (not_zero n)] <(( S_Running (pc', r, m, sk) ))>
   | SSMI_Jump : forall l pc r m sk,
       p[[pc]] = Some <{{ jump l }}> ->
-      p |- <(( (pc, r, m, sk) ))> -->^[] <(( ((l,0), r, m, sk) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running ((l,0), r, m, sk) ))>
   | SSMI_Load : forall pc r m sk x e n v',
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
-      p |- <(( (pc, r, m, sk) ))> -->^[OLoad n] <(( (pc+1, (x !-> v'; r), m, sk) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OLoad n] <(( S_Running (pc+1, (x !-> v'; r), m, sk) ))>
   | SSMI_Store : forall pc r m sk e e' n,
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
-      p |- <(( (pc, r, m, sk) ))> -->^[OStore n] <(( (pc+1, r, upd n m (eval r e'), sk) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
   | SSMI_Call : forall pc r m sk e l,
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      p |- <(( (pc, r, m, sk) ))> -->^[OCall l] <(( ((l,0), r, m, ((pc+1)::sk)) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
   | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
-      p |- <(( (pc, r, m, pc'::sk) ))> -->^[] <(( (pc', r, m, sk) ))>
+      p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
+  | SSMI_Term : forall pc r m,
+      p[[pc]] = Some <{{ ret}}> ->
+      p |- <(( S_Running (pc, r, m, []) ))> -->^[] <(( S_Term ))>
+
 
   where "p |- <(( c ))> -->^ os <(( ct ))>" :=
       (seq_eval_small_step_inst p c ct os).
