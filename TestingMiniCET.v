@@ -352,14 +352,18 @@ Definition gen_store_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst 
 
 Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_store_wt c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
 
+
+
 Definition compose_load_store_guard (t : ty) (id_exp : exp) (mem : tmem) : exp :=
   let indices := seq 0 (Datatypes.length mem) in
   let idx := filter_typed t (combine indices mem) in
-  fold_left 
-    (fun acc x => BOr x acc)
-    (map (fun id => <{{ id_exp = ANum id }}>) idx)
-    <{{ false }}>.
-
+  let tc := fold_left 
+            (fun acc x => BOr x acc)
+            (map (fun id => <{{ id_exp = ANum id }}>) idx)
+            <{{ false }}> in
+  let mem_sz := ANum (Datatypes.length mem) in
+  let guardc := BLt id_exp mem_sz in
+  BAnd tc guardc. 
 Eval compute in (compose_load_store_guard TNum <{ AId "X0"%string }> [TNum ; TPtr; TNum ]).
 
 Definition transform_load_store_inst (c : rctx) (mem : tmem) (acc : list inst) (i : inst) : M (bool * list inst) :=
@@ -1090,6 +1094,7 @@ Definition m_wtb (m: mem) (tm: tmem) : bool :=
 (* Extract Constant defNumTests => "1000000". *)
 
 (* check 0: load/store transformation creates basic blocks *)
+
 QuickChick (
     forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
       List.forallb basic_block_checker (map fst (transform_load_store_prog c tm p)))
@@ -1512,7 +1517,6 @@ QuickChick (
       end))
    | None => collect "tt1 failed"%string (checker tt) (* discard *)
   end)))).
-
 
 (* Outdated. available commit: 58fa2d5c090d764b548c967ff4c40a6d6f2fb679*)
 (* +++ Passed 1000000 tests (0 discards) *)
