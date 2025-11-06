@@ -110,7 +110,7 @@ Inductive spec_eval_small_step (p:prog):
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore n] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
-  | SpecSMI_Call : forall pc pc' blk o r m sk e l ms ms',
+  | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
@@ -142,6 +142,8 @@ Inductive multi_spec_inst (p:prog) :
     (multi_spec_inst p sc sct ds os n).
 
 (** Ideal small-step semantics for MiniCET *)
+
+Definition ideal_cfg :=  (cfg * bool)%type.
 
 (*
 Definition uslh_inst (i: inst) : M (list inst) :=
@@ -178,21 +180,18 @@ Definition uslh_prog (p: prog) : prog :=
 
 *)
 
-(* ct flag here is going to serve as a fault flag to track where the source program would
-   have a fault analogous to the target program executing speculatively and encountering
-   a ctarget instruction but ct = false *)
 Reserved Notation
-  "p '|-' '<((' sc '))>' '-->i_' ds '^^' os '<((' sct '))>'"
-  (at level 40, sc constr, sct constr).
+  "p '|-' '<((' ic '))>' '-->i_' ds '^^' os '<((' ict '))>'"
+  (at level 40, ic constr, ict constr).
 
 Inductive ideal_eval_small_step_inst (p:prog) :
-  spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
+  ideal_cfg -> ideal_cfg -> dirs -> obs -> Prop :=
   | ISMI_Skip  :  forall pc r m sk ms,
       p[[pc]] = Some <{{ skip }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[]^^[] <(( ((pc+1, r, m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( ((pc+1, r, m, sk), ms) ))>
   | ISMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[]^^[] <(( ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( ((pc+1, (x !-> (eval r e); r), m, sk), ms) ))>
   | ISMI_Branch : forall pc pc' r m sk (ms ms' b b' : bool) e n n' l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
@@ -200,21 +199,21 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       b = (not_zero n') ->
       pc' = (if b' then (l,0) else pc+1) ->
       ms' = (ms || (negb (Bool.eqb b b'))) ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), false, ms') ))>
+      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[DBranch b']^^[OBranch b] <(( ((pc', r, m, sk), ms') ))>
   | ISMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[]^^[] <(( (((l,0), r, m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( (((l,0), r, m, sk), ms) ))>
   | ISMI_Load : forall pc r m sk x e n n' v' (ms : bool),
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
       n' = (if ms then 0 else n) ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[]^^[OLoad n'] <(( ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[OLoad n'] <(( ((pc+1, (x !-> v'; r), m, sk), ms) ))>
   | ISMI_Store : forall pc r m sk e e' e'' n (ms : bool),
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       e'' = (if ms then 0 else n) ->
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[]^^[OStore e''] <(( ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
+      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore e''] <(( ((pc+1, r, upd n m (eval r e'), sk), ms) ))>
   | ISMI_Call : forall pc pc' blk o r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
@@ -224,13 +223,13 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) -> (* if attacker pc doesn't match source pc we're speculating *)
       (* then also we'd like to detect whether, given pc', the next step will fault. It will fault if the place we're
          speculating to is not the beginning of a proc block. Let's start there. *)
-      p |- <(( ((pc, r, m, sk), false, ms) ))> -->i_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), false, ms') ))>
+      p |- <(( ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( ((pc', r, m, (pc+1)::sk), ms') ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
-      p |- <(( ((pc, r, m, pc'::sk), false, ms) ))> -->i_[]^^[] <(( ((pc', r, m, sk), false, ms) ))>
+      p |- <(( ((pc, r, m, pc'::sk), ms) ))> -->i_[]^^[] <(( ((pc', r, m, sk), ms) ))>
 
-  where "p |- <(( sc ))> -->i_ ds ^^ os  <(( sct ))>" :=
-    (ideal_eval_small_step_inst p sc sct ds os).
+  where "p |- <(( ic ))> -->i_ ds ^^ os  <(( ict ))>" :=
+    (ideal_eval_small_step_inst p ic ict ds os).
 
 (** Ideal multi-step relation *)
 
@@ -239,7 +238,7 @@ Reserved Notation
   (at level 40, ic constr, ict constr).
 
 Inductive multi_ideal_inst (p:prog) :
-  spec_cfg -> spec_cfg -> dirs -> obs -> Prop :=
+  ideal_cfg -> ideal_cfg -> dirs -> obs -> Prop :=
   | multi_ideal_inst_refl ic : p |- <(( ic ))> -->i*_[]^^[] <(( ic ))>
   | multi_ideal_inst_trans ic1 ic2 ic3 ds1 ds2 os1 os2 :
       p |- <(( ic1 ))> -->i_ds1^^os1 <(( ic2 ))> ->
@@ -250,41 +249,42 @@ Inductive multi_ideal_inst (p:prog) :
 
 (** * Backwards Compiler Correctness of Ultimate Speculative Load Hardening *)
 
-(* get value of msf or callee variables given current register state *)
-Definition msf_lookup (sc: spec_cfg) : val :=
+Definition msf_lookup_sc (sc: spec_cfg) : val :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, stk) := c in
   apply r msf.
 
-Definition callee_lookup (sc: spec_cfg) : val :=
+Definition msf_lookup_ic (ic: ideal_cfg) : val :=
+let '(c, ms) := ic in
+  let '(pc, r, m, stk) := c in
+  apply r msf.
+
+Definition callee_lookup_sc (sc: spec_cfg) : val :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, stk) := c in
   apply r callee.
 
-(* are we speculating (semantic level) *)
-Definition ms_true (sc: spec_cfg) : bool :=
+Definition callee_lookup_ic (ic: ideal_cfg) : val :=
+  let '(c, ms) := ic in
+  let '(pc, r, m, stk) := c in
+  apply r callee.
+
+Definition ms_true_sc (sc: spec_cfg) : bool :=
   let '(c, ct, ms) := sc in ms.
+
+Definition ms_true_ic (ic: ideal_cfg) : bool :=
+  let '(c, ms) := ic in ms.
 
 Section BCC.
 
 Variable p: prog.
 Definition tp : prog := uslh_prog p.
 
-(* predicate for fold *)
 Definition is_br_or_call (i : inst) :=
   match i with
   | <{{branch _ to _}}> | <{{call _}}> => true
   | _                                  => false
   end.
-
-(* synchronizing point relation between src and tgt *)
-(*
-   checks: are label and offset both in-bounds?
-   If proc block, add 2
-   If not first instruction in block, accumulate extra steps from all previous insts
-   For inst in source, always start from beginning of target decoration so we have access to all of it
-
-*)
 
 Definition pc_sync (pc: cptr) : option cptr :=
   blk <- nth_error p (fst pc);; (* label in bounds *)
@@ -303,15 +303,21 @@ Definition pc_sync (pc: cptr) : option cptr :=
 Definition r_sync (r: reg) (ms: bool) : reg :=
   msf !-> N (if ms then 1 else 0); r.
 
-(* given a source config, return the corresponding target config *)
-Definition spec_cfg_sync (sc: spec_cfg) : option spec_cfg :=
-  let '(c, ct, ms) := sc in
-  let '(pc, r, m, stk) := c in
-  match pc_sync pc with
-  | Some pc' => let tc := (pc', r_sync r ms, m, stk) in
-                Some (tc, ct, ms)
-  | _ => None
+Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
+  match l with 
+  | [] => Some []
+  | a :: l' => a' <- f a;;
+      l'' <- map_opt f l';;
+      ret (a' :: l'')
   end.
+
+(* given a source config, return the corresponding target config *)
+Definition spec_cfg_sync (*(p: prog)*) (ic: ideal_cfg): option spec_cfg :=
+  let '(c, ms) := ic in
+  let '(pc, r, m, stk) := c in
+  pc' <- pc_sync (*p*) pc;;
+  stk' <- map_opt (pc_sync (*p*)) stk;;
+  ret (pc', r_sync r ms, m, stk', false, ms).
 
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
 Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
@@ -345,34 +351,40 @@ Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
     | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
     end.
 
-Definition get_reg (spc: spec_cfg) : reg :=
-  let '(c, ct, ms) := spc in
+Definition get_reg_sc (sc: spec_cfg) : reg :=
+  let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
   r.
 
-Definition get_pc (spc: spec_cfg) : cptr :=
-  let '(c, ct, ms) := spc in
+Definition get_reg_ic (ic: ideal_cfg) : reg :=
+  let '(c, ms) := ic in
+  let '(pc, r, m, sk) := c in
+  r.
+
+Definition get_pc_sc (sc: spec_cfg) : cptr :=
+  let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
   pc.
 
+Definition get_pc_ic (ic: ideal_cfg) : cptr :=
+  let '(c, ms) := ic in
+  let '(pc, r, m, sk) := c in
+  pc.
 
 (* Termination:
   - if instruction is ret and stack is empty: normal
-  - if ctarget is expected and the current instruction ≠ ctarget: fault
+  - if ct && current inst ≠ ctarget \/ if ~ct && current inst = ctarget : fault (second one can't occur, I think, with current constraints)
   - any other sort of termination: stuck/UB
 
 *)
 
-(* would it help to give T_Fault or T_UB arguments carrying information from final state? *)
 Inductive termination : Type :=
 | T_Normal
 | T_Fault
 | T_UB.
 
-(* Target/speculative semantics *)
+(* Target *)
 
-(* Target program faults when ctarget instruction / ct is false, 
-   or any other instruction / ct is true *)
 Definition is_fault_tgt (final_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := final_t in
   let '(pc, rs, m, sk) := c in
@@ -382,7 +394,6 @@ Definition is_fault_tgt (final_t: spec_cfg) : option bool :=
   | _ => Some (if ct then true else false)
   end.
 
-(* Normal termination: ret + empty stack *)
 Definition is_normal_termination_tgt (final_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := final_t in
   let '(pc, rs, m, sk) := c in
@@ -392,7 +403,6 @@ Definition is_normal_termination_tgt (final_t: spec_cfg) : option bool :=
   | _ => Some false
   end.
 
-(* any other final state means the program got stuck because of UB *)
 Definition is_stuck_tgt (final_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := final_t in
   let '(pc, rs, m, sk) := c in
@@ -406,63 +416,73 @@ Definition classify_term_tgt (final_t: spec_cfg) : termination :=
   if (is_fault_tgt final_t) then T_Fault else
   if (is_normal_termination_tgt final_t) then T_Normal else T_UB.
 
-(* Source/ideal semantics *)
+(* Source *)
 
-(* The source program doesn't have the ct flag, nor does it have the 
-   ctarget instruction. 
+Definition is_fault_src (final_s: ideal_cfg) : option bool :=
+  let '(c, ms) := final_s in
+  let '(pc, rs, m, sk) := c in
+  i <- p[[pc]];;
+  Some true.
+  (* now what? *)
 
-   The ideal semantics is supposed to refine the speculative semantics so that 
-   uslh protection is built in. So the source program ought to have the same two 
-   types of fault as the target program: 
+(* Normal termination: ret + empty stack *)
+Definition is_normal_termination_src (final_s: ideal_cfg) : option bool :=
+  let '(c, ms) := final_s in
+  let '(pc, rs, m, sk) := c in
+  i <- p[[pc]];;
+  match i with
+  | <{{ ret }}> => Some (if seq.nilp sk then true else false)
+  | _ => Some false
+  end.
 
-   1) The kind of fault where we have ctarget but ct is false happens because the attacker 
-      speculated to the beginning of a procedure block 
+(* any other final state means the program got stuck because of UB *)
+Definition is_stuck_src (final_s: ideal_cfg) : option bool :=
+  let '(c, ms) := final_s in
+  let '(pc, rs, m, sk) := c in
+  _ <- p[[pc]];;
+  match (is_fault_src final_s, is_normal_termination_src final_s) with
+  | (Some false, Some false) => Some true
+  | _ => Some false
+  end.
 
-   ct flag set just means that we have just stepped from a call instruction.
-      ctarget instruction just means that we're at the beginning of some 
-      procedure block. Can I recover this information from a final source config?
+Definition classify_term_src (final_s: ideal_cfg) : termination :=
+  if (is_fault_src final_s) then T_Fault else
+  if (is_normal_termination_src final_s) then T_Normal else T_UB.
 
-      I would need to know what the starting pc was in order to know whether 
-      the previous instruction was a call.
-
-      It is easier to determine whether we are currently at the beginning of a 
-      procedure block: just check the current pc 
-
-*)
-
-(* Definition same_termination (sc2 tsc2 : spec_cfg) : bool :=
-  let '(c, ct, ms) := sc2 in
+Definition same_termination (sc: spec_cfg) (ic: ideal_cfg) : bool :=
+  let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
-  let '(tc, tct, tms) := tsc2 in
-  let '(tpc, tr, tm, tsk) := tc in
-  match (p[[pc]], p[[tpc]]) with
-  | (Some i, Some ti) =>
-      let iss := is_stuck sc2 in
-      let ist := is_stuck tsc2 in
-      let ins := is_normal_termination sc2 in
-      let intg := is_normal_termination tsc2 in
-      let ifs := is_fault sc2 in
-      let ift := is_fault tsc2 in
-      let stuck_match :=
-        match (iss, ist) with
-        | (Some bs1, Some bt1) => bs1 && bt1
+  let '(c', ms') := ic in 
+  let '(pc', r', m', sk') := c' in
+  match (p[[pc]], p[[pc']]) with
+  | (Some i, Some i') =>
+      let ub_t := is_stuck_tgt sc in
+      let ub_s := is_stuck_src ic in
+      let normal_t := is_normal_termination_tgt sc in
+      let normal_s := is_normal_termination_src ic in
+      let fault_t := is_fault_tgt sc in
+      let fault_s := is_fault_src ic in
+      let ub_match :=
+        match (ub_t, ub_s) with
+        | (Some b1, Some b2) => b1 && b2
         | _ => false
         end in
       let normal_match :=
-        match (ins, intg) with
-        | (Some bs2, Some bt2) => bs2 && bt2
+        match (normal_t, normal_s) with
+        | (Some b1', Some b2') => b1' && b2'
         | _ => false
         end in
       let fault_match :=
-        match (ifs, ift) with
-        | (Some bs3, Some bt3) => bs3 && bt3
+        match (fault_t, fault_s) with
+        | (Some b1'', Some b2'') => b1'' && b2''
         | _ => false
         end in
-          stuck_match || normal_match || fault_match
+          ub_match || normal_match || fault_match
   | _ => false
-   end. *)
+   end.
 
-(* Well-formedness properties  *)
+(* Well-formedness properties : do I still need these since Yonghyun has defined a more 
+complete set of wf functions for testing?  
 
 (* All program counters supplied by the attacker must be in-bounds *)
 Definition well_formed_call_directives (ds: dirs) : Prop :=
@@ -493,7 +513,7 @@ Definition last_inst_ret_or_jump (blk: (list inst * bool)) : Prop :=
   is_return_or_jump (get_last_inst blk) = true.
 
 Definition well_formed_block (blk : (list inst * bool)) : Prop :=
-  nonempty_block blk /\ last_inst_ret_or_jump blk.
+   nonempty_block blk /\ last_inst_ret_or_jump blk. *)
 
 (* Tactics *)
 
@@ -509,7 +529,8 @@ Lemma ultimate_slh_bcc_single_cycle : forall sc1 tsc1 tsc2 n ds os,
   steps_to_sync_point tsc1 ds = Some n ->
   spec_cfg_sync sc1 = Some tsc1 ->
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-      exists sc2, p |- <(( sc1 ))> -->i_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2. (* /\ same_termination sc2 tsc2 = true. Need to redefine same_termination function *)
+      exists sc2, p |- <(( sc1 ))> -->i_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync sc2 = Some tsc2. 
+(* /\ same_termination sc2 tsc2 = true. Need to redefine same_termination function *)
 Proof.
   Admitted.
 
@@ -527,17 +548,38 @@ Admitted.
 
 (* (** * Definition of Relative Secure *) *)
 
-(* Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop := *)
-(*   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2, *)
-(*     p |- <(( (pc1, r1, m1, stk1) ))> -->*^ os1 <(( (pc1', r1', m1', stk1') ))> -> *)
-(*     p |- <(( (pc2, r2, m2, stk2) ))> -->*^ os2 <(( (pc2', r2', m2', stk2') ))> -> *)
-(*     (prefix os1 os2) \/ (prefix os2 os1).  *)
+Definition prefix {X:Type} (xs ys : list X) : Prop :=
+  exists zs, xs ++ zs = ys.
 
-(* Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop := *)
-(*   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 n c1 c2, *)
-(*     p |- <((c, st1, ast1, false))> -->*_ds^^os1^^n <((c1, stt1, astt1, bt1))> -> *)
-(*     p |- <((c, st2, ast2, false))> -->*_ds^^os2^^n <((c2, stt2, astt2, bt2))> -> *)
-(*     os1 = os2.  *)
+Definition seq_same_obs p i pc1 pc2 r1 r2 m1 m2 stk1 stk2 (i1 i2: inst) : Prop :=
+  forall pc1' pc2' r1' r2' m1' m2' stk1' stk2' os1 os2 i1 i2, 
+    p[[pc1]] = Some i ->
+    p[[pc2]] = Some i ->
+    p[[pc1']] = Some i1 ->
+    p[[pc2']] = Some i2 ->
+    p |- <(( (pc1, r1, m1, stk1) ))> -->*^ os1 <(( (pc1', r1', m1', stk1') ))> ->
+    p |- <(( (pc2, r2, m2, stk2) ))> -->*^ os2 <(( (pc2', r2', m2', stk2') ))> ->
+    (prefix os1 os2) \/ (prefix os2 os1).
+
+(* not quite -- where to put the transformation *)
+(* Definition spec_same_obs p i pc1 pc2 r1 r2 m1 m2 stk1 stk2 (i1 i2: inst) : Prop :=
+  forall ds pc1' pc2' r1' r2' m1' m2' stk1' stk2' ct1 ct2 ms1 ms2 os1 os2 n i1 i2,
+    p[[pc1]] = Some i ->
+    p[[pc2]] = Some i ->
+    p[[pc1']] = Some i1 ->
+    p[[pc2']] = Some i2 ->
+    p |- <((pc1, r1, m1, stk1, false, false))> -->*_ds^^os1^^n <((pc1', r1', m1', stk1' ct1, ms1))> ->
+    p |- <((pc2, r2, m2, stk2, false, false))> -->*_ds^^os2^^n <((pc2', r2', m2', stk2', ct2, ms2))> ->
+    os1 = os2.
+
+(*  
+Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop :=
+  forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 n c1 c2,
+    p |- <((c, st1, ast1, false))> -->*_ds^^os1^^n <((c1, stt1, astt1, bt1))> ->
+    p |- <((c, st2, ast2, false))> -->*_ds^^os2^^n <((c2, stt2, astt2, bt2))> ->
+    os1 = os2.
+
+*)
 
 (* (* The new definition adds the extra program transformation we  *)
 (*    needed to check for speculation at the target of a call instruction. *)
