@@ -164,6 +164,13 @@ Definition gen_pc_from_prog (p: prog) : G cptr :=
   off <- choose (0, Datatypes.length(fst blk) - 1);;
   ret (iblk, off).
 
+Fixpoint gen_call_stack_from_prog_sized n (p: prog) : G (list cptr) :=
+  match n with 
+  | 0 => ret []
+  | S n' => l1 <- gen_pc_from_prog p;;
+      oneOf (ret [l1] ;;; [liftM (cons l1) (gen_call_stack_from_prog_sized n' p)])
+  end.
+
 Definition gen_directive_from_ideal_cfg (p: prog) (pst: list nat) (ic: ideal_cfg) : G dirs :=
   let '(c, ms) := ic in
   let '(pc, r, m, sk) := c in
@@ -174,8 +181,11 @@ Definition gen_directive_from_ideal_cfg (p: prog) (pst: list nat) (ic: ideal_cfg
         d <- gen_dbr;;
         ret [d]
       | <{{call _}}> =>
-        d <- gen_dcall pst;;
-        ret [d]
+        oneOf (
+          d <- gen_dcall pst;;
+          ret [d] ;;;
+          [ pc <- gen_pc_from_prog p ;; ret [DCall pc] ]
+        )
       | _ => ret []
       end
   | None => trace "lookup error" (ret [])
@@ -212,7 +222,8 @@ QuickChick (
   forAll (gen_reg_wt c pst) (fun rs1 => 
   forAll (gen_wt_mem tm pst) (fun m1 =>
   forAll (gen_pc_from_prog p) (fun pc =>
-  let icfg := (pc, rs1, m1, [(0,0)], false) in (* TODO: generate more meaningful stk (some number of possible call locations should do the trick)*)
+  forAll (gen_call_stack_from_prog_sized 3 p) (fun stk => 
+  let icfg := (pc, rs1, m1, stk, false) in (* TODO: generate more meaningful stk (some number of possible call locations should do the trick)*)
   match (spec_cfg_sync p icfg) with
   | None => collect "hello"%string (checker tt)
   | Some tcfg => 
@@ -222,7 +233,10 @@ QuickChick (
           (* TODO: handle return on empty stack?*)
       | Some (icfg', _, _) => 
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
-          | None => collect "undefined steps to sync"%string (checker tt)
+          | None => match spec_steps 4 (uslh_prog p) tcfg ds with 
+                    | None => checker true (* speculative execution should fail if it won't sync again *)
+                    | Some _ => checker false
+                    end
           | Some n => match spec_steps n (uslh_prog p) tcfg ds with 
                       | None => collect "spec exec fails"%string (checker tt) (* TODO: investigate these cases *)
                       | Some (tcfg', _, _) => match (spec_cfg_sync p icfg') with
@@ -237,8 +251,10 @@ QuickChick (
       end
       )
   end
-  ))))).
+  )))))).
 (* Results:
   Passed 10000 tests (211 discards)
+
+   Anything that failse steps_to_sync_point indeed feels speculative execution, and looking at traces, it is not just because of missing directives :)
 *)
 
