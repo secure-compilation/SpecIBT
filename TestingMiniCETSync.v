@@ -25,7 +25,8 @@ Require Import Stdlib.Classes.EquivDec.
 From SECF Require Import MiniCET.
 From SECF Require Import TestingMiniCET.
 
-Definition ideal_cfg :=  (cfg * bool)%type.
+(* ideal_cfg = (cfg, ms) *)
+Definition ideal_cfg := (cfg * bool)%type.
 
 Definition ideal_step (p: prog) (ic: ideal_cfg) (ds:dirs) :option (ideal_cfg * dirs * obs) :=
   let '(c, ms) := ic in 
@@ -54,13 +55,23 @@ Definition ideal_step (p: prog) (ic: ideal_cfg) (ds:dirs) :option (ideal_cfg * d
     l <- to_fp (eval r e);;
     let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
     ret ((((pc', r, m, (pc+1)::sk), ms'), tl ds), [OCall l])
+  | <{{x<-load[e]}}> =>
+      let i := if ms then (ANum 0) else e in
+      n <- to_nat (eval r e);;
+      v' <- nth_error m n;;
+      let c := (pc+1, (x !-> v'; r), m, sk) in
+      ret ((c, ms), ds, [OLoad n])
+  | <{{store[e]<-e'}}> =>
+      let i := if ms then (ANum 0) else e in
+      n <- to_nat (eval r i);;
+      let c:= (pc+1, r, upd n m (eval r e'), sk) in
+      ret ((c, ms), ds, [OStore n])
   | _ =>
     co <- step p c;;
     let '(c', o) := co in
     ret ((c', ms), ds, o)
     end
   end.
-
 
 Fixpoint ideal_steps (f: nat) (p: prog) (ic: ideal_cfg) (ds: dirs)
   : option (ideal_cfg * dirs * obs) :=
@@ -72,7 +83,7 @@ Fixpoint ideal_steps (f: nat) (p: prog) (ic: ideal_cfg) (ds: dirs)
       let '(c2, ds2, o2) := cdo2 in
       ret (c2, ds2, o1++o2)
   | 0 =>
-      None
+      ret (ic, ds, [])
   end.
 
 (* predicate for fold *)
@@ -217,6 +228,7 @@ Definition spec_cfg_eqb_up_to_callee (st1 st2 : spec_cfg) :=
 
 Compute ideal_step ([ ([ <{{skip}}> ], true) ]) (((0,0)), (t_empty UV), [UV; UV; UV], [], false) [].
 
+(* Check 1: Single step diagram *)
 QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 => 
@@ -229,7 +241,7 @@ QuickChick (
   | Some tcfg => 
       forAll (gen_directive_from_ideal_cfg p pst icfg) (fun ds => 
       match ideal_step p icfg ds with 
-      | None =>  collect ("ideal step failed"%string ++ show (p[[pc]]))%string (checker tt)
+      | None =>  collect ("ideal step failed "%string (* ++ " ICFG: "%string ++ show(icfg) ++ " INST: "%string *) ++ show (p[[pc]]))%string (checker tt)
           (* TODO: handle return on empty stack?*)
       | Some (icfg', _, _) => 
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
@@ -238,9 +250,9 @@ QuickChick (
                     | Some _ => checker false
                     end
           | Some n => match spec_steps n (uslh_prog p) tcfg ds with 
-                      | None => collect "spec exec fails"%string (checker tt) (* TODO: investigate these cases *)
+                      | None => collect "spec exec fails "%string (checker tt) (* TODO: investigate these cases *)
                       | Some (tcfg', _, _) => match (spec_cfg_sync p icfg') with
-                                              | None => collect "sync fails"%string (checker tt)
+                                              | None => collect "sync fails "%string (checker tt)
                                               | Some tcfgref => match (spec_cfg_eqb_up_to_callee tcfg' tcfgref) with 
                                                                 | true => checker true
                                                                 | false => trace (show tcfg' ++ "|||||" ++ show tcfgref) (checker false)
