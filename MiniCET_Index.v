@@ -595,7 +595,14 @@ Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( S_Running sc2 ))> ->
       exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> /\ spec_cfg_sync ic2 = Some sc2.
 Proof.
-  Admitted.
+  intros until os. intros wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
+  destruct_cfg sc1. unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
+  unfold wf_ds in wfds. simpl in ms_msf. destruct p[[pc]] eqn:PC.
+  { destruct i.
+    -  
+ 
+  }
+  
 
 End BCC.
 
