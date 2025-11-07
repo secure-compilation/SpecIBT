@@ -25,65 +25,122 @@ Require Import Stdlib.Classes.EquivDec.
 From SECF Require Import MiniCET.
 From SECF Require Import TestingMiniCET.
 
-(* ideal_cfg = (cfg, ms) *)
-Definition ideal_cfg := (cfg * bool)%type.
 
-Definition ideal_step (p: prog) (ic: ideal_cfg) (ds:dirs) :option (ideal_cfg * dirs * obs) :=
-  let '(c, ms) := ic in 
-  let '(pc, r, m, sk) := c in
-  match p[[pc]] with 
-    None => trace "lookup fail" None
-  | Some i => 
-  match i with 
-  | <{{branch e to l}}> => 
-    if seq.nilp ds then
-      trace "idealBranch: directions are empty!" None
-    else
-    d <- hd_error ds;;
-    b' <- is_dbranch d;;
-    n <- to_nat (eval r e);;
-    let b := not_zero n in
-    let ms' := ms || negb (Bool.eqb b b') in
-    let pc' := if b' then (l, 0) else (pc+1) in
-    ret ((((pc', r, m, sk), ms'), tl ds), [OBranch b])
-  | <{{call e}}> =>
-    if seq.nilp ds then
-      trace "idealCall: directions are empty!" None
-    else
-    d <- hd_error ds;;
-    pc' <- is_dcall d;;
-    l <- to_fp (eval r e);;
-    let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
-    ret ((((pc', r, m, (pc+1)::sk), ms'), tl ds), [OCall l])
-  | <{{x<-load[e]}}> =>
-      let i := if ms then (ANum 0) else e in
-      n <- to_nat (eval r e);;
-      v' <- nth_error m n;;
-      let c := (pc+1, (x !-> v'; r), m, sk) in
-      ret ((c, ms), ds, [OLoad n])
-  | <{{store[e]<-e'}}> =>
-      let i := if ms then (ANum 0) else e in
-      n <- to_nat (eval r i);;
-      let c:= (pc+1, r, upd n m (eval r e'), sk) in
-      ret ((c, ms), ds, [OStore n])
-  | _ =>
-    co <- step p c;;
-    let '(c', o) := co in
-    ret ((c', ms), ds, o)
-    end
+Inductive state A : Type :=
+  | S_Running (a: A)
+  | S_Undef
+  | S_Fault
+  | S_Term.
+Arguments S_Running {A} a.
+Arguments S_Undef {A}.
+Arguments S_Fault {A}.
+Arguments S_Term {A}.
+
+Instance state_Monad : Monad state.
+Proof.
+  constructor.
+  - intros T t.
+    now apply S_Running.
+  - intros T U st f.
+    destruct st eqn: H.
+    + now apply f.
+    + apply S_Undef.
+    + apply S_Fault.
+    + apply S_Term.
+Defined.
+
+Definition ideal_cfg :=  (cfg * bool)%type.
+
+Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_cfg * dirs * obs) :=
+  match sic with 
+  | S_Running ic => 
+      let '(c, ms) := ic in 
+      let '(pc, r, m, sk) := c in
+      match p[[pc]] with 
+        None => trace "lookup fail" (S_Undef, ds, [])
+      | Some i => 
+          match i with 
+            | <{{branch e to l}}> => 
+            if seq.nilp ds then
+            trace "idealBranch: directions are empty!" (S_Undef, ds, [])
+            else
+            match
+            d <- hd_error ds;;
+            b' <- is_dbranch d;;
+            n <- to_nat (eval r e);;
+            let b := not_zero n in
+            let ms' := ms || negb (Bool.eqb b b') in
+            let pc' := if b' then (l, 0) else (pc+1) in
+            ret ((S_Running ((pc', r, m, sk), ms'), tl ds), [OBranch b])
+            with 
+            | None => (S_Undef, ds, [])
+            | Some (c, ds, os) => (c, ds, os)
+            end
+            | <{{call e}}> =>
+            if seq.nilp ds then
+            trace "idealCall: directions are empty!" (S_Undef, ds, [])
+            else
+            match
+            d <- hd_error ds;;
+            pc' <- is_dcall d;;
+            l <- to_fp (eval r e);;
+            blk <- nth_error p (fst pc');;
+            if (snd blk && (snd pc' ==b 0)) then
+            let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+            ret ((S_Running ((pc', r, m, (pc+1)::sk), ms'), tl ds), [OCall l])
+            else Some (S_Fault, ds, [OCall l])
+            with 
+            | None => (S_Undef, ds, [])
+            | Some (c, ds, os) => (c, ds, os)
+            end
+            | <{{x<-load[e]}}> =>
+            match
+            let i := if ms then (ANum 0) else e in
+            n <- to_nat (eval r e);;
+            v' <- nth_error m n;;
+            let c := (pc+1, (x !-> v'; r), m, sk) in
+            ret (S_Running (c, ms), ds, [OLoad n])
+            with 
+            | None => (S_Undef, ds, [])
+            | Some (c, ds, os) => (c, ds, os)
+            end
+            | <{{store[e]<-e'}}> =>
+            match
+            let i := if ms then (ANum 0) else e in
+            n <- to_nat (eval r i);;
+            let c:= (pc+1, r, upd n m (eval r e'), sk) in
+            ret (S_Running (c, ms), ds, [OStore n])
+            with 
+            | None => (S_Undef, ds, [])
+            | Some (c, ds, os) => (c, ds, os)
+            end
+          | _ =>
+              match
+              co <- step p c;;
+              let '(c', o) := co in
+              @ret option _ (state ideal_cfg * dirs * obs) (S_Running (c', ms), ds, o)
+              with 
+              | None => (S_Undef, ds, [])
+              | Some (c, ds, os) => (c, ds, os)
+              end
+          end
+      end
+  | s => (s, ds, [])
   end.
 
-Fixpoint ideal_steps (f: nat) (p: prog) (ic: ideal_cfg) (ds: dirs)
-  : option (ideal_cfg * dirs * obs) :=
+Fixpoint ideal_steps (f: nat) (p: prog) (sic: state ideal_cfg) (ds: dirs)
+  : (state ideal_cfg * dirs * obs) :=
   match f with 
   | S f' => 
-      cdo1 <- ideal_step p ic ds;;
-      let '(c1, ds1, o1) := cdo1 in
-      cdo2 <- ideal_steps f' p c1 ds1;;
-      let '(c2, ds2, o2) := cdo2 in
-      ret (c2, ds2, o1++o2)
+      match sic with 
+      | S_Running ic =>
+          let '(c1, ds1, o1) := ideal_step p sic ds in
+          let '(c2, ds2, o2) := ideal_steps f' p c1 ds1 in
+          (c2, ds2, o1++o2)
+      | s => (s, ds, [])
+      end
   | 0 =>
-      ret (ic, ds, [])
+      (sic, ds, [])
   end.
 
 (* predicate for fold *)
@@ -226,9 +283,9 @@ Definition spec_cfg_eqb_up_to_callee (st1 st2 : spec_cfg) :=
   && (m1 ==b m2)
   && pub_equivb (t_empty public) r1 (callee !-> (apply r1 callee) ; r2).
 
-Compute ideal_step ([ ([ <{{skip}}> ], true) ]) (((0,0)), (t_empty UV), [UV; UV; UV], [], false) [].
+Compute ideal_step ([ ([ <{{skip}}> ], true) ]) (S_Running (((0,0)), (t_empty UV), [UV; UV; UV], [], false)) [].
 
-(* Check 1: Single step diagram *)
+
 QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 => 
@@ -240,15 +297,18 @@ QuickChick (
   | None => collect "hello"%string (checker tt)
   | Some tcfg => 
       forAll (gen_directive_from_ideal_cfg p pst icfg) (fun ds => 
-      match ideal_step p icfg ds with 
-      | None =>  collect ("ideal step failed "%string (* ++ " ICFG: "%string ++ show(icfg) ++ " INST: "%string *) ++ show (p[[pc]]))%string (checker tt)
-          (* TODO: handle return on empty stack?*)
-      | Some (icfg', _, _) => 
+      match ideal_step p (S_Running icfg) ds with 
+      | (S_Fault, _, _) =>  
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
           | None => match spec_steps 4 (uslh_prog p) tcfg ds with 
                     | None => checker true (* speculative execution should fail if it won't sync again *)
                     | Some _ => checker false
                     end
+          | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
+          end
+      | (S_Running icfg', _, _) => 
+          match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
+          | None => trace "Ideal step succeeds, but steps_to_sync_point undefined" (checker false)
           | Some n => match spec_steps n (uslh_prog p) tcfg ds with 
                       | None => collect "spec exec fails "%string (checker tt) (* TODO: investigate these cases *)
                       | Some (tcfg', _, _) => match (spec_cfg_sync p icfg') with
@@ -260,6 +320,7 @@ QuickChick (
                                               end
                       end
           end
+      | _ => checker tt
       end
       )
   end
