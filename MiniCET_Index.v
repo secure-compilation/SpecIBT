@@ -226,14 +226,24 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       e'' = (if ms then 0 else n) ->
-      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore e''] <(( S_Running ((pc+1, r, upd n m (eval r e'), sk), ms) ))>
-  | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool),
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore e''] <(( S_Running ((pc+1, r, upd n m (eval r e'), sk), ms) ))> 
+  (* no fault if program goes to the beginning of some procedure block, whether or not it's the intended one *)
+  | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool) blk,
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       l' = (if ms then 0 else l) -> (* uslh masking *)
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
+      nth_error p (fst pc') = Some blk /\ snd blk = true /\ snd pc' = 0 ->
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Running ((pc', r, m, (pc+1)::sk), ms') ))>
+  (* fault if attacker pc goes to non-proc block or into the middle of any block *)
+  | ISMI_Call_F : forall pc pc' r m sk e l l' (ms ms' : bool) blk,
+      p[[pc]] = Some <{{ call e }}> ->
+      to_fp (eval r e) = Some l ->
+      l' = (if ms then 0 else l) -> (* uslh masking *)
+      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
+      nth_error p (fst pc') = Some blk /\ snd blk = false \/ snd pc' <> 0 -> 
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Fault ))>
-  | ISMI_Ret : forall pc r m sk pc' ms,
+   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), ms) ))> -->i_[]^^[] <(( S_Term ))>
 
@@ -327,6 +337,15 @@ Definition spec_cfg_sync (*(p: prog)*) (ic: ideal_cfg): option spec_cfg :=
   pc' <- pc_sync (*p*) pc;;
   stk' <- map_opt (pc_sync (*p*)) stk;;
   ret (pc', r_sync r ms, m, stk', false, ms).
+
+(* Print state.
+
+Definition spec_cfg_sync' (ic_s: @state ideal_cfg) : option (@state spec_cfg) :=
+  match ic_s with 
+  | S_Running c => match spec_cfg_sync c with 
+                   | 
+  | _ => None
+   end. *)
 
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
 Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
@@ -571,8 +590,8 @@ Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
   steps_to_sync_point sc1 ds = Some n ->
   spec_cfg_sync ic1 = Some sc1 ->
-  uslh_prog p |- <(( sc1 ))> -->*_ds^^os^^n <(( sc2 ))> ->
-      exists ic2, p |- <(( ic1 ))> -->i_ ds ^^ os <(( ic2 ))> /\ spec_cfg_sync ic2 = Some sc2 /\ same_termination sc2 ic2 = true.
+  uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( S_Running sc2 ))> ->
+      exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> /\ spec_cfg_sync ic2 = Some sc2.
 Proof.
   Admitted.
 
