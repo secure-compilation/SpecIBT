@@ -232,18 +232,20 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       l' = (if ms then 0 else l) -> (* uslh masking *)
-      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
-      nth_error p (fst pc') = Some blk /\ snd blk = true /\ snd pc' = 0 ->
+      ms' = ms || negb (fst pc' =? l) ->
+      nth_error p (fst pc') = Some blk -> (* always established by well-formed directive *)
+      snd blk = true ->
+      snd pc' = 0 ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Running ((pc', r, m, (pc+1)::sk), ms') ))>
   (* fault if attacker pc goes to non-proc block or into the middle of any block *)
-  | ISMI_Call_F : forall pc pc' r m sk e l l' (ms ms' : bool) blk,
+  (* directives are always "well-formed": nth_error p (fst pc') = Some blk /\ nth_error blk (snd pc') = Some i always established. *)
+  | ISMI_Call_F : forall pc pc' r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       l' = (if ms then 0 else l) -> (* uslh masking *)
-      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
-      nth_error p (fst pc') = Some blk /\ snd blk = false \/ snd pc' <> 0 -> 
+      (forall blk, nth_error p (fst pc') = Some blk -> snd blk = false \/ snd pc' <> 0) -> 
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Fault ))>
-   | ISMI_Ret : forall pc r m sk pc' ms,
+  | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), ms) ))> -->i_[]^^[] <(( S_Term ))>
 
