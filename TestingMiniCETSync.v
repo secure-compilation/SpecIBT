@@ -143,6 +143,87 @@ Fixpoint ideal_steps (f: nat) (p: prog) (sic: state ideal_cfg) (ds: dirs)
       (sic, ds, [])
   end.
 
+Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg * dirs * obs) :=
+  match ssc with 
+  | S_Running sc => 
+      let '(c, ct, ms) := sc in
+      let '(pc, r, m, sk) := c in
+      match p[[pc]] with
+      | None => trace "lookup fail" (S_Undef, ds, [])
+      | Some i => 
+          match i with
+          | <{{branch e to l}}> =>
+          if ct then (*trace "ct set at branch"*) (S_Fault, ds, []) else
+          match
+          if seq.nilp ds then
+          trace "Branch: Directions are empty!" None
+          else
+          d <- hd_error ds;;
+          b' <- is_dbranch d;;
+          n <- to_nat (eval r e);;
+          let b := not_zero n in
+          let ms' := ms || negb (Bool.eqb b b') in 
+          let pc' := if b' then (l, 0) else (pc+1) in
+          ret ((S_Running ((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
+          with 
+          | None => trace "branch fail" (S_Undef, ds, [])
+          | Some (c, ds, os) => (c, ds, os)
+          end
+          | <{{call e}}> =>
+          if ct then (*trace "ct set at call"*) (S_Fault, ds, []) else
+          match
+          if seq.nilp ds then
+          trace "Call: Directions are empty!" None
+          else
+          d <- hd_error ds;;
+          pc' <- is_dcall d;;
+          l <- to_fp (eval r e);;
+          let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+          ret ((S_Running ((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
+          with 
+          | None => trace "call fail" (S_Undef, ds, [])
+          | Some (c, ds, os) => (c, ds, os)
+          end
+          | <{{ctarget}}> =>
+          match
+          is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
+          (ret (S_Running ((pc+1, r, m, sk), false, ms), ds, []))
+          with 
+          | None => trace "ctarget fail!" (S_Undef, ds, [])
+          | Some (c, ds, os) => (c, ds, os)
+          end
+          | _ =>
+              if ct then (*trace ("ct set at " ++ show i)*) (S_Fault, ds, [])
+            else
+              match
+              co <- step p c;;
+              let '(c',o) := co in
+              ret (S_Running (c',false,ms), ds, o)
+              with 
+              | None => trace "other fail" (S_Undef, ds, [])
+              | Some (c, ds, os) => (c, ds, os)
+              end
+          end
+      end
+  | s => (s, ds, [])
+  end.
+
+Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds:dirs)
+  : (state spec_cfg * dirs * obs) :=
+  match f with
+  | S f' =>
+      match sc with 
+      | S_Running c =>
+          let '(c1,ds1,o1) := spec_step p sc ds in
+          let '(c2,ds2,o2) := spec_steps f' p c1 ds1 in
+          (c2,ds2,o1++o2)
+      | s => (s, ds, [])
+      end
+  | 0 =>
+      (sc, ds, []) (* JB: executing for 0 steps should be just the identity... *)
+      (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
+  end.
+
 (* predicate for fold *)
 Definition is_br_or_call (i : inst) :=
   match i with
@@ -260,6 +341,7 @@ Definition gen_directive_from_ideal_cfg (p: prog) (pst: list nat) (ic: ideal_cfg
   end.
 
 Scheme Equality for val.
+Scheme Equality for observation.
 (*Instance val_EqDec : EqDec val _ .*)
 (*Proof.*)
   (*intros x y.*)
@@ -298,36 +380,47 @@ QuickChick (
   | Some tcfg => 
       forAll (gen_directive_from_ideal_cfg p pst icfg) (fun ds => 
       match ideal_step p (S_Running icfg) ds with 
-      | (S_Fault, _, _) =>  
+      | (S_Fault, _, oideal) =>  
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
-          | None => match spec_steps 4 (uslh_prog p) tcfg ds with 
-                    | None => checker true (* speculative execution should fail if it won't sync again *)
-                    | Some _ => checker false
+          | None => match spec_steps 4 (uslh_prog p) (S_Running tcfg) ds with 
+                    | (S_Fault, _, ospec) => checker (obs_eqb oideal ospec) (* speculative execution should fail if it won't sync again *)
+                    | _ => trace "spec exec didn't fail"%string (checker false)
                     end
           | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
           end
-      | (S_Running icfg', _, _) => 
+      | (S_Term, _, oideal) =>  (* This step can't actually be triggered yet, since both execution types fall back to sequential semantics here, which isn't updated yet *)
+          match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
+          | None => match spec_steps 1 (uslh_prog p) (S_Running tcfg) ds with 
+                    | (S_Term, _, ospec) => checker (obs_eqb oideal ospec)
+                    | _ => trace "spec exec didn't terminate"%string (checker false)
+                    end
+          | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
+          end
+      | (S_Running icfg', _, oideal) => 
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
           | None => trace "Ideal step succeeds, but steps_to_sync_point undefined" (checker false)
-          | Some n => match spec_steps n (uslh_prog p) tcfg ds with 
-                      | None => collect "spec exec fails "%string (checker tt) (* TODO: investigate these cases *)
-                      | Some (tcfg', _, _) => match (spec_cfg_sync p icfg') with
+          | Some n => match spec_steps n (uslh_prog p) (S_Running tcfg) ds with 
+                      | (S_Running tcfg', _, ospec) => match (spec_cfg_sync p icfg') with
                                               | None => collect "sync fails "%string (checker tt)
                                               | Some tcfgref => match (spec_cfg_eqb_up_to_callee tcfg' tcfgref) with 
-                                                                | true => checker true
+                                                                | true => checker (obs_eqb oideal ospec)
                                                                 | false => trace (show tcfg' ++ "|||||" ++ show tcfgref) (checker false)
                                                                 end
                                               end
+                      | (_, ds, os) => trace ("spec exec fails "%string ++ (show os) ++ show (uslh_prog p)) (checker false) (* TODO: investigate these cases *)
                       end
           end
-      | _ => checker tt
+      | _ => collect "ideal exec undef"%string (checker tt)
       end
       )
   end
   )))))).
 (* Results:
-  Passed 10000 tests (211 discards)
+  Passed 10000 tests (243 discards)
 
-   Anything that failse steps_to_sync_point indeed feels speculative execution, and looking at traces, it is not just because of missing directives :)
+  If ideal execution faults, so does speculative, with the same observation.
+  If ideal execution succeeds, so does speculative, and it reaches a point that is considered synchronized.
+  If ideal execution is undefined, no requirement on spec.
+  Still open: if ideal terminates, spec should terminate with same obs.
 *)
 
