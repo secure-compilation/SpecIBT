@@ -575,6 +575,8 @@ Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
   destruct c as (c & sk); destruct c as (c & m); destruct c as (c & r);
   rename c into pc.
 
+Ltac inv H := inversion H; subst; clear H.
+
 (* BCC lemma for one single instruction *)
 (* Starting conditions:
     - program and directives are well-formed
@@ -584,6 +586,14 @@ Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
       • It takes n steps for the target to reach the sync point the source reaches in one ideal step 
       • The start states are synchronized wrt pc, register state, and stack 
 *)
+
+(* Print ISMI_Skip. ==> 
+  ISMI_Skip : forall (pc : cptr) (r : reg) (m : mem) 
+                  (sk : list cptr) (ms : bool),
+                p0 [[pc]] = Some <{{ skip }}> ->
+                p0 |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_ [] ^^ [] <((
+   S_Running (pc + 1, r, m, sk, ms) ))> *)
+
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
   wf_ds (get_pc_sc sc1) ds ->
@@ -599,7 +609,14 @@ Proof.
   destruct_cfg sc1. unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
   unfold wf_ds in wfds. simpl in ms_msf. destruct p[[pc]] eqn:PC.
   { destruct i.
-    -  
+    - specialize (ISMI_Skip p pc r m sk ms PC); intros. exists (pc + 1, r, m, sk, ms). split.
+      { unfold fetch in PC. cbn in PC, n_steps.
+        destruct (nth_error p (fst pc)) as [bk|] eqn:Hbk; [|discriminate].
+        destruct (nth_error (fst bk) (snd pc)) as [i|] eqn:Hinstr; [|discriminate].
+        destruct i.
+        + injection n_steps; intros. rewrite <- H2 in tgt_steps. unfold spec_cfg_sync in cfg_sync.
+          cbn in cfg_sync. (* now I have to do a bunch of destructs AGAIN to get under the let and past the matches *)
+      }
  
   }
   
