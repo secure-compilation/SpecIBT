@@ -59,7 +59,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Call : forall pc r m sk e l,
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
+  p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
   | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
@@ -624,6 +624,16 @@ Proof.
   destruct (nth_error p l); [exists p0; split; auto|discriminate].
 Qed.
 
+(* Print map_opt. ==> 
+
+  Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
+  match l with 
+  | [] => Some []
+  | a :: l' => a' <- f a;;
+      l'' <- map_opt f l';; 
+      ret (a' :: l'')
+   end. *)
+
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
   wf_ds (get_pc_sc sc1) ds ->
@@ -638,7 +648,38 @@ Proof.
   intros until os. intros wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
   destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r). 
   unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
-  unfold wf_ds in wfds. simpl in ms_msf. destruct p[[ipc]] eqn:PC; rewrite Forall_forall in H0.
+  unfold wf_ds in wfds. simpl in ms_msf. destruct ipc as (l & o) eqn:Hipc. 
+  destruct (nth_error p l) as [iblk|] eqn:Hfst.
+  - destruct (nth_error (fst iblk) o) as [i|] eqn:Hsnd.
+    + destruct i eqn:Hi.
+      { (* skip *) simpl in *. destruct (pc_sync (l, o)) as [spc|] eqn:Hpcsync; try discriminate.
+        destruct (map_opt pc_sync sk) as [ssk|] eqn:Hsk; try discriminate. injection cfg_sync; intros.
+        rewrite <- H1 in *. clear cfg_sync. simpl in *. 
+        destruct (nth_error p (fst spc)) as [sblk|] eqn:Hsfst; try discriminate.
+        destruct (nth_error (fst sblk) (snd spc)) as [si|] eqn:Hssnd; try discriminate.
+        admit.
+
+      }
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
+    + admit.
+  - admit.
+Admitted.
+  
+
+
+      (* destruct p[[ipc]] eqn:PC; unfold fetch in PC; cbn in PC; cycle 1.
+  { 
+
+  }
+
+
   { destruct i.
     - (* skip *)
       specialize (ISMI_Skip p ipc r m sk ms PC); intros. specialize (pc_not_none ipc <{{ skip }}> PC); intros.
@@ -650,14 +691,19 @@ Proof.
       (* tgt starting pc in-bounds for block *)
       injection H4; intros. rewrite H2 in *. clear H4. destruct (Bool.eqb (snd blk) true); simpl in *.
       + (* proc block *) destruct (snd ipc).
-        * (* snd ipc = 0 *) destruct (map_opt pc_sync sk); try discriminate.
+        * (* snd ipc = 0 *) destruct (map_opt pc_sync sk); try discriminate. 
+          
+
+
+
+
           (* Some *) simpl in *. injection cfg_sync; intros. rewrite <- H3 in *. clear cfg_sync. simpl in *.
           destruct (nth_error p (fst ipc)) as [iblk|] eqn:Hiblk; try discriminate. simpl in *.
           (* Some *) specialize H0 with (x:=iblk). specialize (nth_error_In p (fst ipc) Hiblk); intros.
           apply H0 in H4. destruct H4, H5. unfold nonempty_block in H4. 
           destruct (fst iblk); try discriminate.
           simpl in *. destruct l0; try discriminate.
-          destruct l0; try discriminate. simpl in *. rewrite Forall_forall in H6.
+         destruct l0; try discriminate. simpl in *. rewrite Forall_forall in H6.
           
 
 
@@ -675,8 +721,7 @@ Proof.
     - admit.
     - admit.
   }
-  { admit. }
-Admitted.
+         { admit. }*)
   
 
 End BCC.
