@@ -587,12 +587,49 @@ Ltac inv H := inversion H; subst; clear H.
       • The start states are synchronized wrt pc, register state, and stack 
 *)
 
-(* Print ISMI_Skip. ==> 
-  ISMI_Skip : forall (pc : cptr) (r : reg) (m : mem) 
-                  (sk : list cptr) (ms : bool),
-                p0 [[pc]] = Some <{{ skip }}> ->
-                p0 |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_ [] ^^ [] <((
-   S_Running (pc + 1, r, m, sk, ms) ))> *)
+(* Print steps_to_sync_point. ==>
+
+  steps_to_sync_point =
+fun (tsc : spec_cfg) (ds : dirs) =>
+let
+'(pc, _, _, _, _, _) := tsc in
+ blk <- nth_error p (fst pc);;
+ i <- nth_error (fst blk) (snd pc);;
+ match i with
+ | <{{ _ := _ }}> =>
+     match p [[pc + 1]] with
+     | Some <{{ call _ }}> =>
+         match ds with
+         | [DCall lo] =>
+             let
+             '(l0, o) := lo in
+              blk0 <- nth_error p l0;;
+              _ <- nth_error (fst blk0) o;;
+              (if Bool.eqb (snd blk0) true && (o =? 0) then Some 4 else None)
+         | DCall lo :: _ :: _ => None
+         | _ => None
+         end
+     | _ => Some 1
+     end
+ | <{{ branch _ to _ }}> =>
+     match ds with
+     | [DBranch b] => Some (if b then 3 else 2)
+     | DBranch b :: _ :: _ => None
+     | _ => None
+     end
+ | _ => Some 1
+ end
+     : spec_cfg -> dirs -> option nat
+
+Arguments steps_to_sync_point tsc ds
+   steps_to_sync_point uses section variable p. *)
+Lemma pc_not_none : forall (pc: cptr) (i: inst),
+  p[[pc]] = Some i ->
+  exists l, nth_error p (fst pc) = Some l /\ nth_error (fst l) (snd pc) = Some i.
+Proof.
+  intros. destruct pc as (l & o) eqn:Hpc. simpl in *.
+  destruct (nth_error p l); [exists p0; split; auto|discriminate].
+Qed.
 
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
@@ -607,23 +644,33 @@ Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
 Proof.
   intros until os. intros wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
   destruct_cfg sc1. unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
-  unfold wf_ds in wfds. simpl in ms_msf. destruct p[[pc]] eqn:PC.
+  unfold wf_ds in wfds. simpl in ms_msf. destruct p[[pc]] eqn:PC; rewrite Forall_forall in H0.
   { destruct i.
-    - specialize (ISMI_Skip p pc r m sk ms PC); intros. exists (pc + 1, r, m, sk, ms). split.
-      { unfold fetch in PC. cbn in PC, n_steps.
-        destruct (nth_error p (fst pc)) as [bk|] eqn:Hbk; [|discriminate].
-        destruct (nth_error (fst bk) (snd pc)) as [i|] eqn:Hinstr; [|discriminate].
-        destruct i.
-        + injection n_steps; intros. rewrite <- H2 in tgt_steps. unfold spec_cfg_sync in cfg_sync.
-          cbn in cfg_sync. (* now I have to do a bunch of destructs AGAIN to get under the let and past the matches *)
-      }
- 
+    - specialize (ISMI_Skip p pc r m sk ms PC); intros. specialize (pc_not_none pc <{{ skip }}> PC); intros.
+      destruct H2 as (blk & H3 & H4). cbn in n_steps.
+      destruct (nth_error p (fst pc)).
+      + injection H3; intros. rewrite H2 in *. clear H2. 
+        destruct (nth_error (fst blk) (snd pc)).
+        * injection H4; intros. rewrite H2 in *. clear H3. clear H4. injection n_steps; intros.
+          rewrite <- H3 in *. clear n_steps. admit.
+        * admit.
+      + admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
   }
+  { admit. }
+Admitted.
   
 
 End BCC.
 
-Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
+(* Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
@@ -631,11 +678,11 @@ Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
   uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
   exists sc2, p |- <(( sc1 ))> -->i*_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync p sc2 = Some tsc2.
 Proof.
-Admitted.
+   Admitted. *)
 
 (* (** * Definition of Relative Secure *) *)
 
-Definition prefix {X:Type} (xs ys : list X) : Prop :=
+(* Definition prefix {X:Type} (xs ys : list X) : Prop :=
   exists zs, xs ++ zs = ys.
 
 Definition seq_same_obs p i pc1 pc2 r1 r2 m1 m2 stk1 stk2 (i1 i2: inst) : Prop :=
@@ -646,7 +693,7 @@ Definition seq_same_obs p i pc1 pc2 r1 r2 m1 m2 stk1 stk2 (i1 i2: inst) : Prop :
     p[[pc2']] = Some i2 ->
     p |- <(( (pc1, r1, m1, stk1) ))> -->*^ os1 <(( (pc1', r1', m1', stk1') ))> ->
     p |- <(( (pc2, r2, m2, stk2) ))> -->*^ os2 <(( (pc2', r2', m2', stk2') ))> ->
-    (prefix os1 os2) \/ (prefix os2 os1).
+   (prefix os1 os2) \/ (prefix os2 os1). *)
 
 (* not quite -- where to put the transformation *)
 (* Definition spec_same_obs p i pc1 pc2 r1 r2 m1 m2 stk1 stk2 (i1 i2: inst) : Prop :=
