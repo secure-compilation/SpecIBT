@@ -49,6 +49,79 @@ Proof.
     + apply S_Term.
 Defined.
 
+Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
+  match sc with
+  | S_Running c =>
+      let '(pc, r, m, sk) := c in
+      match p[[pc]] with 
+      | Some i =>
+          match i with
+          | <{{skip}}> | <{{ctarget}}> =>
+            (S_Running (pc+1, r, m, sk), [])
+          | <{{x:=e}}> =>
+            (S_Running (pc+1, (x !-> eval r e; r), m, sk), [])
+          | <{{branch e to l}}> =>
+            match
+              n <- to_nat (eval r e);;
+              let b := not_zero n in
+              ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
+            with 
+            | Some (c, o) => (S_Running c, o)
+            | None => (S_Fault, [])
+            end
+          | <{{jump l}}> =>
+            (S_Running ((l,0), r, m, sk), [])
+          | <{{x<-load[e]}}> =>
+            match
+              n <- to_nat (eval r e);;
+              v' <- nth_error m n;;
+              ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])      
+            with 
+            | Some (c, o) => (S_Running c, o)
+            | None => (S_Fault, [])
+            end
+          | <{{store[e]<-e'}}> =>
+            match
+              n <- to_nat (eval r e);;
+              ret ((pc+1, r, upd n m (eval r e'), sk), [OStore n])
+            with 
+            | Some (c, o) => (S_Running c, o)
+            | None => (S_Fault, [])
+            end
+          | <{{call e}}> =>
+            match
+              l <- to_fp (eval r e);;
+              ret (((l,0), r, m, (pc+1)::sk), [OCall l])
+            with 
+            | Some (c, o) => (S_Running c, o)
+            | None => (S_Fault, [])
+            end
+          | <{{ret}}> =>
+            match sk with
+            | [] => (S_Term, [])
+            | pc'::stk' => (S_Running (pc', r, m, stk'), [])
+            end
+          end
+      | None => (S_Fault, [])
+      end
+  | s => (s, [])
+  end.
+
+(* Morally state+output monad hidden in here: step p >> steps f' p  *)
+Fixpoint steps (f:nat) (p:prog) (sc: state cfg) : (state cfg * obs) :=
+  match f with 
+  | S f' => 
+      match sc with 
+      | S_Running c =>
+          let '(c1, o1) := step p sc in
+          let '(c2, o2) := steps f' p c1 in
+          (c2, o1++o2)
+      | s => (s, [])
+      end
+  | 0 =>
+      (sc, [])
+  end.
+
 Definition ideal_cfg :=  (cfg * bool)%type.
 
 Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_cfg * dirs * obs) :=
@@ -61,67 +134,65 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
       | Some i => 
           match i with 
             | <{{branch e to l}}> => 
-            if seq.nilp ds then
-            trace "idealBranch: directions are empty!" (S_Undef, ds, [])
-            else
-            match
-            d <- hd_error ds;;
-            b' <- is_dbranch d;;
-            n <- to_nat (eval r e);;
-            let b := not_zero n in
-            let ms' := ms || negb (Bool.eqb b b') in
-            let pc' := if b' then (l, 0) else (pc+1) in
-            ret ((S_Running ((pc', r, m, sk), ms'), tl ds), [OBranch b])
-            with 
-            | None => (S_Undef, ds, [])
-            | Some (c, ds, os) => (c, ds, os)
-            end
+              if seq.nilp ds then
+                trace "idealBranch: directions are empty!" (S_Undef, ds, [])
+              else
+                match
+                  d <- hd_error ds;;
+                  b' <- is_dbranch d;;
+                  n <- to_nat (eval r e);;
+                  let b := not_zero n in
+                  let ms' := ms || negb (Bool.eqb b b') in
+                  let pc' := if b' then (l, 0) else (pc+1) in
+                  ret ((S_Running ((pc', r, m, sk), ms'), tl ds), [OBranch b])
+                with 
+                | None => (S_Undef, ds, [])
+                | Some (c, ds, os) => (c, ds, os)
+                end
             | <{{call e}}> =>
-            if seq.nilp ds then
-            trace "idealCall: directions are empty!" (S_Undef, ds, [])
-            else
-            match
-            d <- hd_error ds;;
-            pc' <- is_dcall d;;
-            l <- to_fp (eval r e);;
-            blk <- nth_error p (fst pc');;
-            if (snd blk && (snd pc' ==b 0)) then
-            let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
-            ret ((S_Running ((pc', r, m, (pc+1)::sk), ms'), tl ds), [OCall l])
-            else Some (S_Fault, ds, [OCall l])
-            with 
-            | None => (S_Undef, ds, [])
-            | Some (c, ds, os) => (c, ds, os)
-            end
+              if seq.nilp ds then
+                trace "idealCall: directions are empty!" (S_Undef, ds, [])
+              else
+                match
+                  d <- hd_error ds;;
+                  pc' <- is_dcall d;;
+                  l <- to_fp (eval r e);;
+                  blk <- nth_error p (fst pc');;
+                  if (snd blk && (snd pc' ==b 0)) then
+                    let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+                    ret ((S_Running ((pc', r, m, (pc+1)::sk), ms'), tl ds), [OCall l])
+                  else Some (S_Fault, ds, [OCall l])
+                with 
+                | None => (S_Undef, ds, [])
+                | Some (c, ds, os) => (c, ds, os)
+                end
             | <{{x<-load[e]}}> =>
-            match
-            let i := if ms then (ANum 0) else e in
-            n <- to_nat (eval r e);;
-            v' <- nth_error m n;;
-            let c := (pc+1, (x !-> v'; r), m, sk) in
-            ret (S_Running (c, ms), ds, [OLoad n])
-            with 
-            | None => (S_Undef, ds, [])
-            | Some (c, ds, os) => (c, ds, os)
-            end
-            | <{{store[e]<-e'}}> =>
-            match
-            let i := if ms then (ANum 0) else e in
-            n <- to_nat (eval r i);;
-            let c:= (pc+1, r, upd n m (eval r e'), sk) in
-            ret (S_Running (c, ms), ds, [OStore n])
-            with 
-            | None => (S_Undef, ds, [])
-            | Some (c, ds, os) => (c, ds, os)
-            end
-          | _ =>
               match
-              co <- step p c;;
-              let '(c', o) := co in
-              @ret option _ (state ideal_cfg * dirs * obs) (S_Running (c', ms), ds, o)
+                let i := if ms then (ANum 0) else e in
+                n <- to_nat (eval r e);;
+                v' <- nth_error m n;;
+                let c := (pc+1, (x !-> v'; r), m, sk) in
+                ret (S_Running (c, ms), ds, [OLoad n])
               with 
               | None => (S_Undef, ds, [])
               | Some (c, ds, os) => (c, ds, os)
+              end
+            | <{{store[e]<-e'}}> =>
+              match
+                let i := if ms then (ANum 0) else e in
+                n <- to_nat (eval r i);;
+                let c:= (pc+1, r, upd n m (eval r e'), sk) in
+                ret (S_Running (c, ms), ds, [OStore n])
+              with 
+              | None => (S_Undef, ds, [])
+              | Some (c, ds, os) => (c, ds, os)
+              end
+          | _ =>
+              match step p (S_Running c) with 
+              | (S_Running c', o) => (S_Running (c', ms), ds, o)
+              | (S_Undef, o) => (S_Undef, ds, o)
+              | (S_Fault, o) => (S_Fault, ds, o)
+              | (S_Term, o) => (S_Term, ds, o)
               end
           end
       end
@@ -153,55 +224,53 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
       | Some i => 
           match i with
           | <{{branch e to l}}> =>
-          if ct then (*trace "ct set at branch"*) (S_Fault, ds, []) else
-          match
-          if seq.nilp ds then
-          trace "Branch: Directions are empty!" None
-          else
-          d <- hd_error ds;;
-          b' <- is_dbranch d;;
-          n <- to_nat (eval r e);;
-          let b := not_zero n in
-          let ms' := ms || negb (Bool.eqb b b') in 
-          let pc' := if b' then (l, 0) else (pc+1) in
-          ret ((S_Running ((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
-          with 
-          | None => trace "branch fail" (S_Undef, ds, [])
-          | Some (c, ds, os) => (c, ds, os)
-          end
+            if ct then (*trace "ct set at branch"*) (S_Fault, ds, []) else
+            match
+              if seq.nilp ds then
+                trace "Branch: Directions are empty!" None
+              else
+                d <- hd_error ds;;
+                b' <- is_dbranch d;;
+                n <- to_nat (eval r e);;
+                let b := not_zero n in
+                let ms' := ms || negb (Bool.eqb b b') in 
+                let pc' := if b' then (l, 0) else (pc+1) in
+                ret ((S_Running ((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
+            with 
+            | None => trace "branch fail" (S_Undef, ds, [])
+            | Some (c, ds, os) => (c, ds, os)
+            end
           | <{{call e}}> =>
-          if ct then (*trace "ct set at call"*) (S_Fault, ds, []) else
-          match
-          if seq.nilp ds then
-          trace "Call: Directions are empty!" None
-          else
-          d <- hd_error ds;;
-          pc' <- is_dcall d;;
-          l <- to_fp (eval r e);;
-          let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
-          ret ((S_Running ((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
-          with 
-          | None => trace "call fail" (S_Undef, ds, [])
-          | Some (c, ds, os) => (c, ds, os)
-          end
+            if ct then (*trace "ct set at call"*) (S_Fault, ds, []) else
+            match
+              if seq.nilp ds then
+                trace "Call: Directions are empty!" None
+              else
+                d <- hd_error ds;;
+                pc' <- is_dcall d;;
+                l <- to_fp (eval r e);;
+                let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+                ret ((S_Running ((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
+            with 
+            | None => trace "call fail" (S_Undef, ds, [])
+            | Some (c, ds, os) => (c, ds, os)
+            end
           | <{{ctarget}}> =>
-          match
-          is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
-          (ret (S_Running ((pc+1, r, m, sk), false, ms), ds, []))
-          with 
-          | None => trace "ctarget fail!" (S_Undef, ds, [])
-          | Some (c, ds, os) => (c, ds, os)
-          end
+            match
+              is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
+              (ret (S_Running ((pc+1, r, m, sk), false, ms), ds, []))
+            with 
+            | None => trace "ctarget fail!" (S_Undef, ds, [])
+            | Some (c, ds, os) => (c, ds, os)
+            end
           | _ =>
-              if ct then (*trace ("ct set at " ++ show i)*) (S_Fault, ds, [])
+            if ct then (*trace ("ct set at " ++ show i)*) (S_Fault, ds, [])
             else
-              match
-              co <- step p c;;
-              let '(c',o) := co in
-              ret (S_Running (c',false,ms), ds, o)
-              with 
-              | None => trace "other fail" (S_Undef, ds, [])
-              | Some (c, ds, os) => (c, ds, os)
+              match step p (S_Running c) with 
+              | (S_Running c', o) => (S_Running (c', false, ms), ds, o)
+              | (S_Undef, o) => (S_Undef, ds, o)
+              | (S_Fault, o) => (S_Fault, ds, o)
+              | (S_Term, o) => (S_Term, ds, o)
               end
           end
       end
@@ -374,7 +443,7 @@ QuickChick (
   forAll (gen_wt_mem tm pst) (fun m1 =>
   forAll (gen_pc_from_prog p) (fun pc =>
   forAll (gen_call_stack_from_prog_sized 3 p) (fun stk => 
-  let icfg := (pc, rs1, m1, stk, false) in (* TODO: generate more meaningful stk (some number of possible call locations should do the trick)*)
+  let icfg := (pc, rs1, m1, stk, false) in
   match (spec_cfg_sync p icfg) with
   | None => collect "hello"%string (checker tt)
   | Some tcfg => 
@@ -388,7 +457,7 @@ QuickChick (
                     end
           | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
           end
-      | (S_Term, _, oideal) =>  (* This step can't actually be triggered yet, since both execution types fall back to sequential semantics here, which isn't updated yet *)
+      | (S_Term, _, oideal) =>
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
           | None => match spec_steps 1 (uslh_prog p) (S_Running tcfg) ds with 
                     | (S_Term, _, ospec) => checker (obs_eqb oideal ospec)
@@ -416,11 +485,10 @@ QuickChick (
   end
   )))))).
 (* Results:
-  Passed 10000 tests (243 discards)
+  Passed 10000 tests (214 discards due to S_Undef in ideal exec)
 
-  If ideal execution faults, so does speculative, with the same observation.
+  If ideal execution faults or terminates, so does speculative execution, with the same observation.
   If ideal execution succeeds, so does speculative, and it reaches a point that is considered synchronized.
   If ideal execution is undefined, no requirement on spec.
-  Still open: if ideal terminates, spec should terminate with same obs.
 *)
 
