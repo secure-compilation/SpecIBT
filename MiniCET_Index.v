@@ -670,50 +670,19 @@ Admitted.
 
 End BCC.
 
-(* Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
-  unused_prog msf p ->
-  unused_prog callee p ->
-  msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
-  spec_cfg_sync p sc1 = Some tsc1 ->
-  uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-  exists sc2, p |- <(( sc1 ))> -->i*_ ds ^^ os <(( sc2 ))> /\ spec_cfg_sync p sc2 = Some tsc2.
-Proof.
-   Admitted. *)
-
 (* (** * Definition of Relative Secure *) *)
 
-(* Definition prefix {X:Type} (xs ys : list X) : Prop :=
-  exists zs, xs ++ zs = ys.
+(* Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop := *)
+(*   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2, *)
+(*     p |- <(( (pc1, r1, m1, stk1) ))> -->*^ os1 <(( (pc1', r1', m1', stk1') ))> -> *)
+(*     p |- <(( (pc2, r2, m2, stk2) ))> -->*^ os2 <(( (pc2', r2', m2', stk2') ))> -> *)
+(*     (prefix os1 os2) \/ (prefix os2 os1).  *)
 
-Definition seq_same_obs p i pc1 pc2 r1 r2 m1 m2 stk1 stk2 (i1 i2: inst) : Prop :=
-  forall pc1' pc2' r1' r2' m1' m2' stk1' stk2' os1 os2 i1 i2, 
-    p[[pc1]] = Some i ->
-    p[[pc2]] = Some i ->
-    p[[pc1']] = Some i1 ->
-    p[[pc2']] = Some i2 ->
-    p |- <(( (pc1, r1, m1, stk1) ))> -->*^ os1 <(( (pc1', r1', m1', stk1') ))> ->
-    p |- <(( (pc2, r2, m2, stk2) ))> -->*^ os2 <(( (pc2', r2', m2', stk2') ))> ->
-   (prefix os1 os2) \/ (prefix os2 os1). *)
-
-(* not quite -- where to put the transformation *)
-(* Definition spec_same_obs p i pc1 pc2 r1 r2 m1 m2 stk1 stk2 (i1 i2: inst) : Prop :=
-  forall ds pc1' pc2' r1' r2' m1' m2' stk1' stk2' ct1 ct2 ms1 ms2 os1 os2 n i1 i2,
-    p[[pc1]] = Some i ->
-    p[[pc2]] = Some i ->
-    p[[pc1']] = Some i1 ->
-    p[[pc2']] = Some i2 ->
-    p |- <((pc1, r1, m1, stk1, false, false))> -->*_ds^^os1^^n <((pc1', r1', m1', stk1' ct1, ms1))> ->
-    p |- <((pc2, r2, m2, stk2, false, false))> -->*_ds^^os2^^n <((pc2', r2', m2', stk2', ct2, ms2))> ->
-    os1 = os2.
-
-(*  
-Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop :=
-  forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 n c1 c2,
-    p |- <((c, st1, ast1, false))> -->*_ds^^os1^^n <((c1, stt1, astt1, bt1))> ->
-    p |- <((c, st2, ast2, false))> -->*_ds^^os2^^n <((c2, stt2, astt2, bt2))> ->
-    os1 = os2.
-
-*)
+(* Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop := *)
+(*   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 n c1 c2, *)
+(*     p |- <((c, st1, ast1, false))> -->*_ds^^os1^^n <((c1, stt1, astt1, bt1))> -> *)
+(*     p |- <((c, st2, ast2, false))> -->*_ds^^os2^^n <((c2, stt2, astt2, bt2))> -> *)
+(*     os1 = os2.  *)
 
 (* (* The new definition adds the extra program transformation we  *)
 (*    needed to check for speculation at the target of a call instruction. *)
@@ -731,4 +700,5 @@ Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop :=
 (*   spec_same_obs (trans1 p) (trans2 c) st1 st2 ast1 ast2. *)
 
 (* (** * Ultimate Speculative Load Hardening *) *)
+
 
