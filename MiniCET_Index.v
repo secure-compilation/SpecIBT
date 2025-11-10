@@ -53,7 +53,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
       nth_error m n = Some v' ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OLoad n] <(( S_Running (pc+1, (x !-> v'; r), m, sk) ))>
   | SSMI_Store : forall pc r m sk e e' n,
-      p[[pc]] = Some <{{ store[e] <- e' }}> ->
+  p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
   | SSMI_Call : forall pc r m sk e l,
@@ -340,15 +340,6 @@ Definition spec_cfg_sync (*(p: prog)*) (ic: ideal_cfg): option spec_cfg :=
   stk' <- map_opt (pc_sync (*p*)) stk;;
   ret (pc', r_sync r ms, m, stk', false, ms).
 
-(* Print state.
-
-Definition spec_cfg_sync' (ic_s: @state ideal_cfg) : option (@state spec_cfg) :=
-  match ic_s with 
-  | S_Running c => match spec_cfg_sync c with 
-                   | 
-  | _ => None
-   end. *)
-
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
 Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
@@ -571,10 +562,6 @@ Definition wf_prog : Prop :=
 
 (* Tactics *)
 
-Ltac destruct_cfg c := destruct c as (c & ms); destruct c as (c & ct);
-  destruct c as (c & sk); destruct c as (c & m); destruct c as (c & r);
-  rename c into pc.
-
 Ltac inv H := inversion H; subst; clear H.
 
 (* BCC lemma for one single instruction *)
@@ -587,42 +574,48 @@ Ltac inv H := inversion H; subst; clear H.
       • The start states are synchronized wrt pc, register state, and stack 
 *)
 
-(* Print steps_to_sync_point. ==>
+(*
+(* sync src/ideal and target cfg (affects pc, register state, and stack) *)
+Definition spec_cfg_sync (*(p: prog)*) (ic: ideal_cfg): option spec_cfg :=
+  let '(c, ms) := ic in
+  let '(pc, r, m, stk) := c in
+  pc' <- pc_sync (*p*) pc;;
+  stk' <- map_opt (pc_sync (*p*)) stk;;
+  ret (pc', r_sync r ms, m, stk', false, ms).
 
-  steps_to_sync_point =
-fun (tsc : spec_cfg) (ds : dirs) =>
-let
-'(pc, _, _, _, _, _) := tsc in
- blk <- nth_error p (fst pc);;
- i <- nth_error (fst blk) (snd pc);;
- match i with
- | <{{ _ := _ }}> =>
-     match p [[pc + 1]] with
-     | Some <{{ call _ }}> =>
-         match ds with
-         | [DCall lo] =>
-             let
-             '(l0, o) := lo in
-              blk0 <- nth_error p l0;;
-              _ <- nth_error (fst blk0) o;;
-              (if Bool.eqb (snd blk0) true && (o =? 0) then Some 4 else None)
-         | DCall lo :: _ :: _ => None
-         | _ => None
-         end
-     | _ => Some 1
-     end
- | <{{ branch _ to _ }}> =>
-     match ds with
-     | [DBranch b] => Some (if b then 3 else 2)
-     | DBranch b :: _ :: _ => None
-     | _ => None
-     end
- | _ => Some 1
- end
-     : spec_cfg -> dirs -> option nat
-
-Arguments steps_to_sync_point tsc ds
-   steps_to_sync_point uses section variable p. *)
+(* How many steps does it take for target program to reach the program point the source reaches in one step? *)
+Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
+  let '(tc, ct, ms) := tsc in
+  let '(pc, r, m, sk) := tc in
+    (* check pc is well-formed *)
+    blk <- nth_error p (fst pc);;
+    i <- nth_error (fst blk) (snd pc);;
+    match i with
+    | <{{_ := _}}> => match p[[pc+1]] with
+                      | Some i => match i with
+                                  | <{{call _}}> => match ds with
+                                                    | [DCall lo] => (* decorated call with correct directive *)
+                                                                    let '(l, o) := lo in
+                                                                    (* check attacker pc is well-formed *)
+                                                                    blk <- nth_error p l;;
+                                                                    i <- nth_error (fst blk) o;;
+                                                                    (* 4 steps if procedure block *)
+                                                                    if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
+                                                    | _ => None (* incorrect directive for call *)
+                                                    end
+                                  | _ => Some 1 (* assignment from source program, not decoration *)
+                                  end
+                      | None => Some 1 (* assignment from source program, last instruction in block *)
+                      end
+    | <{{ branch _ to _ }}> => (* branch decorations all come after the instruction itself, so this is the sync point *)
+                               match ds with
+                               | [DBranch b] => Some (if b then 3 else 2)
+                               | _ => None
+                               end
+    | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
+    end.
+*)
+    
 Lemma pc_not_none : forall (pc: cptr) (i: inst),
   p[[pc]] = Some i ->
   exists l, nth_error p (fst pc) = Some l /\ nth_error (fst l) (snd pc) = Some i.
@@ -643,17 +636,35 @@ Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
       exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> /\ spec_cfg_sync ic2 = Some sc2.
 Proof.
   intros until os. intros wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
-  destruct_cfg sc1. unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
-  unfold wf_ds in wfds. simpl in ms_msf. destruct p[[pc]] eqn:PC; rewrite Forall_forall in H0.
+  destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r). 
+  unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
+  unfold wf_ds in wfds. simpl in ms_msf. destruct p[[ipc]] eqn:PC; rewrite Forall_forall in H0.
   { destruct i.
-    - specialize (ISMI_Skip p pc r m sk ms PC); intros. specialize (pc_not_none pc <{{ skip }}> PC); intros.
-      destruct H2 as (blk & H3 & H4). cbn in n_steps.
-      destruct (nth_error p (fst pc)).
-      + injection H3; intros. rewrite H2 in *. clear H2. 
-        destruct (nth_error (fst blk) (snd pc)).
-        * injection H4; intros. rewrite H2 in *. clear H3. clear H4. injection n_steps; intros.
-          rewrite <- H3 in *. clear n_steps. admit.
-        * admit.
+    - (* skip *)
+      specialize (ISMI_Skip p ipc r m sk ms PC); intros. specialize (pc_not_none ipc <{{ skip }}> PC); intros.
+      destruct H2 as (blk & H3 & H4). cbn in cfg_sync. (* specialize H0 with (x:=blk).*)
+      (* specialize (nth_error_In p (fst ipc) H3); intros. apply H0 in H2. destruct H2, H5.*)
+      destruct (nth_error p (fst ipc)); try discriminate.
+      (* tgt starting pc in-bounds for program *) injection H3; intros. rewrite H2 in *. clear H2. clear H3. 
+      destruct (nth_error (fst blk) (snd ipc)); try discriminate. 
+      (* tgt starting pc in-bounds for block *)
+      injection H4; intros. rewrite H2 in *. clear H4. destruct (Bool.eqb (snd blk) true); simpl in *.
+      + (* proc block *) destruct (snd ipc).
+        * (* snd ipc = 0 *) destruct (map_opt pc_sync sk); try discriminate.
+          (* Some *) simpl in *. injection cfg_sync; intros. rewrite <- H3 in *. clear cfg_sync. simpl in *.
+          destruct (nth_error p (fst ipc)) as [iblk|] eqn:Hiblk; try discriminate. simpl in *.
+          (* Some *) specialize H0 with (x:=iblk). specialize (nth_error_In p (fst ipc) Hiblk); intros.
+          apply H0 in H4. destruct H4, H5. unfold nonempty_block in H4. 
+          destruct (fst iblk); try discriminate.
+          simpl in *. destruct l0; try discriminate.
+          destruct l0; try discriminate. simpl in *. rewrite Forall_forall in H6.
+          
+
+
+
+                  
+                   
+        *  
       + admit.
     - admit.
     - admit.
