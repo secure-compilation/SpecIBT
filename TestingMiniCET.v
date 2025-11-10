@@ -281,7 +281,7 @@ Fixpoint gen_exp_ty_wt (t: ty) (sz: nat) (c: rctx) (pst: list nat) : G exp :=
 Definition gen_val_wt (t: ty) (pst: list nat) : G val :=
   match t with
   | TNum => liftM N arbitrary
-  | TPtr => match pst with
+  | TPtr => match (proc_hd pst) with
            | [] => ret (FP 0)
            | p::pst' => liftM FP (elems_ p (p::pst'))
            end

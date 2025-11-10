@@ -68,7 +68,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
               ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
             with 
             | Some (c, o) => (S_Running c, o)
-            | None => (S_Fault, [])
+            | None => (S_Undef, [])
             end
           | <{{jump l}}> =>
             (S_Running ((l,0), r, m, sk), [])
@@ -79,7 +79,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
               ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])      
             with 
             | Some (c, o) => (S_Running c, o)
-            | None => (S_Fault, [])
+            | None => (S_Undef, [])
             end
           | <{{store[e]<-e'}}> =>
             match
@@ -87,7 +87,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
               ret ((pc+1, r, upd n m (eval r e'), sk), [OStore n])
             with 
             | Some (c, o) => (S_Running c, o)
-            | None => (S_Fault, [])
+            | None => (S_Undef, [])
             end
           | <{{call e}}> =>
             match
@@ -95,7 +95,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
               ret (((l,0), r, m, (pc+1)::sk), [OCall l])
             with 
             | Some (c, o) => (S_Running c, o)
-            | None => (S_Fault, [])
+            | None => (S_Undef, [])
             end
           | <{{ret}}> =>
             match sk with
@@ -410,6 +410,27 @@ Definition gen_directive_from_ideal_cfg (p: prog) (pst: list nat) (ic: ideal_cfg
   | None => trace "lookup error" (ret [])
   end.
 
+Definition get_directive_for_seq_behaviour (p: prog) (pst: list nat) (ic: ideal_cfg) : dirs :=
+  let '(c, ms) := ic in
+  let '(pc, r, m, sk) := c in
+  match p[[pc]] with 
+  | Some i => 
+      match i with 
+      | <{{branch e to _}}> => 
+        match (to_nat (eval r e)) with 
+        | None => []
+        | Some n => [DBranch (not_zero n)]
+        end
+      | <{{call e}}> =>
+        match (to_fp (eval r e)) with
+        | None => []
+        | Some l => [DCall (l, 0)]
+        end
+      | _ => []
+      end
+  | None => trace "lookup error" ([])
+  end.
+
 Scheme Equality for val.
 Scheme Equality for observation.
 (*Instance val_EqDec : EqDec val _ .*)
@@ -437,8 +458,7 @@ Definition spec_cfg_eqb_up_to_callee (st1 st2 : spec_cfg) :=
 
 Compute ideal_step ([ ([ <{{skip}}> ], true) ]) (S_Running (((0,0)), (t_empty UV), [UV; UV; UV], [], false)) [].
 
-Derive Shrink for inst.
-
+(* Testing single-step compiler correctness *)
 QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 => 
@@ -479,7 +499,7 @@ QuickChick (
                                                                 | false => (*trace (show tcfg' ++ "|||||" ++ show tcfgref)*) (checker false)
                                                                 end
                                               end
-                      | (_, ds, os) => trace ("spec exec fails "%string ++ (show os) ++ show (uslh_prog p)) (checker false) (* TODO: investigate these cases *)
+                      | (_, ds, os) => trace ("spec exec fails "%string ++ (show os) ++ show (uslh_prog p)) (checker false)
                       end
           end
       | _ => collect "ideal exec undef"%string (checker tt)
@@ -494,4 +514,74 @@ QuickChick (
   If ideal execution succeeds, so does speculative, and it reaches a point that is considered synchronized.
   If ideal execution is undefined, no requirement on spec.
 *)
+
+(* Testing (single-step) Gilles' lemma *)
+QuickChick (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_reg_wt c pst) (fun rs1 => 
+  forAll (gen_reg_wt c pst) (fun rs2 => 
+  forAll (gen_wt_mem tm pst) (fun m1 =>
+  forAll (gen_wt_mem tm pst) (fun m2 =>
+  forAll (gen_pc_from_prog p) (fun pc =>
+  forAll (gen_call_stack_from_prog_sized 3 p) (fun stk => 
+  let icfg1 := (pc, rs1, m1, stk, true) in
+  let icfg2 := (pc, rs2, m2, stk, true) in
+  forAll (gen_directive_from_ideal_cfg p pst icfg1) (fun ds => 
+  match (ideal_step p (S_Running icfg1) ds) with 
+  | (S_Running _, _, o1) =>
+      match (ideal_step p (S_Running icfg2) ds) with
+      | (S_Running _, _, o2) => checker (obs_eqb o1 o2)
+      | _ => checker false
+      end
+  | (S_Undef, _, o1) =>
+      match (ideal_step p (S_Running icfg2) ds) with
+      | (S_Undef, _, o2) => checker (obs_eqb o1 o2)
+      | _ => checker false
+      end
+  | (S_Fault, _, o1) =>
+      match (ideal_step p (S_Running icfg2) ds) with
+      | (S_Fault, _, o2) => checker (obs_eqb o1 o2)
+      | _ => checker false
+      end
+  | (S_Term, _, o1) =>
+      match (ideal_step p (S_Running icfg2) ds) with
+      | (S_Term, _, o2) => checker (obs_eqb o1 o2)
+      | _ => checker false
+      end
+  end
+  ))))))))).
+
+(* Testing (single-step) sequential behaviour *)
+QuickChick (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_reg_wt c pst) (fun rs1 => 
+  forAll (gen_wt_mem tm pst) (fun m1 =>
+  forAll (gen_pc_from_prog p) (fun pc =>
+  forAll (gen_call_stack_from_prog_sized 3 p) (fun stk => 
+  let cfg := (pc, rs1, m1, stk) in
+  let icfg := (pc, rs1, m1, stk, false) in
+  let ds := get_directive_for_seq_behaviour p pst icfg in
+  match (step p (S_Running cfg)) with 
+  | (S_Running _, o1) =>
+      match (ideal_step p (S_Running icfg) ds) with
+      | (S_Running _, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => trace "not running" (checker false)
+      end
+  | (S_Undef, o1) =>
+      match (ideal_step p (S_Running icfg) ds) with
+      | (S_Undef, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => trace "not undef" (checker false)
+      end
+  | (S_Fault, o1) =>
+      match (ideal_step p (S_Running icfg) ds) with
+      | (S_Fault, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => trace "not fault" (checker false)
+      end
+  | (S_Term, o1) =>
+      match (ideal_step p (S_Running icfg) ds) with
+      | (S_Term, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => trace "not term" (checker false)
+      end
+  end
+  )))))).
 
