@@ -25,6 +25,7 @@ Require Import Stdlib.Classes.EquivDec.
 From SECF Require Import MiniCET.
 From SECF Require Import TestingMiniCET.
 
+(*! Section testing_sync *)
 
 Inductive state A : Type :=
   | S_Running (a: A)
@@ -141,7 +142,7 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
                   d <- hd_error ds;;
                   b' <- is_dbranch d;;
                   n <- to_nat (eval r e);;
-                  let b := not_zero n in
+                  let b := (negb ms) && not_zero n in
                   let ms' := ms || negb (Bool.eqb b b') in
                   let pc' := if b' then (l, 0) else (pc+1) in
                   ret ((S_Running ((pc', r, m, sk), ms'), tl ds), [OBranch b])
@@ -156,7 +157,7 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
                 match
                   d <- hd_error ds;;
                   pc' <- is_dcall d;;
-                  l <- to_fp (eval r e);;
+                  l <- (if ms then Some 0 else to_fp (eval r e));;
                   blk <- nth_error p (fst pc');;
                   if (snd blk && (snd pc' ==b 0)) then
                     let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
@@ -169,7 +170,7 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
             | <{{x<-load[e]}}> =>
               match
                 let i := if ms then (ANum 0) else e in
-                n <- to_nat (eval r e);;
+                n <- to_nat (eval r i);;
                 v' <- nth_error m n;;
                 let c := (pc+1, (x !-> v'; r), m, sk) in
                 ret (S_Running (c, ms), ds, [OLoad n])
@@ -377,9 +378,9 @@ Definition steps_to_sync_point (p: prog) (tsc: spec_cfg) (ds: dirs) : option nat
     end.
 
 Definition gen_pc_from_prog (p: prog) : G cptr :=
-  iblk <- choose (0, Datatypes.length(p) - 1) ;;
+  iblk <- choose (0, max 0 (Datatypes.length(p) - 1)) ;;
   let blk := nth_default ([],false) p iblk in
-  off <- choose (0, Datatypes.length(fst blk) - 1);;
+  off <- choose (0, max 0 (Datatypes.length(fst blk) - 1));;
   ret (iblk, off).
 
 Fixpoint gen_call_stack_from_prog_sized n (p: prog) : G (list cptr) :=
@@ -436,6 +437,7 @@ Definition spec_cfg_eqb_up_to_callee (st1 st2 : spec_cfg) :=
 
 Compute ideal_step ([ ([ <{{skip}}> ], true) ]) (S_Running (((0,0)), (t_empty UV), [UV; UV; UV], [], false)) [].
 
+Derive Shrink for inst.
 
 QuickChick (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
@@ -443,7 +445,8 @@ QuickChick (
   forAll (gen_wt_mem tm pst) (fun m1 =>
   forAll (gen_pc_from_prog p) (fun pc =>
   forAll (gen_call_stack_from_prog_sized 3 p) (fun stk => 
-  let icfg := (pc, rs1, m1, stk, false) in
+  forAll (@arbitrary bool _) (fun ms =>
+  let icfg := (pc, rs1, m1, stk, ms) in
   match (spec_cfg_sync p icfg) with
   | None => collect "hello"%string (checker tt)
   | Some tcfg => 
@@ -452,7 +455,7 @@ QuickChick (
       | (S_Fault, _, oideal) =>  
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
           | None => match spec_steps 4 (uslh_prog p) (S_Running tcfg) ds with 
-                    | (S_Fault, _, ospec) => checker (obs_eqb oideal ospec) (* speculative execution should fail if it won't sync again *)
+                    | (S_Fault, _, ospec) => (*trace "fault"*) (checker (obs_eqb oideal ospec)) (* speculative execution should fail if it won't sync again *)
                     | _ => trace "spec exec didn't fail"%string (checker false)
                     end
           | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
@@ -460,7 +463,7 @@ QuickChick (
       | (S_Term, _, oideal) =>
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
           | None => match spec_steps 1 (uslh_prog p) (S_Running tcfg) ds with 
-                    | (S_Term, _, ospec) => checker (obs_eqb oideal ospec)
+                    | (S_Term, _, ospec) => (*trace "term"*) (checker (obs_eqb oideal ospec))
                     | _ => trace "spec exec didn't terminate"%string (checker false)
                     end
           | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
@@ -472,8 +475,8 @@ QuickChick (
                       | (S_Running tcfg', _, ospec) => match (spec_cfg_sync p icfg') with
                                               | None => collect "sync fails "%string (checker tt)
                                               | Some tcfgref => match (spec_cfg_eqb_up_to_callee tcfg' tcfgref) with 
-                                                                | true => checker (obs_eqb oideal ospec)
-                                                                | false => trace (show tcfg' ++ "|||||" ++ show tcfgref) (checker false)
+                                                                | true => (*trace ("running " ++ show oideal ++ " / " ++ show ospec)*) (checker (obs_eqb oideal ospec))
+                                                                | false => (*trace (show tcfg' ++ "|||||" ++ show tcfgref)*) (checker false)
                                                                 end
                                               end
                       | (_, ds, os) => trace ("spec exec fails "%string ++ (show os) ++ show (uslh_prog p)) (checker false) (* TODO: investigate these cases *)
@@ -483,9 +486,9 @@ QuickChick (
       end
       )
   end
-  )))))).
+  ))))))).
 (* Results:
-  Passed 10000 tests (214 discards due to S_Undef in ideal exec)
+  Passed 10000 tests (105 discards due to S_Undef in ideal exec)
 
   If ideal execution faults or terminates, so does speculative execution, with the same observation.
   If ideal execution succeeds, so does speculative, and it reaches a point that is considered synchronized.

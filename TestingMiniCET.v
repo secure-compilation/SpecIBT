@@ -123,6 +123,11 @@ Definition is_defined (v:val) : bool :=
   | _ => true
   end.
 
+Fixpoint max n m := match n, m with 
+                   | 0, _ => m
+                   | _, 0 => n
+                   | S n', S m' => S (max n' m')
+                   end.
 (*! Section wf_programs *)
 
 (** Well-formed Program Generator *)
@@ -498,7 +503,7 @@ QuickChick (forAll (basic_block_gen_example) (fun (blk: list inst) => (basic_blo
 Fixpoint _gen_proc_with_term_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match fsz with
   | O => ret []
-  | S fsz' => n <- choose (1, bsz);;
+  | S fsz' => n <- choose (1, max 1 bsz);;
              blk <- gen_blk_with_term_wt c tm n pl pst;;
              rest <- _gen_proc_with_term_wt c tm fsz' bsz pl pst;;
              ret ((blk, false) :: rest)
@@ -509,7 +514,7 @@ Sample (tm <- arbitrary;; c <- arbitrary;; proc <- _gen_proc_with_term_wt c tm 3
 Definition gen_proc_with_term_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match fsz with
   | O => ret [] (* unreachable *)
-  | S fsz' => n <- choose (1, bsz);;
+  | S fsz' => n <- choose (1, max 1 bsz);;
              blk <- gen_blk_with_term_wt c tm n pl pst;;
              rest <- _gen_proc_with_term_wt c tm fsz' bsz pl pst;;
              ret ((blk, true) :: rest)
@@ -545,7 +550,7 @@ QuickChick (forAll (gen_prog_with_term_wt_example 8) (fun (p: prog) => (prog_bas
 Fixpoint _gen_proc_wt (c: rctx) (tm: tmem) (psz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match psz with
   | O => ret []
-  | S psz' => n <- choose (1, bsz);;
+  | S psz' => n <- choose (1, max 1 bsz);;
              blk <- gen_blk_wt c tm n pl pst;;
              rest <- _gen_proc_wt c tm psz' bsz pl pst;;
              ret ((blk, false) :: rest)
@@ -556,7 +561,7 @@ Sample (tm <- arbitrary;; c <- arbitrary;; proc <- _gen_proc_wt c tm 3 3 8 [3; 3
 Definition gen_proc_wt (c: rctx) (tm: tmem) (psz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match psz with
   | O => ret [] (* unreachable *)
-  | S psz' => n <- choose (1, bsz);;
+  | S psz' => n <- choose (1, max 1 bsz);;
              blk <- gen_blk_wt c tm n pl pst;;
              rest <- _gen_proc_wt c tm psz' bsz pl pst;;
              ret ((blk, true) :: rest)
@@ -1149,7 +1154,7 @@ Fixpoint _gen_proc_no_obs (fsz bsz pl: nat) (pst: list nat) : G (list (list inst
   match fsz with
   | O => ret []
   | S fsz' =>
-      n <- choose (1, bsz);;
+      n <- choose (1, max 1 bsz);;
       blk <- gen_blk_no_obs n pl pst;;
       rest <- _gen_proc_no_obs fsz' bsz pl pst;;
       ret ((blk, false) :: rest)
@@ -1159,7 +1164,7 @@ Definition gen_proc_no_obs (fsz bsz pl: nat) (pst: list nat) : G (list (list ins
   match fsz with
   | O => ret []
   | S fsz' =>
-      n <- choose (1, bsz);;
+      n <- choose (1, max 1 bsz);;
       blk <- gen_blk_no_obs n pl pst;;
       rest <- _gen_proc_no_obs fsz' bsz pl pst;;
       ret ((blk, true) :: rest)

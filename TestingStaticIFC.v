@@ -1147,7 +1147,7 @@ Proof.
   intros P s1 s2 b Heq Ht. remember public as l.
   induction Ht; simpl; try reflexivity;
     try (destruct (join_public Heql) as [H1 H2];
-         rewrite H1 in *; rewrite H2 in *).
+         rewrite H1 in *; rewrite H2 in * ).
   - rewrite (noninterferent_aexp Heq H).
     rewrite (noninterferent_aexp Heq H0).
     reflexivity.
