@@ -431,21 +431,59 @@ Definition get_directive_for_seq_behaviour (p: prog) (pst: list nat) (ic: ideal_
   | None => trace "lookup error" ([])
   end.
 
+Definition gen_directive_triggering_misspec (p: prog) (pst: list nat) (ic: ideal_cfg) : G dirs :=
+  let '(c, ms) := ic in
+  let '(pc, r, m, sk) := c in
+  match p[[pc]] with 
+  | Some i => 
+      match i with 
+      | <{{branch e to _}}> => 
+        match (to_nat (eval r e)) with 
+        | None => ret []
+        | Some n => ret [DBranch (negb (not_zero n))]
+        end
+      | <{{call e}}> =>
+        match (to_fp (eval r e)) with
+        | None => ret []
+        | Some l => 
+            let targets := (proc_hd pst) in
+            let targets := filter (fun x => x <>b l) targets in
+            match targets with 
+            | [] => ret []
+            | e::tl => t <- elems_ e (e::tl);;
+                       ret [DCall (t, 0)]
+            end
+        end
+      | _ => ret []
+      end
+  | None => trace "lookup error" (ret [])
+  end.
+
 Scheme Equality for val.
 Scheme Equality for observation.
-(*Instance val_EqDec : EqDec val _ .*)
+
+Check (@equiv_decb cptr Logic.eq _ _).
+(*Instance cptr_EqDec : EqDec cptr Logic.eq.*)
 (*Proof.*)
-  (*intros x y.*)
-  (*destruct x, y; try (right; discriminate).*)
-  (*- destruct (n == n0).*)
-    (*+ left. now rewrite e.*)
-    (*+ right. intros [= ?]. contradiction.*)
-  (*- destruct (l == l0).*)
-    (*+ left. now rewrite e.*)
-    (*+ right. intros [= ?]. contradiction.*)
-  (*- now left.*)
+  (*typeclasses eauto.*)
 (*Qed.*)
-(**)
+Instance direction_EqDec : EqDec direction Logic.eq.
+Proof.
+  intros x y.
+  destruct x, y.
+  - destruct (b' == b'0).
+    + left. now rewrite e.
+    + right. now intros [= H].
+  - right. discriminate.
+  - right. discriminate.
+  - destruct (lo == lo0).
+    + left. now rewrite e.
+    + right. now intros [= H].
+Defined.
+
+Compute ([DBranch true] <>b []).
+Compute ([] <>b [DBranch true]).
+(* Not quite sure why this is opaque, and why it does not seem to terminate in QuickChick tests...*)
 
 Definition spec_cfg_eqb_up_to_callee (st1 st2 : spec_cfg) :=
   let '(pc1, r1, m1, sk1, c1, ms1) := st1 in
@@ -584,4 +622,38 @@ QuickChick (
       end
   end
   )))))).
+
+(* Testing misspeculation-triggering steps *)
+QuickChick (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_reg_wt c pst) (fun rs1 => 
+  forAll (gen_wt_mem tm pst) (fun m1 =>
+  forAll (gen_pc_from_prog p) (fun pc =>
+  forAll (gen_call_stack_from_prog_sized 3 p) (fun stk => 
+  let cfg := (pc, rs1, m1, stk) in
+  let icfg := (pc, rs1, m1, stk, false) in
+  forAll (gen_directive_triggering_misspec p pst icfg) (fun ds => 
+  match (step p (S_Running cfg)) with 
+  | (S_Running _, o1) =>
+      match (ideal_step p (S_Running icfg) ds) with
+      | (S_Running icfg', _, o2) => trace (show o1 ++ " / " ++ show o2) (checker ((obs_eqb o1 o2) && (match ds with [] => true | _ => snd icfg' end)))
+      | _ => trace "not running" (checker false)
+      end
+  | (S_Undef, o1) =>
+      match (ideal_step p (S_Running icfg) ds) with
+      | (S_Undef, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => trace "not undef" (checker false)
+      end
+  | (S_Fault, o1) =>
+      match (ideal_step p (S_Running icfg) ds) with
+      | (S_Fault, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => trace "not fault" (checker false)
+      end
+  | (S_Term, o1) =>
+      match (ideal_step p (S_Running icfg) ds) with
+      | (S_Term, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => trace "not term" (checker false)
+      end
+  end
+  ))))))).
 
