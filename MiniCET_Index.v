@@ -270,6 +270,8 @@ Inductive multi_ideal_inst (p:prog) :
 
 (** * Backwards Compiler Correctness of Ultimate Speculative Load Hardening *)
 
+(* Synchronization Relation *)
+
 Definition msf_lookup_sc (sc: spec_cfg) : val :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, stk) := c in
@@ -392,19 +394,14 @@ Definition get_pc_ic (ic: ideal_cfg) : cptr :=
   let '(pc, r, m, sk) := c in
   pc.
 
-(* Termination:
-  - if instruction is ret and stack is empty: normal
-  - if ct && current inst ≠ ctarget \/ if ~ct && current inst = ctarget : fault (second one can't occur, I think, with current constraints)
-  - any other sort of termination: stuck/UB
-
-*)
+(* Termination *)
 
 Inductive termination : Type :=
 | T_Normal
 | T_Fault
 | T_UB.
 
-(* Target *)
+(* target *)
 
 Definition is_fault_tgt (final_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := final_t in
@@ -437,7 +434,7 @@ Definition classify_term_tgt (final_t: spec_cfg) : termination :=
   if (is_fault_tgt final_t) then T_Fault else
   if (is_normal_termination_tgt final_t) then T_Normal else T_UB.
 
-(* Source *)
+(* source *)
 
 Definition is_fault_src (final_s: ideal_cfg) : option bool :=
   let '(c, ms) := final_s in
@@ -574,55 +571,14 @@ Ltac inv H := inversion H; subst; clear H.
       • The start states are synchronized wrt pc, register state, and stack 
 *)
 
-(*
-(* sync src/ideal and target cfg (affects pc, register state, and stack) *)
-Definition spec_cfg_sync (*(p: prog)*) (ic: ideal_cfg): option spec_cfg :=
-  let '(c, ms) := ic in
-  let '(pc, r, m, stk) := c in
-  pc' <- pc_sync (*p*) pc;;
-  stk' <- map_opt (pc_sync (*p*)) stk;;
-  ret (pc', r_sync r ms, m, stk', false, ms).
-
-(* How many steps does it take for target program to reach the program point the source reaches in one step? *)
-Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
-  let '(tc, ct, ms) := tsc in
-  let '(pc, r, m, sk) := tc in
-    (* check pc is well-formed *)
-    blk <- nth_error p (fst pc);;
-    i <- nth_error (fst blk) (snd pc);;
-    match i with
-    | <{{_ := _}}> => match p[[pc+1]] with
-                      | Some i => match i with
-                                  | <{{call _}}> => match ds with
-                                                    | [DCall lo] => (* decorated call with correct directive *)
-                                                                    let '(l, o) := lo in
-                                                                    (* check attacker pc is well-formed *)
-                                                                    blk <- nth_error p l;;
-                                                                    i <- nth_error (fst blk) o;;
-                                                                    (* 4 steps if procedure block *)
-                                                                    if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
-                                                    | _ => None (* incorrect directive for call *)
-                                                    end
-                                  | _ => Some 1 (* assignment from source program, not decoration *)
-                                  end
-                      | None => Some 1 (* assignment from source program, last instruction in block *)
-                      end
-    | <{{ branch _ to _ }}> => (* branch decorations all come after the instruction itself, so this is the sync point *)
-                               match ds with
-                               | [DBranch b] => Some (if b then 3 else 2)
-                               | _ => None
-                               end
-    | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
-    end.
-*)
-    
 Lemma pc_not_none : forall (pc: cptr) (i: inst),
   p[[pc]] = Some i ->
-  exists l, nth_error p (fst pc) = Some l /\ nth_error (fst l) (snd pc) = Some i.
+  exists blk, nth_error p (fst pc) = Some blk /\ nth_error (fst blk) (snd pc) = Some i.
 Proof.
   intros. destruct pc as (l & o) eqn:Hpc. simpl in *.
   destruct (nth_error p l); [exists p0; split; auto|discriminate].
 Qed.
+
 
 (* Print map_opt. ==> 
 
@@ -633,6 +589,22 @@ Qed.
       l'' <- map_opt f l';; 
       ret (a' :: l'')
    end. *)
+
+(* Print multi_spec_inst_trans. ==>
+
+  Inductive
+multi_spec_inst (p0 : prog) : state -> state -> dirs -> obs -> nat -> Prop :=
+    multi_spec_inst_refl : forall sc : state,
+                           p0 |- <(( sc ))> -->*_ [] ^^ [] ^^ 0 <(( sc ))>
+  | multi_spec_inst_trans : forall (sc1 sc2 sc3 : state) 
+                              (ds1 ds2 : dirs) (os1 os2 : obs) 
+                              (n : nat),
+                            p0 |- <(( sc1 ))> -->_ ds1 ^^ os1 <(( sc2 ))> ->
+                            p0 |- <(( sc2 ))> -->*_ ds2 ^^ os2 ^^ n <(( sc3
+                            ))> ->
+                            p0 |- <(( sc1 ))> -->*_ 
+                            ds1 ++ ds2 ^^ os1 ++ os2 ^^ 
+                            S n <(( sc3 ))>. *)
 
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
@@ -646,19 +618,23 @@ Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
       exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> /\ spec_cfg_sync ic2 = Some sc2.
 Proof.
   intros until os. intros wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
-  destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r). 
+  destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r).
   unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
-  unfold wf_ds in wfds. simpl in ms_msf. destruct ipc as (l & o) eqn:Hipc. 
+  unfold wf_ds in wfds. simpl in ms_msf. destruct ipc as (l & o) eqn:Hipc.
   destruct (nth_error p l) as [iblk|] eqn:Hfst.
-  - destruct (nth_error (fst iblk) o) as [i|] eqn:Hsnd.
-    + destruct i eqn:Hi.
+  - (* Some blk *)
+    destruct (nth_error (fst iblk) o) as [i|] eqn:Hsnd.
+    + (* Some i *)
+      destruct i eqn:Hi.
       { (* skip *) simpl in *. destruct (pc_sync (l, o)) as [spc|] eqn:Hpcsync; try discriminate.
         destruct (map_opt pc_sync sk) as [ssk|] eqn:Hsk; try discriminate. injection cfg_sync; intros.
-        rewrite <- H1 in *. clear cfg_sync. simpl in *. 
+        rewrite <- H1 in *. clear cfg_sync. simpl in *.
         destruct (nth_error p (fst spc)) as [sblk|] eqn:Hsfst; try discriminate.
         destruct (nth_error (fst sblk) (snd spc)) as [si|] eqn:Hssnd; try discriminate.
-        admit.
-
+        destruct si eqn:Hsi.
+        - (* skip *) injection n_steps; intros. rewrite <- H2 in *. clear n_steps. rewrite <- Hipc.
+          destruct spc as (sl & so) eqn:Hspc. simpl in Hsfst, Hssnd. 
+          (* can't take apart target execution yet, need lemma to relate uslh_prog p to p as before *)
       }
       { admit. }
       { admit. }
@@ -668,8 +644,16 @@ Proof.
       { admit. }
       { admit. }
       { admit. }
-    + admit.
-  - admit.
+    + (* None *)
+      simpl in cfg_sync. destruct (pc_sync (l, o)) eqn:Hpcsync; try discriminate.
+      destruct (map_opt pc_sync sk) eqn:Hsksync; try discriminate. unfold pc_sync in Hpcsync.
+      cbn in Hpcsync. destruct (nth_error p l) as [blk'|] eqn:Hfst'; try discriminate.
+      injection Hfst; intros. rewrite H1 in *. clear Hfst. clear H1. 
+      destruct (nth_error (fst iblk) o) as [i'|] eqn:Hsnd'; discriminate.
+  - (* None *)
+    simpl in cfg_sync. simpl in cfg_sync. destruct (pc_sync (l, o)) eqn:Hpcsync; try discriminate.
+    destruct (map_opt pc_sync sk) eqn:Hsksync; try discriminate. unfold pc_sync in Hpcsync.
+    cbn in Hpcsync. destruct (nth_error p l) as [blk'|] eqn:Hfst'; discriminate.
 Admitted.
   
 
