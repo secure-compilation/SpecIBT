@@ -358,7 +358,7 @@ Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
                                                                     (* check attacker pc is well-formed *)
                                                                     blk <- nth_error p l;;
                                                                     i <- nth_error (fst blk) o;;
-                                                                    (* 4 steps if procedure block *)
+                                                                    (* 4 steps if procedure block, fault otherwise *)
                                                                     if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
                                                     | _ => None (* incorrect directive for call *)
                                                     end
@@ -396,15 +396,15 @@ Definition get_pc_ic (ic: ideal_cfg) : cptr :=
 
 (* Termination *)
 
-Inductive termination : Type :=
-| T_Normal
-| T_Fault
-| T_UB.
+Inductive result : Type :=
+| R_Normal
+| R_Fault
+| R_UB.
 
 (* target *)
 
-Definition is_fault_tgt (final_t: spec_cfg) : option bool :=
-  let '(c, ct, ms) := final_t in
+Definition is_fault_tgt (res_t: spec_cfg) : option bool :=
+  let '(c, ct, ms) := res_t in
   let '(pc, rs, m, sk) := c in
   i <- p[[pc]];;
   match i with
@@ -412,8 +412,8 @@ Definition is_fault_tgt (final_t: spec_cfg) : option bool :=
   | _ => Some (if ct then true else false)
   end.
 
-Definition is_normal_termination_tgt (final_t: spec_cfg) : option bool :=
-  let '(c, ct, ms) := final_t in
+Definition is_normal_termination_tgt (res_t: spec_cfg) : option bool :=
+  let '(c, ct, ms) := res_t in
   let '(pc, rs, m, sk) := c in
   i <- p[[pc]];;
   match i with
@@ -421,31 +421,31 @@ Definition is_normal_termination_tgt (final_t: spec_cfg) : option bool :=
   | _ => Some false
   end.
 
-Definition is_stuck_tgt (final_t: spec_cfg) : option bool :=
-  let '(c, ct, ms) := final_t in
+Definition is_stuck_tgt (res_t: spec_cfg) : option bool :=
+  let '(c, ct, ms) := res_t in
   let '(pc, rs, m, sk) := c in
   _ <- p[[pc]];;
-  match (is_fault_tgt final_t, is_normal_termination_tgt final_t) with
+  match (is_fault_tgt res_t, is_normal_termination_tgt res_t) with
   | (Some false, Some false) => Some true
   | _ => Some false
   end.
 
-Definition classify_term_tgt (final_t: spec_cfg) : termination :=
-  if (is_fault_tgt final_t) then T_Fault else
-  if (is_normal_termination_tgt final_t) then T_Normal else T_UB.
+Definition classify_res_tgt (res_t: spec_cfg) : result :=
+  if (is_fault_tgt res_t) then R_Fault else
+  if (is_normal_termination_tgt res_t) then R_Normal else R_UB.
 
 (* source *)
 
-Definition is_fault_src (final_s: ideal_cfg) : option bool :=
-  let '(c, ms) := final_s in
+Definition is_fault_src (res_s: ideal_cfg) : option bool :=
+  let '(c, ms) := res_s in
   let '(pc, rs, m, sk) := c in
   i <- p[[pc]];;
   Some true.
   (* now what? *)
 
 (* Normal termination: ret + empty stack *)
-Definition is_normal_termination_src (final_s: ideal_cfg) : option bool :=
-  let '(c, ms) := final_s in
+Definition is_normal_termination_src (res_s: ideal_cfg) : option bool :=
+  let '(c, ms) := res_s in
   let '(pc, rs, m, sk) := c in
   i <- p[[pc]];;
   match i with
@@ -454,20 +454,20 @@ Definition is_normal_termination_src (final_s: ideal_cfg) : option bool :=
   end.
 
 (* any other final state means the program got stuck because of UB *)
-Definition is_stuck_src (final_s: ideal_cfg) : option bool :=
-  let '(c, ms) := final_s in
+Definition is_stuck_src (res_s: ideal_cfg) : option bool :=
+  let '(c, ms) := res_s in
   let '(pc, rs, m, sk) := c in
   _ <- p[[pc]];;
-  match (is_fault_src final_s, is_normal_termination_src final_s) with
+  match (is_fault_src res_s, is_normal_termination_src res_s) with
   | (Some false, Some false) => Some true
   | _ => Some false
   end.
 
-Definition classify_term_src (final_s: ideal_cfg) : termination :=
-  if (is_fault_src final_s) then T_Fault else
-  if (is_normal_termination_src final_s) then T_Normal else T_UB.
+Definition classify_term_src (res_s: ideal_cfg) : result :=
+  if (is_fault_src res_s) then R_Fault else
+  if (is_normal_termination_src res_s) then R_Normal else R_UB.
 
-Definition same_termination (sc: spec_cfg) (ic: ideal_cfg) : bool :=
+Definition same_result_type (sc: spec_cfg) (ic: ideal_cfg) : bool :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
   let '(c', ms') := ic in 
@@ -579,32 +579,22 @@ Proof.
   destruct (nth_error p l); [exists p0; split; auto|discriminate].
 Qed.
 
-
-(* Print map_opt. ==> 
-
-  Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
-  match l with 
-  | [] => Some []
-  | a :: l' => a' <- f a;;
-      l'' <- map_opt f l';; 
-      ret (a' :: l'')
-   end. *)
-
-(* Print multi_spec_inst_trans. ==>
-
-  Inductive
-multi_spec_inst (p0 : prog) : state -> state -> dirs -> obs -> nat -> Prop :=
-    multi_spec_inst_refl : forall sc : state,
-                           p0 |- <(( sc ))> -->*_ [] ^^ [] ^^ 0 <(( sc ))>
-  | multi_spec_inst_trans : forall (sc1 sc2 sc3 : state) 
-                              (ds1 ds2 : dirs) (os1 os2 : obs) 
-                              (n : nat),
-                            p0 |- <(( sc1 ))> -->_ ds1 ^^ os1 <(( sc2 ))> ->
-                            p0 |- <(( sc2 ))> -->*_ ds2 ^^ os2 ^^ n <(( sc3
-                            ))> ->
-                            p0 |- <(( sc1 ))> -->*_ 
-                            ds1 ++ ds2 ^^ os1 ++ os2 ^^ 
-                            S n <(( sc3 ))>. *)
+Lemma rev_fetch : forall (pc: cptr) (blk: list inst * bool) (i: inst),
+  nth_error p (fst pc) = Some blk ->
+  nth_error (fst blk) (snd pc) = Some i ->
+  p[[pc]] = Some i.
+Proof.
+  intros. destruct pc as (l & o) eqn:Hpc.
+  destruct (nth_error p (fst pc)) eqn:Hblk.
+  - unfold fetch. simpl in H, H0. rewrite H. simpl in *. assumption.
+  - rewrite Hpc in *. simpl in *. rewrite H in Hblk. discriminate.
+Qed.
+(*Print ISMI_Skip. ==>
+  ISMI_Skip : forall (pc : cptr) (r : reg) (m : mem) 
+                  (sk : list cptr) (ms : bool),
+                p0 [[pc]] = Some <{{ skip }}> ->
+                p0 |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_ [] ^^ [] <((
+   S_Running (pc + 1, r, m, sk, ms) ))>*)
 
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
@@ -620,21 +610,38 @@ Proof.
   intros until os. intros wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
   destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r).
   unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
-  unfold wf_ds in wfds. simpl in ms_msf. destruct ipc as (l & o) eqn:Hipc.
+  unfold wf_ds in wfds. simpl in ms_msf. 
+  (* destructing to ipc's instruction, keeping information along the way *)
+  destruct ipc as (l & o) eqn:Hipc.
   destruct (nth_error p l) as [iblk|] eqn:Hfst.
   - (* Some blk *)
     destruct (nth_error (fst iblk) o) as [i|] eqn:Hsnd.
     + (* Some i *)
+      replace l with (fst ipc) in Hfst by (rewrite Hipc; auto). replace o with (snd ipc) in Hsnd by (rewrite Hipc; auto).
+      specialize (rev_fetch ipc iblk i Hfst Hsnd); intros. (* recovered single-step premise *)
+      (* case over starting instruction in ideal execution *)
       destruct i eqn:Hi.
-      { (* skip *) simpl in *. destruct (pc_sync (l, o)) as [spc|] eqn:Hpcsync; try discriminate.
-        destruct (map_opt pc_sync sk) as [ssk|] eqn:Hsk; try discriminate. injection cfg_sync; intros.
-        rewrite <- H1 in *. clear cfg_sync. simpl in *.
-        destruct (nth_error p (fst spc)) as [sblk|] eqn:Hsfst; try discriminate.
-        destruct (nth_error (fst sblk) (snd spc)) as [si|] eqn:Hssnd; try discriminate.
-        destruct si eqn:Hsi.
-        - (* skip *) injection n_steps; intros. rewrite <- H2 in *. clear n_steps. rewrite <- Hipc.
-          destruct spc as (sl & so) eqn:Hspc. simpl in Hsfst, Hssnd. 
-          (* can't take apart target execution yet, need lemma to relate uslh_prog p to p as before *)
+      { (* skip *) 
+        specialize (ISMI_Skip p ipc r m sk ms H1); intros. 
+        (* rewrite <- Hipc. exists (ipc + 1, r, m, sk, ms). split; [apply H2|]. *)
+        (* Unable to unify
+            "p |- <(( S_Running (ipc, r, m, sk, ms) ))> -->i_ [] ^^ [] <((S_Running (ipc + 1, r, m, sk, ms) ))>"
+           with
+            "p |- <(( S_Running (ipc, r, m, sk, ms) ))> -->i_ ds ^^ os <((S_Running (ipc + 1, r, m, sk, ms) ))>" 
+        *)
+        (* Before I can do this, I need to show that ds, os = [] *)
+        simpl in *.
+        destruct (pc_sync (l, o)) as [spc|] eqn:Hpcsync; try discriminate.
+        destruct (map_opt pc_sync sk) as [ssk|] eqn:Hsk; try discriminate. 
+        injection cfg_sync; intros. (* unpacked starting spec cfg *)
+        rewrite <- H3 in n_steps. destruct spc as (sl, so) eqn:Hspc. simpl in n_steps.
+        destruct (nth_error p sl) eqn:Hsfst; try discriminate. rename p0 into sblk.
+        destruct (nth_error (fst sblk) so) eqn:Hssnd; try discriminate. rename i0 into si.
+
+
+
+
+
       }
       { admit. }
       { admit. }
@@ -709,6 +716,16 @@ Admitted.
   
 
 End BCC.
+
+Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
+  unused_prog msf p ->
+  unused_prog callee p ->
+  msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
+  tsc1 = spec_cfg_sync p sc1 ->
+  uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
+  exists sc2, p |- <(( sc1 ))> -->*_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync p sc2 /\ same_result_type sc2 tsc2.
+Proof.
+Admitted.
 
 (* (** * Definition of Relative Secure *) *)
 
