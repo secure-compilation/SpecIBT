@@ -596,6 +596,23 @@ Qed.
                 p0 |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_ [] ^^ [] <((
    S_Running (pc + 1, r, m, sk, ms) ))>*)
 
+(* nth_error_In:
+  forall [A : Type] (l : list A) (n : nat) [x : A],
+  nth_error l n = Some x -> In x l
+ *)
+
+Lemma blk_not_empty_list : forall (blk: list inst * bool),
+  nonempty_block blk -> (fst blk) <> [].
+Proof.
+  intros. unfold nonempty_block in H. unfold not; intros. rewrite H0 in H.
+  simpl in H. assert (~ 0 < 0). { apply nlt_0_r. }
+  contradiction.
+Qed.
+
+(* length_rev:
+  forall [A : Type] (l : list A),
+   Datatypes.length (rev l) = Datatypes.length l *) 
+
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
   wf_ds (get_pc_sc sc1) ds ->
@@ -620,9 +637,54 @@ Proof.
       replace l with (fst ipc) in Hfst by (rewrite Hipc; auto). replace o with (snd ipc) in Hsnd by (rewrite Hipc; auto).
       specialize (rev_fetch ipc iblk i Hfst Hsnd); intros. (* recovered single-step premise *)
       (* case over starting instruction in ideal execution *)
+      simpl in *.
+      destruct (pc_sync (l, o)) as [spc|] eqn:Hpcsync; try discriminate.
+      destruct (map_opt pc_sync sk) as [ssk|] eqn:Hsk; try discriminate. 
+      injection cfg_sync; intros. rewrite <- H2 in n_steps. (* unpacked starting spec cfg *)
+      destruct spc as (sl, so) eqn:Hspc. simpl in n_steps.
+      destruct (nth_error p sl) eqn:Hsfst; try discriminate. rename p0 into sblk.
+      destruct (nth_error (fst sblk) so) eqn:Hssnd; try discriminate. rename i0 into si.
       destruct i eqn:Hi.
-      { (* skip *) 
+      { (* skip *) assert (si = <{{ skip }}>). { admit. }
         specialize (ISMI_Skip p ipc r m sk ms H1); intros. 
+        rewrite H3 in n_steps. injection n_steps; intros. rewrite <- H5 in *.
+        inv tgt_steps. inv H12. inv H7.
+        { apply SpecSMI_Skip with (r:=r) (m:=m) (sk:=sk) (ms:=ms) in H12.
+          exists ((l, o) + 1, r, m, sk, ms). simpl. split; auto.
+          simpl in *. assert (pc_sync (l, (add o 1)) <> None).
+          { rewrite Forall_forall in H0. specialize H0 with (x:=iblk). specialize (nth_error_In p l Hfst). intros.
+            apply H0 in H2. destruct H2, H3. unfold last_inst_ret_or_jump in H3. 
+            assert (fst iblk <> []). { apply blk_not_empty_list. assumption. }
+            unfold nonempty_block in H2. assert (0 < Datatypes.length (rev (fst iblk))).
+            { rewrite length_rev. assumption. } specialize (blk_not_empty_list (rev (fst iblk), snd iblk) H7). 
+            simpl. intros. admit.
+          }
+          { admit. }
+        }
+        { admit. }
+        { admit. }
+        { admit. }
+        { admit. }
+        { admit. }
+        { admit. }
+      }
+
+        (* Inductive
+multi_spec_inst (p0 : prog) : state -> state -> dirs -> obs -> nat -> Prop :=
+    multi_spec_inst_refl : forall sc : state,
+                           p0 |- <(( sc ))> -->*_ [] ^^ [] ^^ 0 <(( sc ))>
+  | multi_spec_inst_trans : forall (sc1 sc2 sc3 : state) 
+                              (ds1 ds2 : dirs) (os1 os2 : obs) 
+                              (n : nat),
+                            p0 |- <(( sc1 ))> -->_ ds1 ^^ os1 <(( sc2 ))> ->
+                            p0 |- <(( sc2 ))> -->*_ ds2 ^^ os2 ^^ n <(( sc3
+                            ))> ->
+                            p0 |- <(( sc1 ))> -->*_ 
+                            ds1 ++ ds2 ^^ os1 ++ os2 ^^ 
+                            S n <(( sc3 ))>.
+ *)
+
+
         (* rewrite <- Hipc. exists (ipc + 1, r, m, sk, ms). split; [apply H2|]. *)
         (* Unable to unify
             "p |- <(( S_Running (ipc, r, m, sk, ms) ))> -->i_ [] ^^ [] <((S_Running (ipc + 1, r, m, sk, ms) ))>"
@@ -630,19 +692,13 @@ Proof.
             "p |- <(( S_Running (ipc, r, m, sk, ms) ))> -->i_ ds ^^ os <((S_Running (ipc + 1, r, m, sk, ms) ))>" 
         *)
         (* Before I can do this, I need to show that ds, os = [] *)
-        simpl in *.
-        destruct (pc_sync (l, o)) as [spc|] eqn:Hpcsync; try discriminate.
-        destruct (map_opt pc_sync sk) as [ssk|] eqn:Hsk; try discriminate. 
-        injection cfg_sync; intros. (* unpacked starting spec cfg *)
-        rewrite <- H3 in n_steps. destruct spc as (sl, so) eqn:Hspc. simpl in n_steps.
-        destruct (nth_error p sl) eqn:Hsfst; try discriminate. rename p0 into sblk.
-        destruct (nth_error (fst sblk) so) eqn:Hssnd; try discriminate. rename i0 into si.
+        
 
 
 
 
 
-      }
+      
       { admit. }
       { admit. }
       { admit. }
@@ -717,15 +773,15 @@ Admitted.
 
 End BCC.
 
-Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
+(* Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
   tsc1 = spec_cfg_sync p sc1 ->
-  uslh_prog p |- <(( tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-  exists sc2, p |- <(( sc1 ))> -->*_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync p sc2 /\ same_result_type sc2 tsc2.
+  uslh_prog p |- <(( S_Running tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
+  exists sc2, p |- <(( S_Running sc1 ))> -->i*_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync p sc2 /\ same_result_type sc2 tsc2.
 Proof.
-Admitted.
+   Admitted. *)
 
 (* (** * Definition of Relative Secure *) *)
 
