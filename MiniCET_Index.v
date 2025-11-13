@@ -616,6 +616,7 @@ Qed.
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
   wf_ds (get_pc_sc sc1) ds ->
+  block_terminator_prog p = true ->
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
@@ -624,7 +625,7 @@ Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( S_Running sc2 ))> ->
       exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> /\ spec_cfg_sync ic2 = Some sc2.
 Proof.
-  intros until os. intros wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
+  intros until os. intros wfp wfds wfp_term unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
   destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r).
   unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
   unfold wf_ds in wfds. simpl in ms_msf. 
@@ -652,12 +653,16 @@ Proof.
         { apply SpecSMI_Skip with (r:=r) (m:=m) (sk:=sk) (ms:=ms) in H12.
           exists ((l, o) + 1, r, m, sk, ms). simpl. split; auto.
           simpl in *. assert (pc_sync (l, (add o 1)) <> None).
-          { rewrite Forall_forall in H0. specialize H0 with (x:=iblk). specialize (nth_error_In p l Hfst). intros.
-            apply H0 in H2. destruct H2, H3. unfold last_inst_ret_or_jump in H3. 
-            assert (fst iblk <> []). { apply blk_not_empty_list. assumption. }
-            unfold nonempty_block in H2. assert (0 < Datatypes.length (rev (fst iblk))).
-            { rewrite length_rev. assumption. } specialize (blk_not_empty_list (rev (fst iblk), snd iblk) H7). 
-            simpl. intros. admit.
+          { (* YH: see wfp_term *)
+            red. intros.
+            (* pc_sync (l, o) points to <{{skip}}>. contradiction: H2 and wfp_term *)
+            admit.
+            (* rewrite Forall_forall in H0. specialize H0 with (x:=iblk). specialize (nth_error_In p l Hfst). intros. *)
+            (* apply H0 in H2. destruct H2, H3. unfold last_inst_ret_or_jump in H3.  *)
+            (* assert (fst iblk <> []). { apply blk_not_empty_list. assumption. } *)
+            (* unfold nonempty_block in H2. assert (0 < Datatypes.length (rev (fst iblk))). *)
+            (* { rewrite length_rev. assumption. } specialize (blk_not_empty_list (rev (fst iblk), snd iblk) H7).  *)
+            (* simpl. intros. red. intros. admit. (* see wfp_term *) *)
           }
           { admit. }
         }
