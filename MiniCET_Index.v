@@ -55,7 +55,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Store : forall pc r m sk e e' n,
   p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
-      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
+p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
   | SSMI_Call : forall pc r m sk e l,
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
@@ -643,6 +643,18 @@ Proof.
   intros. simpl. reflexivity.
 Qed.
 
+Lemma oob_block : forall (l o: nat) (blk: list inst * bool) (i: inst) (rest: list inst),
+  nth_error p l = Some blk ->
+  wf_block blk ->
+  block_terminator blk = true ->
+  nth_error (fst blk) o = Some i ->
+  nth_error (fst blk) (add o 1) = None ->
+  Utils.rev (fst blk) = i :: rest.
+Proof.
+  intros. unfold wf_block in H0. destruct H0, H4. unfold block_terminator in H1.
+  rewrite Forall_forall in H5. unfold last_inst_ret_or_jump in H4. destruct (rev (fst blk)); try destruct H4.
+  unfold is_return_or_jump in H1. Admitted.
+
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
   wf_ds (get_pc_sc sc1) ds ->
@@ -658,40 +670,69 @@ Proof.
   intros until os. intros wfp wfds wfp_term unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
   destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r).
   unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
-  unfold wf_ds in wfds. simpl in ms_msf. 
+  unfold wf_ds in wfds. simpl in ms_msf.
   (* destructing to ipc's instruction, keeping information along the way *)
   destruct ipc as (l & o) eqn:Hipc.
   destruct (nth_error p l) as [iblk|] eqn:Hfst.
   - (* Some blk *)
     destruct (nth_error (fst iblk) o) as [i|] eqn:Hsnd.
     + (* Some i *)
-      replace l with (fst ipc) in Hfst by (rewrite Hipc; auto). replace o with (snd ipc) in Hsnd by (rewrite Hipc; auto).
+      replace l with (fst ipc) in Hfst by (rewrite Hipc; auto).
+      replace o with (snd ipc) in Hsnd by (rewrite Hipc; auto).
       specialize (rev_fetch ipc iblk i Hfst Hsnd); intros. (* recovered single-step premise *)
       (* case over starting instruction in ideal execution *)
       simpl in *.
       destruct (pc_sync (l, o)) as [spc|] eqn:Hpcsync; try discriminate.
-      destruct (map_opt pc_sync sk) as [ssk|] eqn:Hsk; try discriminate. 
+      destruct (map_opt pc_sync sk) as [ssk|] eqn:Hsk; try discriminate.
       injection cfg_sync; intros. rewrite <- H2 in n_steps. (* unpacked starting spec cfg *)
       destruct spc as (sl, so) eqn:Hspc. simpl in n_steps.
       destruct (nth_error p sl) eqn:Hsfst; try discriminate. rename p0 into sblk.
       destruct (nth_error (fst sblk) so) eqn:Hssnd; try discriminate. rename i0 into si.
       destruct i eqn:Hi.
-      { (* skip *) assert (si = <{{ skip }}>). { admit. }
+      { (* skip *) 
+        assert (si = <{{ skip }}>). { admit. }
         specialize (ISMI_Skip p ipc r m sk ms H1); intros. 
         rewrite H3 in n_steps. injection n_steps; intros. rewrite <- H5 in *.
         inv tgt_steps. inv H12. inv H7.
-        { apply SpecSMI_Skip with (r:=r) (m:=m) (sk:=sk) (ms:=ms) in H12.
-          exists ((l, o) + 1, r, m, sk, ms). simpl. split; auto.
-          simpl in *. assert (pc_sync (l, (add o 1)) <> None).
-          { rewrite Forall_forall in H0. specialize H0 with (x:=iblk). specialize (nth_error_In p l Hfst). intros.
-            apply H0 in H2. destruct H2, H3. unfold last_inst_ret_or_jump in H3.
-            assert (fst iblk <> []). { apply blk_not_empty_list. assumption. }
-            unfold nonempty_block in H2. assert (0 < Datatypes.length (rev (fst iblk))).
-            { rewrite length_rev. assumption. } specialize (blk_not_empty_list (rev (fst iblk), snd iblk) H7).
-            simpl. intros. red. intros. admit.
-          }
-          { admit. }
+        { (* speculative inst: skip *)
+          apply SpecSMI_Skip with (r:=r) (m:=m) (sk:=sk) (ms:=ms) in H12.
+          exists ((l, o) + 1, r, m, sk, ms). simpl. split; auto. simpl in *.
+          clear H1. clear cfg_sync. clear n_steps.
+          rewrite Forall_forall in H0, wfds. simpl in wfds.
+          assert (pc_sync (l, (add o 1)) = Some (sl, (add so 1))).
+          { unfold pc_sync. cbn. rewrite Hfst.
+            (* first, this can't be None if o is skip
+               second, o + 1 can't ever match with 0
+            *)
+            destruct (nth_error (fst iblk) (add o 1)) eqn:Hi_next.
+            - (* Some *)
+              destruct (add o 1).
+              + (* 0 (not possible) *)
+                simpl. assert (add o (S 0) <> 0). { induction o; try discriminate. } f_equal. f_equal;
+                [inv H4; try contradiction; simpl in *; rewrite Hfst in H3; rewrite Hsnd in H3; discriminate|].
+                inv H12; [| |destruct so; try discriminate].
+                { simpl in H3. destruct (nth_error (uslh_prog p) sl) as [uslh_blk|]; try discriminate. inv H4; try contradiction.
+                  simpl in H5. rewrite Hfst in H5. rewrite Hsnd in H5. discriminate.
+                }
+                { inv H4; try contradiction. simpl in H5. rewrite Hfst in H5. rewrite Hsnd in H5. discriminate. }
+              + (* S _ *) f_equal. admit.
+            - (* None (not possible) *)
+              inv H4.
+              + inv H12.
+                * inv H3. destruct (nth_error (uslh_prog p) sl) as [uslh_blk|]; try discriminate. 
+                  (* show that skip can't be last inst in blk (i.e. Hsnd and Hi_next together make a contradiction) *)
+                  specialize H0 with (x:=iblk). specialize (nth_error_In p l Hfst). intros. specialize (H0 H1).
+                  destruct H0, H3. unfold block_terminator_prog in wfp_term. rewrite forallb_forall in wfp_term.
+                  specialize wfp_term with (x:=iblk). specialize (wfp_term H1). unfold block_terminator in wfp_term.
+                  admit.
+                * admit.
+                * admit.
+              + admit.
+              + admit.
+          } (* end assert proof *)
+          { (* finish skip proof *) admit. }
         }
+        (* other speculative instructions *)
         { admit. }
         { admit. }
         { admit. }
@@ -699,37 +740,7 @@ Proof.
         { admit. }
         { admit. }
       }
-
-        (* Inductive
-multi_spec_inst (p0 : prog) : state -> state -> dirs -> obs -> nat -> Prop :=
-    multi_spec_inst_refl : forall sc : state,
-                           p0 |- <(( sc ))> -->*_ [] ^^ [] ^^ 0 <(( sc ))>
-  | multi_spec_inst_trans : forall (sc1 sc2 sc3 : state) 
-                              (ds1 ds2 : dirs) (os1 os2 : obs) 
-                              (n : nat),
-                            p0 |- <(( sc1 ))> -->_ ds1 ^^ os1 <(( sc2 ))> ->
-                            p0 |- <(( sc2 ))> -->*_ ds2 ^^ os2 ^^ n <(( sc3
-                            ))> ->
-                            p0 |- <(( sc1 ))> -->*_ 
-                            ds1 ++ ds2 ^^ os1 ++ os2 ^^ 
-                            S n <(( sc3 ))>.
- *)
-
-
-        (* rewrite <- Hipc. exists (ipc + 1, r, m, sk, ms). split; [apply H2|]. *)
-        (* Unable to unify
-            "p |- <(( S_Running (ipc, r, m, sk, ms) ))> -->i_ [] ^^ [] <((S_Running (ipc + 1, r, m, sk, ms) ))>"
-           with
-            "p |- <(( S_Running (ipc, r, m, sk, ms) ))> -->i_ ds ^^ os <((S_Running (ipc + 1, r, m, sk, ms) ))>" 
-        *)
-        (* Before I can do this, I need to show that ds, os = [] *)
-        
-
-
-
-
-
-      
+      (* other instructions *)
       { admit. }
       { admit. }
       { admit. }
@@ -737,7 +748,7 @@ multi_spec_inst (p0 : prog) : state -> state -> dirs -> obs -> nat -> Prop :=
       { admit. }
       { admit. }
       { admit. }
-      { admit. }
+      { admit. }        
     + (* None *)
       simpl in cfg_sync. destruct (pc_sync (l, o)) eqn:Hpcsync; try discriminate.
       destruct (map_opt pc_sync sk) eqn:Hsksync; try discriminate. unfold pc_sync in Hpcsync.
@@ -749,59 +760,7 @@ multi_spec_inst (p0 : prog) : state -> state -> dirs -> obs -> nat -> Prop :=
     destruct (map_opt pc_sync sk) eqn:Hsksync; try discriminate. unfold pc_sync in Hpcsync.
     cbn in Hpcsync. destruct (nth_error p l) as [blk'|] eqn:Hfst'; discriminate.
 Admitted.
-  
-
-
-      (* destruct p[[ipc]] eqn:PC; unfold fetch in PC; cbn in PC; cycle 1.
-  { 
-
-  }
-
-
-  { destruct i.
-    - (* skip *)
-      specialize (ISMI_Skip p ipc r m sk ms PC); intros. specialize (pc_not_none ipc <{{ skip }}> PC); intros.
-      destruct H2 as (blk & H3 & H4). cbn in cfg_sync. (* specialize H0 with (x:=blk).*)
-      (* specialize (nth_error_In p (fst ipc) H3); intros. apply H0 in H2. destruct H2, H5.*)
-      destruct (nth_error p (fst ipc)); try discriminate.
-      (* tgt starting pc in-bounds for program *) injection H3; intros. rewrite H2 in *. clear H2. clear H3. 
-      destruct (nth_error (fst blk) (snd ipc)); try discriminate. 
-      (* tgt starting pc in-bounds for block *)
-      injection H4; intros. rewrite H2 in *. clear H4. destruct (Bool.eqb (snd blk) true); simpl in *.
-      + (* proc block *) destruct (snd ipc).
-        * (* snd ipc = 0 *) destruct (map_opt pc_sync sk); try discriminate. 
-          
-
-
-
-
-          (* Some *) simpl in *. injection cfg_sync; intros. rewrite <- H3 in *. clear cfg_sync. simpl in *.
-          destruct (nth_error p (fst ipc)) as [iblk|] eqn:Hiblk; try discriminate. simpl in *.
-          (* Some *) specialize H0 with (x:=iblk). specialize (nth_error_In p (fst ipc) Hiblk); intros.
-          apply H0 in H4. destruct H4, H5. unfold nonempty_block in H4. 
-          destruct (fst iblk); try discriminate.
-          simpl in *. destruct l0; try discriminate.
-         destruct l0; try discriminate. simpl in *. rewrite Forall_forall in H6.
-          
-
-
-
-                  
-                   
-        *  
-      + admit.
-    - admit.
-    - admit.
-    - admit.
-    - admit.
-    - admit.
-    - admit.
-    - admit.
-    - admit.
-  }
-         { admit. }*)
-  
-
+ 
 End BCC.
 
 (* Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
