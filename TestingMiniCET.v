@@ -294,10 +294,11 @@ Definition gen_reg_wt (c: rctx) (pst: list nat) : G reg :=
   b <- gen_binds;;
   ret (default_val, b).
 
-QuickChick (forAll arbitrary (fun (c : rctx) =>
+Definition wt_exp_is_defined := (forAll arbitrary (fun (c : rctx) =>
             forAll (gen_reg_wt c [3; 3; 1; 1]) (fun (state: reg) =>
             forAll (gen_exp_wt 4 c [3; 3; 1; 1]) (fun (exp : exp) =>
             implication (is_defined (eval state exp)) true)))).
+(*! QuickChick wt_exp_is_defined. *)
 
 Definition gen_asgn_wt (t: ty) (c: rctx) (pst: list nat) : G inst :=
   let tlst := filter (fun '(_, t') => ty_eqb t t') (snd c) in
@@ -498,7 +499,8 @@ Definition basic_block_gen_example : G (list inst) :=
   tm <- arbitrary;;
   gen_blk_with_term_wt c tm 8 8 [3; 3; 1; 1].
 
-QuickChick (forAll (basic_block_gen_example) (fun (blk: list inst) => (basic_block_checker blk))).
+Definition basic_block_test := (forAll (basic_block_gen_example) (fun (blk: list inst) => (basic_block_checker blk))).
+(*! QuickChick basic_block_test. *)
 
 Fixpoint _gen_proc_with_term_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match fsz with
@@ -542,7 +544,8 @@ Definition gen_prog_with_term_wt_example (pl: nat) :=
 Definition prog_basic_block_checker (p: prog) : bool :=
   forallb (fun bp => (basic_block_checker (fst bp))) p.
 
-QuickChick (forAll (gen_prog_with_term_wt_example 8) (fun (p: prog) => (prog_basic_block_checker p))).
+Definition basic_block_wt_test := (forAll (gen_prog_with_term_wt_example 8) (fun (p: prog) => (prog_basic_block_checker p))).
+(*! QuickChick basic_block_wt_test. *)
 
 (* Similarly to "_gen_proc_wf", we generate a procedure with all expressions well-typed (with respect to
   statuc register context "c : rctx"). Here, "fsz" is the number of blocks in procedure, "bsz" is the
@@ -604,11 +607,13 @@ Definition gen_prog_wt' (c : rctx) (pst : list nat) (bsz pl : nat) :=
   tm <- arbitrary;;
   _gen_prog_wt c tm bsz pl pst pst.
 
-QuickChick (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf p))).
-QuickChick (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf (uslh_prog p)))).
+Definition wt_wf := (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf p))).
+(*! QuickChick wt_wf. *)
+Definition wt_uslh_wf := (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf (uslh_prog p)))).
+(*! QuickChick wt_uslh_wf. *)
 
 (* The well-typed expression "always evaluates" in the register set produces by "gen_reg_wt " *)
-QuickChick (
+Definition wt_expr_is_defined := (
     forAll arbitrary (fun (c : rctx) =>
     forAll arbitrary (fun (pl : nat) =>
     forAll (choose (2, 5)) (fun (exp_sz : nat) => 
@@ -617,6 +622,7 @@ QuickChick (
     forAll (gen_exp_wt exp_sz c pst) (fun (e : exp) =>
     is_defined (eval r e)
   )))))).
+(*! QuickChick wt_expr_is_defined. *)
 
 (* "+++ Passed 10000 tests (0 discards)" *)
 
@@ -709,7 +715,8 @@ Definition gen_prog_ty_ctx_wt (bsz pl: nat) : G (rctx * tmem * prog) :=
   p <- _gen_prog_wt c tm bsz pl pst pst;;
   ret (c, tm, p).
 
-QuickChick (forAll (gen_prog_ty_ctx_wt 3 8) (fun '(c, tm, p) => ((ty_prog c tm p) && (wf p)))).
+Definition ty_prog_wf := (forAll (gen_prog_ty_ctx_wt 3 8) (fun '(c, tm, p) => ((ty_prog c tm p) && (wf p)))).
+(*! QuickChick ty_prog_wf. *)
 
 (** Relative Security *)
 
@@ -1100,10 +1107,11 @@ Definition m_wtb (m: mem) (tm: tmem) : bool :=
 
 (* check 0: load/store transformation creates basic blocks *)
 
-QuickChick (
+Definition load_store_trans_basic_blk := (
     forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
       List.forallb basic_block_checker (map fst (transform_load_store_prog c tm p)))
 ).
+(*! QuickChick load_store_trans_basic_blk. *)
 
 (* check 1: generated program is stuck-free. *)
 
@@ -1118,7 +1126,7 @@ Definition stuck_free (f : nat) (p : prog) (c: cfg)
   let ist := (c, tc, []) in
   TaintTracking.steps_taint_track f p ist [].
 
-QuickChick (
+Definition load_store_trans_stuck_free := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
@@ -1130,6 +1138,7 @@ QuickChick (
   | TaintTracking.EOutOfFuel st os => checker tt
   | TaintTracking.EError st os => printTestCase (show p' ++ nl) (checker false)
   end)))).
+(*! QuickChick load_store_trans_stuck_free. *)
 
 (* +++ Passed 10000 tests (6173 discards) *)
 
@@ -1191,7 +1200,7 @@ Definition empty_mem : mem := [].
 
 Definition empty_rs : reg := t_empty (FP 0).
 
-QuickChick (
+Definition no_obs_prog_no_obs := (
   forAll gen_no_obs_prog (fun p =>
   let icfg := (ipc, empty_rs, empty_mem, istk) in
     match taint_tracking 10 p icfg with
@@ -1200,6 +1209,7 @@ QuickChick (
     | None => checker tt
     end
   )).
+(*! QuickChick no_obs_prog_no_obs. *)
 
 (* check 3: implicit flow *)
 
@@ -1230,7 +1240,7 @@ Definition gen_prog_and_unused_var : G (rctx * tmem * list nat * prog * string) 
     x <- elems_ "X0"%string unused_vars;;
     ret (c, tm, pst, p, x).
 
-QuickChick (
+Definition unused_var_no_leak := (
   forAll gen_prog_and_unused_var (fun '(c, tm, pst, p, unused_var) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
@@ -1244,6 +1254,7 @@ QuickChick (
   | TaintTracking.EOutOfFuel st os => checker tt
   | TaintTracking.EError st os => checker false
   end)))).
+(*! QuickChick unused_var_no_leak. *)
 
 (* check 5: gen_pub_equiv_same_ty works *)
 
@@ -1261,35 +1272,39 @@ Definition gen_pub_equiv_same_ty (P : total_map label) (s: total_map val) : G (t
   ) m (ret []);;
   ret (d, new_m).
 
-QuickChick (forAll gen_pub_vars (fun P =>
+Definition gen_pub_equiv_is_pub_equiv := (forAll gen_pub_vars (fun P =>
     forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv_same_ty P s1) (fun s2 =>
       pub_equivb P s1 s2
   )))).
+(*! QuickChick gen_pub_equiv_is_pub_equiv. *)
 
 (* check 6: generated register set is well-typed. *)
 
-QuickChick (
+Definition gen_reg_wt_is_wt := (
   forAll (gen_prog_ty_ctx_wt' 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs => rs_wtb rs c))).
+(*! QuickChick gen_reg_wt_is_wt. *)
 
 (* check 5: gen_pub_mem_equiv_same_ty works *)
 
-QuickChick (forAll gen_pub_mem (fun P =>
+Definition gen_pub_mem_equiv_is_pub_equiv := (forAll gen_pub_mem (fun P =>
     forAll gen_mem (fun s1 =>
     forAll (gen_pub_mem_equiv_same_ty P s1) (fun s2 =>
       (checker (pub_equiv_listb P s1 s2))
     )))).
+(*! QuickChick gen_pub_mem_equiv_is_pub_equiv. *)
 
 (* check 7: generated memory is well-typed. *)
 
-QuickChick (
+Definition gen_mem_wt_is_wt := (
   forAll (gen_prog_ty_ctx_wt' 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_wt_mem tm pst) (fun m => m_wtb m tm))).
+(*! QuickChick gen_mem_wt_is_wt. *)
 
 (* check 8: non-interference *)
 
-QuickChick (
+Definition test_ni := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
@@ -1310,6 +1325,7 @@ QuickChick (
       end))
    | None => checker tt (* discard *)
   end)))).
+(*! QuickChick test_ni. *)
 
 (* +++ Passed 1000000 tests (639813 discards) *)
 (* Time Elapsed: 152.683837s *)
@@ -1440,7 +1456,7 @@ Definition spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (ds: dirs) : spec_exe
 
 (* Extract Constant defNumTests => "1000000". *)
 
-QuickChick (
+Definition test_safety_preservation := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
@@ -1458,6 +1474,7 @@ QuickChick (
    | SEOutOfFuel _ _ ds => checker tt
    end))
   )))).
+(*! QuickChick test_safety_preservation. *)
 
 (* +++ Passed 1000000 tests (431506 discards) *)
 (* Time Elapsed: 137.819446s *)
@@ -1466,7 +1483,7 @@ QuickChick (
 
 (* Extract Constant defNumTests => "1000000". *)
 
-QuickChick (
+Definition test_relative_security := (
   (* TODO: should make sure shrink indeed satisfies invariants of generator;
            or define a better shrinker *)
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
@@ -1522,6 +1539,7 @@ QuickChick (
       end))
    | None => collect "tt1 failed"%string (checker tt) (* discard *)
   end)))).
+(*! QuickChick test_relative_security. *)
 
 (* Outdated. available commit: 58fa2d5c090d764b548c967ff4c40a6d6f2fb679*)
 (* +++ Passed 1000000 tests (0 discards) *)

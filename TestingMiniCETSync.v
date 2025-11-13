@@ -27,6 +27,10 @@ From SECF Require Import TestingMiniCET.
 
 (*! Section testing_sync *)
 
+(* Same type as trace, so that you can easily "disable" trace using find+replace *)
+Definition untrace {A : Type} (s : string) (a : A) : A := a.
+
+
 Inductive state A : Type :=
   | S_Running (a: A)
   | S_Undef
@@ -131,12 +135,12 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
       let '(c, ms) := ic in 
       let '(pc, r, m, sk) := c in
       match p[[pc]] with 
-        None => trace "lookup fail" (S_Undef, ds, [])
+        None => untrace "lookup fail" (S_Undef, ds, [])
       | Some i => 
           match i with 
             | <{{branch e to l}}> => 
               if seq.nilp ds then
-                trace "idealBranch: directions are empty!" (S_Undef, ds, [])
+                untrace "idealBranch: directions are empty!" (S_Undef, ds, [])
               else
                 match
                   d <- hd_error ds;;
@@ -152,7 +156,7 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
                 end
             | <{{call e}}> =>
               if seq.nilp ds then
-                trace "idealCall: directions are empty!" (S_Undef, ds, [])
+                untrace "idealCall: directions are empty!" (S_Undef, ds, [])
               else
                 match
                   d <- hd_error ds;;
@@ -169,7 +173,10 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
                 end
             | <{{x<-load[e]}}> =>
               match
+                (*! *)
                 let i := if ms then (ANum 0) else e in
+                (*!! ideal-load-no-mask *)
+                (*! let i := e in *)
                 n <- to_nat (eval r i);;
                 v' <- nth_error m n;;
                 let c := (pc+1, (x !-> v'; r), m, sk) in
@@ -180,7 +187,10 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
               end
             | <{{store[e]<-e'}}> =>
               match
+                (*! *)
                 let i := if ms then (ANum 0) else e in
+                (*!! ideal-store-no-mask *)
+                (*! let i := e in *)
                 n <- to_nat (eval r i);;
                 let c:= (pc+1, r, upd n m (eval r e'), sk) in
                 ret (S_Running (c, ms), ds, [OStore n])
@@ -221,14 +231,14 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
       let '(c, ct, ms) := sc in
       let '(pc, r, m, sk) := c in
       match p[[pc]] with
-      | None => trace "lookup fail" (S_Undef, ds, [])
+      | None => untrace "lookup fail" (S_Undef, ds, [])
       | Some i => 
           match i with
           | <{{branch e to l}}> =>
-            if ct then (*trace "ct set at branch"*) (S_Fault, ds, []) else
+            if ct then (*untrace "ct set at branch"*) (S_Fault, ds, []) else
             match
               if seq.nilp ds then
-                trace "Branch: Directions are empty!" None
+                untrace "Branch: Directions are empty!" None
               else
                 d <- hd_error ds;;
                 b' <- is_dbranch d;;
@@ -238,22 +248,25 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
                 let pc' := if b' then (l, 0) else (pc+1) in
                 ret ((S_Running ((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
             with 
-            | None => trace "branch fail" (S_Undef, ds, [])
+            | None => untrace "branch fail" (S_Undef, ds, [])
             | Some (c, ds, os) => (c, ds, os)
             end
           | <{{call e}}> =>
-            if ct then (*trace "ct set at call"*) (S_Fault, ds, []) else
+            if ct then (*untrace "ct set at call"*) (S_Fault, ds, []) else
             match
               if seq.nilp ds then
-                trace "Call: Directions are empty!" None
+                untrace "Call: Directions are empty!" None
               else
                 d <- hd_error ds;;
                 pc' <- is_dcall d;;
                 l <- to_fp (eval r e);;
                 let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+                (*! *)
                 ret ((S_Running ((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
+                (*!! spec-call-no-set-ct *)
+                (*! ret ((S_Running ((pc', r, m, (pc+1)::sk), ct, ms'), tl ds), [OCall l]) *)
             with 
-            | None => trace "call fail" (S_Undef, ds, [])
+            | None => untrace "call fail" (S_Undef, ds, [])
             | Some (c, ds, os) => (c, ds, os)
             end
           | <{{ctarget}}> =>
@@ -261,11 +274,11 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
               is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
               (ret (S_Running ((pc+1, r, m, sk), false, ms), ds, []))
             with 
-            | None => trace "ctarget fail!" (S_Undef, ds, [])
+            | None => untrace "ctarget fail!" (S_Undef, ds, [])
             | Some (c, ds, os) => (c, ds, os)
             end
           | _ =>
-            if ct then (*trace ("ct set at " ++ show i)*) (S_Fault, ds, [])
+            if ct then (*untrace ("ct set at " ++ show i)*) (S_Fault, ds, [])
             else
               match step p (S_Running c) with 
               | (S_Running c', o) => (S_Running (c', false, ms), ds, o)
@@ -340,7 +353,10 @@ Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   let '(c, ms) := ic in
   let '(pc, r, m, stk) := c in
   pc' <- pc_sync p pc;;
+  (*! *)
   stk' <- map_opt (pc_sync p) stk;;
+  (*!! spec_cfg_sync-no-stack *)
+  (*! let stk' := stk in *)
   ret (pc', r_sync r ms, m, stk', false, ms).
 
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
@@ -361,8 +377,8 @@ Definition steps_to_sync_point (p: prog) (tsc: spec_cfg) (ds: dirs) : option nat
                                                                     i <- nth_error (fst blk) o;;
                                                                     (* 4 steps if procedure block *)
                                                                     if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
-                                                    | [] => trace "empty directives for call" None
-                                                    | _ => trace "incorrect directive for call" None (* incorrect directive for call *)
+                                                    | [] => untrace "empty directives for call" None
+                                                    | _ => untrace "incorrect directive for call" None (* incorrect directive for call *)
                                                     end
                                   | _ => Some 1 (* assignment from source program, not decoration *)
                                   end
@@ -371,8 +387,8 @@ Definition steps_to_sync_point (p: prog) (tsc: spec_cfg) (ds: dirs) : option nat
     | <{{ branch _ to _ }}> => (* branch decorations all come after the instruction itself, so this is the sync point *)
                                match ds with
                                | DBranch b :: _ => Some (if b then 3 else 2)
-                                | [] => trace "empty directives for branch" None
-                               | _ => trace "missing directive for branch" None
+                                | [] => untrace "empty directives for branch" None
+                               | _ => untrace "missing directive for branch" None
                                end
     | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
     end.
@@ -407,7 +423,7 @@ Definition gen_directive_from_ideal_cfg (p: prog) (pst: list nat) (ic: ideal_cfg
         )
       | _ => ret []
       end
-  | None => trace "lookup error" (ret [])
+  | None => untrace "lookup error" (ret [])
   end.
 
 Definition get_directive_for_seq_behaviour (p: prog) (pst: list nat) (ic: ideal_cfg) : dirs :=
@@ -428,7 +444,7 @@ Definition get_directive_for_seq_behaviour (p: prog) (pst: list nat) (ic: ideal_
         end
       | _ => []
       end
-  | None => trace "lookup error" ([])
+  | None => untrace "lookup error" ([])
   end.
 
 Definition gen_directive_triggering_misspec (p: prog) (pst: list nat) (ic: ideal_cfg) : G dirs :=
@@ -456,7 +472,7 @@ Definition gen_directive_triggering_misspec (p: prog) (pst: list nat) (ic: ideal
         end
       | _ => ret []
       end
-  | None => trace "lookup error" (ret [])
+  | None => untrace "lookup error" (ret [])
   end.
 
 Scheme Equality for val.
@@ -497,7 +513,7 @@ Definition spec_cfg_eqb_up_to_callee (st1 st2 : spec_cfg) :=
 Compute ideal_step ([ ([ <{{skip}}> ], true) ]) (S_Running (((0,0)), (t_empty UV), [UV; UV; UV], [], false)) [].
 
 (* Testing single-step compiler correctness *)
-QuickChick (
+Definition single_step_cc := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 => 
   forAll (gen_wt_mem tm pst) (fun m1 =>
@@ -513,31 +529,31 @@ QuickChick (
       | (S_Fault, _, oideal) =>  
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
           | None => match spec_steps 4 (uslh_prog p) (S_Running tcfg) ds with 
-                    | (S_Fault, _, ospec) => (*trace "fault"*) (checker (obs_eqb oideal ospec)) (* speculative execution should fail if it won't sync again *)
-                    | _ => trace "spec exec didn't fail"%string (checker false)
+                    | (S_Fault, _, ospec) => (*untrace "fault"*) (checker (obs_eqb oideal ospec)) (* speculative execution should fail if it won't sync again *)
+                    | _ => untrace "spec exec didn't fail"%string (checker false)
                     end
           | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
           end
       | (S_Term, _, oideal) =>
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
           | None => match spec_steps 1 (uslh_prog p) (S_Running tcfg) ds with 
-                    | (S_Term, _, ospec) => (*trace "term"*) (checker (obs_eqb oideal ospec))
-                    | _ => trace "spec exec didn't terminate"%string (checker false)
+                    | (S_Term, _, ospec) => (*untrace "term"*) (checker (obs_eqb oideal ospec))
+                    | _ => untrace "spec exec didn't terminate"%string (checker false)
                     end
           | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
           end
       | (S_Running icfg', _, oideal) => 
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
-          | None => trace "Ideal step succeeds, but steps_to_sync_point undefined" (checker false)
+          | None => untrace "Ideal step succeeds, but steps_to_sync_point undefined" (checker false)
           | Some n => match spec_steps n (uslh_prog p) (S_Running tcfg) ds with 
                       | (S_Running tcfg', _, ospec) => match (spec_cfg_sync p icfg') with
                                               | None => collect "sync fails "%string (checker tt)
                                               | Some tcfgref => match (spec_cfg_eqb_up_to_callee tcfg' tcfgref) with 
-                                                                | true => (*trace ("running " ++ show oideal ++ " / " ++ show ospec)*) (checker (obs_eqb oideal ospec))
-                                                                | false => (*trace (show tcfg' ++ "|||||" ++ show tcfgref)*) (checker false)
+                                                                | true => (*untrace ("running " ++ show oideal ++ " / " ++ show ospec)*) (checker (obs_eqb oideal ospec))
+                                                                | false => (*untrace (show tcfg' ++ "|||||" ++ show tcfgref)*) (checker false)
                                                                 end
                                               end
-                      | (_, ds, os) => trace ("spec exec fails "%string ++ (show os) ++ show (uslh_prog p)) (checker false)
+                      | (_, ds, os) => untrace ("spec exec fails "%string ++ (show os) ++ show (uslh_prog p)) (checker false)
                       end
           end
       | _ => collect "ideal exec undef"%string (checker tt)
@@ -545,6 +561,8 @@ QuickChick (
       )
   end
   ))))))).
+
+(*! QuickChick single_step_cc. *)
 (* Results:
   Passed 10000 tests (105 discards due to S_Undef in ideal exec)
 
@@ -554,7 +572,7 @@ QuickChick (
 *)
 
 (* Testing (single-step) Gilles' lemma *)
-QuickChick (
+Definition single_step_gilles := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 => 
   forAll (gen_reg_wt c pst) (fun rs2 => 
@@ -589,8 +607,10 @@ QuickChick (
   end
   ))))))))).
 
+(*! QuickChick single_step_gilles. *)
+
 (* Testing (single-step) sequential behaviour *)
-QuickChick (
+Definition single_step_seq_ideal := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 => 
   forAll (gen_wt_mem tm pst) (fun m1 =>
@@ -602,29 +622,30 @@ QuickChick (
   match (step p (S_Running cfg)) with 
   | (S_Running _, o1) =>
       match (ideal_step p (S_Running icfg) ds) with
-      | (S_Running _, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
-      | _ => trace "not running" (checker false)
+      | (S_Running _, _, o2) => untrace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => untrace "not running" (checker false)
       end
   | (S_Undef, o1) =>
       match (ideal_step p (S_Running icfg) ds) with
-      | (S_Undef, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
-      | _ => trace "not undef" (checker false)
+      | (S_Undef, _, o2) => untrace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => untrace "not undef" (checker false)
       end
   | (S_Fault, o1) =>
       match (ideal_step p (S_Running icfg) ds) with
-      | (S_Fault, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
-      | _ => trace "not fault" (checker false)
+      | (S_Fault, _, o2) => untrace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => untrace "not fault" (checker false)
       end
   | (S_Term, o1) =>
       match (ideal_step p (S_Running icfg) ds) with
-      | (S_Term, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
-      | _ => trace "not term" (checker false)
+      | (S_Term, _, o2) => untrace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => untrace "not term" (checker false)
       end
   end
   )))))).
+(*! QuickChick single_step_seq_ideal. *)
 
 (* Testing misspeculation-triggering steps *)
-QuickChick (
+Definition single_step_trigger := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 => 
   forAll (gen_wt_mem tm pst) (fun m1 =>
@@ -636,24 +657,24 @@ QuickChick (
   match (step p (S_Running cfg)) with 
   | (S_Running _, o1) =>
       match (ideal_step p (S_Running icfg) ds) with
-      | (S_Running icfg', _, o2) => trace (show o1 ++ " / " ++ show o2) (checker ((obs_eqb o1 o2) && (match ds with [] => true | _ => snd icfg' end)))
-      | _ => trace "not running" (checker false)
+      | (S_Running icfg', _, o2) => untrace (show o1 ++ " / " ++ show o2) (checker ((obs_eqb o1 o2) && (match ds with [] => true | _ => snd icfg' end)))
+      | _ => untrace "not running" (checker false)
       end
   | (S_Undef, o1) =>
       match (ideal_step p (S_Running icfg) ds) with
-      | (S_Undef, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
-      | _ => trace "not undef" (checker false)
+      | (S_Undef, _, o2) => untrace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => untrace "not undef" (checker false)
       end
   | (S_Fault, o1) =>
       match (ideal_step p (S_Running icfg) ds) with
-      | (S_Fault, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
-      | _ => trace "not fault" (checker false)
+      | (S_Fault, _, o2) => untrace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => untrace "not fault" (checker false)
       end
   | (S_Term, o1) =>
       match (ideal_step p (S_Running icfg) ds) with
-      | (S_Term, _, o2) => trace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
-      | _ => trace "not term" (checker false)
+      | (S_Term, _, o2) => untrace (show o1 ++ " / " ++ show o2) (checker (obs_eqb o1 o2))
+      | _ => untrace "not term" (checker false)
       end
   end
   ))))))).
-
+(*! QuickChick single_step_trigger. *)
