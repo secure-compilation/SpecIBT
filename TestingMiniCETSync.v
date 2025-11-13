@@ -147,8 +147,15 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
                   b' <- is_dbranch d;;
                   n <- to_nat (eval r e);;
                   let b := (negb ms) && not_zero n in
+                  (*! *)
                   let ms' := ms || negb (Bool.eqb b b') in
+                  (*!! ideal_branch_bad_update_ms *)
+                  (*! let ms' := negb (Bool.eqb b b') in *)
+                  let _ := I in (* just to separate the two mutants *)
+                  (*! *)
                   let pc' := if b' then (l, 0) else (pc+1) in
+                  (*!! ideal_branch_ignore_directive *)
+                  (*! let pc' := if b then (l, 0) else (pc+1) in *)
                   ret ((S_Running ((pc', r, m, sk), ms'), tl ds), [OBranch b])
                 with 
                 | None => (S_Undef, ds, [])
@@ -163,7 +170,10 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
                   pc' <- is_dcall d;;
                   l <- (if ms then Some 0 else to_fp (eval r e));;
                   blk <- nth_error p (fst pc');;
+                  (*! *)
                   if (snd blk && (snd pc' ==b 0)) then
+                  (*!! ideal_call_no_check_target *)
+                  (*! if true then *)
                     let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
                     ret ((S_Running ((pc', r, m, (pc+1)::sk), ms'), tl ds), [OCall l])
                   else Some (S_Fault, ds, [OCall l])
@@ -272,7 +282,10 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
           | <{{ctarget}}> =>
             match
               is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
+              (*! *)
               (ret (S_Running ((pc+1, r, m, sk), false, ms), ds, []))
+              (*!! spec_ctarget_no_clear *)
+              (*! (ret (S_Running ((pc+1, r, m, sk), ct, ms), ds, [])) *)
             with 
             | None => untrace "ctarget fail!" (S_Undef, ds, [])
             | Some (c, ds, os) => (c, ds, os)
@@ -376,7 +389,14 @@ Definition steps_to_sync_point (p: prog) (tsc: spec_cfg) (ds: dirs) : option nat
                                                                     blk <- nth_error p l;;
                                                                     i <- nth_error (fst blk) o;;
                                                                     (* 4 steps if procedure block *)
-                                                                    if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
+                                                                    if (Bool.eqb (snd blk) true) && (o =? 0) then 
+                                                                    (*! *)
+                                                                    Some 4 
+                                                                    (*!! steps_to_sync_point-call-3 *)
+                                                                    (*! Some 3 *)
+                                                                    (*!! steps_to_sync_point-call-5 *)
+                                                                    (*! Some 5 *)
+                                                                    else None
                                                     | [] => untrace "empty directives for call" None
                                                     | _ => untrace "incorrect directive for call" None (* incorrect directive for call *)
                                                     end
@@ -386,8 +406,15 @@ Definition steps_to_sync_point (p: prog) (tsc: spec_cfg) (ds: dirs) : option nat
                       end
     | <{{ branch _ to _ }}> => (* branch decorations all come after the instruction itself, so this is the sync point *)
                                match ds with
+                               (*! *)
                                | DBranch b :: _ => Some (if b then 3 else 2)
-                                | [] => untrace "empty directives for branch" None
+                               (*!! step_to_sync_point-branch-always-3 *)
+                               (*! | DBranch b :: _ => Some 3 *)
+                               (*!! step_to_sync_point-branch-always-2 *)
+                               (*! | DBranch b :: _ => Some 2 *)
+                               (*!! step_to_sync_point-branch-inverted *)
+                               (*! | DBranch b :: _ => Some (if b then 2 else 3) *)
+                               | [] => untrace "empty directives for branch" None
                                | _ => untrace "missing directive for branch" None
                                end
     | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
