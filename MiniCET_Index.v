@@ -24,7 +24,7 @@ Inductive state {A} : Type :=
   | S_Running (a: A)
   | S_Undef
   | S_Fault
-  | S_Term.
+| S_Term.
 
 (** Sequential small-step semantics for MiniCET *)
 
@@ -571,6 +571,7 @@ Ltac inv H := inversion H; subst; clear H.
       • The start states are synchronized wrt pc, register state, and stack 
 *)
 
+(*
 Lemma pc_not_none : forall (pc: cptr) (i: inst),
   p[[pc]] = Some i ->
   exists blk, nth_error p (fst pc) = Some blk /\ nth_error (fst blk) (snd pc) = Some i.
@@ -578,7 +579,9 @@ Proof.
   intros. destruct pc as (l & o) eqn:Hpc. simpl in *.
   destruct (nth_error p l); [exists p0; split; auto|discriminate].
 Qed.
+ *)
 
+(* using this *)
 Lemma rev_fetch : forall (pc: cptr) (blk: list inst * bool) (i: inst),
   nth_error p (fst pc) = Some blk ->
   nth_error (fst blk) (snd pc) = Some i ->
@@ -589,18 +592,8 @@ Proof.
   - unfold fetch. simpl in H, H0. rewrite H. simpl in *. assumption.
   - rewrite Hpc in *. simpl in *. rewrite H in Hblk. discriminate.
 Qed.
-(*Print ISMI_Skip. ==>
-  ISMI_Skip : forall (pc : cptr) (r : reg) (m : mem) 
-                  (sk : list cptr) (ms : bool),
-                p0 [[pc]] = Some <{{ skip }}> ->
-                p0 |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_ [] ^^ [] <((
-   S_Running (pc + 1, r, m, sk, ms) ))>*)
 
-(* nth_error_In:
-  forall [A : Type] (l : list A) (n : nat) [x : A],
-  nth_error l n = Some x -> In x l
- *)
-
+(* using this *)
 Lemma blk_not_empty_list : forall (blk: list inst * bool),
   nonempty_block blk -> (fst blk) <> [].
 Proof.
@@ -609,9 +602,46 @@ Proof.
   contradiction.
 Qed.
 
-(* length_rev:
-  forall [A : Type] (l : list A),
-   Datatypes.length (rev l) = Datatypes.length l *) 
+(*
+Lemma rev_empty : forall {A} (l: list A),
+  l = [] -> rev l = [].
+Proof.
+  intros; unfold not; intros. rewrite H; reflexivity.
+Qed.
+
+Lemma empty_length_0 : forall {A} (l: list A),
+  l = [] -> Datatypes.length l = 0.
+Proof.
+  intros. rewrite H. simpl; reflexivity.
+Qed.
+
+Lemma nonempty_length_nonzero : forall {A} (l: list A),
+  l <> [] -> Datatypes.length l <> 0.
+Proof.
+  intros. destruct l; try contradiction.
+  simpl. unfold not; intros; discriminate.
+Qed.
+
+Lemma rev_not_empty : forall {A} (l: list A),
+  l <> [] -> rev l <> [].
+Proof.
+  intros. destruct l; try contradiction.
+  unfold not; intros. simpl in *. apply app_eq_nil in H0.
+  destruct H0. discriminate.
+Qed.
+ *)
+
+Lemma cons_app : forall {A} (l: list A) (a: A),
+  a :: l = [a] ++ l.
+Proof.
+  intros. destruct l; [rewrite app_nil_r|]; reflexivity.
+Qed.
+
+Lemma rev_cons : forall {A} (l: list A) (a: A),
+  rev (a :: l) = rev l ++ [a].
+Proof.
+  intros. simpl. reflexivity.
+Qed.
 
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
