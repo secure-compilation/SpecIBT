@@ -653,16 +653,12 @@ Proof.
         { apply SpecSMI_Skip with (r:=r) (m:=m) (sk:=sk) (ms:=ms) in H12.
           exists ((l, o) + 1, r, m, sk, ms). simpl. split; auto.
           simpl in *. assert (pc_sync (l, (add o 1)) <> None).
-          { (* YH: see wfp_term *)
-            red. intros.
-            (* pc_sync (l, o) points to <{{skip}}>. contradiction: H2 and wfp_term *)
-            admit.
-            (* rewrite Forall_forall in H0. specialize H0 with (x:=iblk). specialize (nth_error_In p l Hfst). intros. *)
-            (* apply H0 in H2. destruct H2, H3. unfold last_inst_ret_or_jump in H3.  *)
-            (* assert (fst iblk <> []). { apply blk_not_empty_list. assumption. } *)
-            (* unfold nonempty_block in H2. assert (0 < Datatypes.length (rev (fst iblk))). *)
-            (* { rewrite length_rev. assumption. } specialize (blk_not_empty_list (rev (fst iblk), snd iblk) H7).  *)
-            (* simpl. intros. red. intros. admit. (* see wfp_term *) *)
+          { rewrite Forall_forall in H0. specialize H0 with (x:=iblk). specialize (nth_error_In p l Hfst). intros.
+            apply H0 in H2. destruct H2, H3. unfold last_inst_ret_or_jump in H3.
+            assert (fst iblk <> []). { apply blk_not_empty_list. assumption. }
+            unfold nonempty_block in H2. assert (0 < Datatypes.length (rev (fst iblk))).
+            { rewrite length_rev. assumption. } specialize (blk_not_empty_list (rev (fst iblk), snd iblk) H7).
+            simpl. intros. red. intros. admit.
           }
           { admit. }
         }
