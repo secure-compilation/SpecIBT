@@ -20,9 +20,9 @@ Set Default Goal Selector "!".
 (* %s/\s\+$//e to strip trailing whitespace *)
 
 Inductive state {A} : Type :=
-  | S_Running (a: A)
-  | S_Undef
-  | S_Fault
+| S_Running (a: A)
+| S_Undef
+| S_Fault
 | S_Term.
 
 (** Sequential small-step semantics for MiniCET *)
@@ -65,7 +65,6 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Term : forall pc r m,
       p[[pc]] = Some <{{ ret}}> ->
       p |- <(( S_Running (pc, r, m, []) ))> -->^[] <(( S_Term ))>
-
 
   where "p |- <(( c ))> -->^ os <(( ct ))>" :=
       (seq_eval_small_step_inst p c ct os).
@@ -150,6 +149,7 @@ Inductive multi_spec_inst (p:prog) :
       p |- <(( sc1 ))> -->_ds1^^os1 <(( sc2 ))> ->
       p |- <(( sc2 ))> -->*_ds2^^os2^^n <(( sc3 ))> ->
       p |- <(( sc1 ))> -->*_(ds1++ds2)^^(os1++os2)^^(S n) <(( sc3 ))>
+                
   where "p |- <(( sc ))> -->*_ ds ^^ os ^^ n <(( sct ))>" :=
     (multi_spec_inst p sc sct ds os n).
 
@@ -513,21 +513,21 @@ Definition wf_ds (pc: cptr) (ds: dirs) : Prop :=
 Definition nonempty_block (blk : (list inst * bool)) : Prop :=
   0 < Datatypes.length (fst blk).
 
-Definition is_return_or_jump (i: inst) : bool :=
+Definition is_terminator (i: inst) : Prop :=
   match i with
-  | <{{ ret }}> | <{{ jump _}}> => true
-  | _ => false
+  | <{{ ret }}> | <{{ jump _}}> => True
+  | _ => False
   end.
 
-Definition last_inst_ret_or_jump (blk: (list inst * bool)) : Prop :=
+Definition last_inst_terminator (blk: (list inst * bool)) : Prop :=
   match (rev (fst blk)) with 
   | [] => False (* unreachable *)
-  | h::t => (is_return_or_jump h = true)
+  | h::t => is_terminator h
   end.
 
 Definition wf_lbl (is_proc: bool) (l: nat) : Prop :=
   match nth_error p l with 
-  | Some (_,b) => is_proc = b
+  | Some (_, b) => is_proc = b
   | None => False
   end.
 
@@ -548,7 +548,7 @@ Definition wf_instr (i: inst) : Prop :=
   end.
 
 Definition wf_block (blk : (list inst * bool)) : Prop :=
-   nonempty_block blk /\ last_inst_ret_or_jump blk /\ Forall wf_instr (fst blk).
+   nonempty_block blk /\ last_inst_terminator blk /\ Forall wf_instr (fst blk).
 
 Definition nonempty_program : Prop :=
   0 < Datatypes.length p.
@@ -559,8 +559,6 @@ Definition wf_prog : Prop :=
 (* Tactics *)
 
 From SECF Require Import sflib.
-
-Ltac inv H := inversion H; subst; clear H.
 
 (* BCC lemma for one single instruction *)
 (* Starting conditions:
@@ -637,51 +635,21 @@ Proof.
   rewrite utils_rev_append_and_rev. rewrite IHl. reflexivity.
 Qed.
 
-(* Move to MiniCET.v *)
-Definition is_terminator (i: inst) : bool :=
-  match i with
-  | <{{ jump _ }}> | <{{ ret }}> => true
-  | _ => false
-  end.
-
 Lemma block_always_terminator b o i
     (WFB: wf_block b)
     (INST: nth_error (fst b) o = Some i)
-    (NT: is_terminator i = false) :
+    (NT: ~ is_terminator i) :
   exists i', nth_error (fst b) (add o 1) = Some i'.
 Proof.
   destruct WFB. destruct H0. clear H1 H.
   red in H0. des_ifs.
-  destruct (eq_decidable o (Datatypes.length (fst b))).
+  destruct (eq_dec o (Datatypes.length (fst b))).
   (* o = len b -> contradiction *)
   { subst.
     assert (i0 = i) by admit. (* make lemma: hd (rev l) = the last element of l *)
     subst. destruct i; ss; clarify. }
-  (* o <> len b -> o is not the last element -> true *)
+  (* o <> len b -> o is not the last element -> o+1 is a inbound access. *)
   admit. (* ez *)
-Admitted.
-
-Lemma oob_block : forall (l o: nat) (blk: list inst * bool) (i: inst) (rest: list inst),
-  nth_error p l = Some blk ->
-  wf_block blk ->
-  nth_error (fst blk) o = Some i ->
-  nth_error (fst blk) (add o 1) = None ->
-  rev (fst blk) = i :: rest.
-Proof.
-  (* intros. unfold wf_block in H0. destruct H0, H4. unfold block_terminator in H1. *)
-  (* rewrite Forall_forall in H5. unfold last_inst_ret_or_jump in H4. rewrite revs in *. *)
-  (* specialize (blk_not_empty_list blk H0); intros.  *)
-  (* destruct (rev (fst blk)) as [|rh rt]; try contradiction. *)
-  (* unfold is_return_or_jump in H4.  *)
-  
-
-
-
-
-  (*destruct (rev (fst blk)); try destruct H4. unfold is_return_or_jump in H1. 
-  destruct i0.
-     - *)
-
 Admitted.
 
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
@@ -693,9 +661,9 @@ Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   steps_to_sync_point sc1 ds = Some n ->
   spec_cfg_sync ic1 = Some sc1 ->
   uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( S_Running sc2 ))> ->
-      exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> /\ spec_cfg_sync ic2 = Some sc2.
+  exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> /\ spec_cfg_sync ic2 = Some sc2.
 Proof.
-  intros until os. intros wfp wfds wfp_term unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
+  intros until os. intros wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
   destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r).
   unfold wf_prog in wfp. destruct wfp. unfold wf_block in H0. unfold nonempty_program in H.
   unfold wf_ds in wfds. simpl in ms_msf.
@@ -750,8 +718,7 @@ Proof.
                 * inv H3. destruct (nth_error (uslh_prog p) sl) as [uslh_blk|]; try discriminate. 
                   (* show that skip can't be last inst in blk (i.e. Hsnd and Hi_next together make a contradiction) *)
                   specialize H0 with (x:=iblk). specialize (nth_error_In p l Hfst). intros. specialize (H0 H1).
-                  destruct H0, H3. unfold block_terminator_prog in wfp_term. rewrite forallb_forall in wfp_term.
-                  specialize wfp_term with (x:=iblk). specialize (wfp_term H1). unfold block_terminator in wfp_term.
+                  destruct H0, H3.
                   admit.
                 * admit.
                 * admit.
