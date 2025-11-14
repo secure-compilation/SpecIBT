@@ -13,7 +13,6 @@ From Stdlib Require Import Arith.EqNat.
 From Stdlib Require Import Arith.PeanoNat. Import Nat.
 From Stdlib Require Import Lia.
 From Stdlib Require Import List. Import ListNotations.
-Require Import Stdlib.Setoids.Setoid.
 Require Import ExtLib.Data.Monads.OptionMonad.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
@@ -53,13 +52,13 @@ Inductive seq_eval_small_step_inst (p:prog) :
       nth_error m n = Some v' ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OLoad n] <(( S_Running (pc+1, (x !-> v'; r), m, sk) ))>
   | SSMI_Store : forall pc r m sk e e' n,
-  p[[pc]] = Some <{{ store[e] <- e' }}> ->
+      p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
-p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
   | SSMI_Call : forall pc r m sk e l,
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-  p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
   | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
@@ -558,6 +557,8 @@ Definition wf_prog : Prop :=
   nonempty_program /\ Forall wf_block p.
 
 (* Tactics *)
+
+From SECF Require Import sflib.
 
 Ltac inv H := inversion H; subst; clear H.
 
