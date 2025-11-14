@@ -346,16 +346,16 @@ Definition steps_to_sync_point (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
   let '(pc, r, m, sk) := tc in
     (* check pc is well-formed *)
-    blk <- nth_error p (fst pc);;
+    blk <- nth_error tp (fst pc);;
     i <- nth_error (fst blk) (snd pc);;
     match i with
-    | <{{_ := _}}> => match p[[pc+1]] with
+    | <{{_ := _}}> => match tp[[pc+1]] with
                       | Some i => match i with
                                   | <{{call _}}> => match ds with
                                                     | [DCall lo] => (* decorated call with correct directive *)
                                                                     let '(l, o) := lo in
                                                                     (* check attacker pc is well-formed *)
-                                                                    blk <- nth_error p l;;
+                                                                    blk <- nth_error tp l;;
                                                                     i <- nth_error (fst blk) o;;
                                                                     (* 4 steps if procedure block, fault otherwise *)
                                                                     if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
@@ -682,7 +682,7 @@ Proof.
       destruct (map_opt pc_sync sk) as [ssk|] eqn:Hsk; try discriminate.
       injection cfg_sync; intros. rewrite <- H2 in n_steps. (* unpacked starting spec cfg *)
       destruct spc as (sl, so) eqn:Hspc. simpl in n_steps.
-      destruct (nth_error p sl) eqn:Hsfst; try discriminate. rename p0 into sblk.
+      destruct (nth_error tp sl) eqn:Hsfst; try discriminate. rename p0 into sblk.
       destruct (nth_error (fst sblk) so) eqn:Hssnd; try discriminate. rename i0 into si.
       destruct i eqn:Hi.
       { (* skip *) 
