@@ -62,7 +62,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
-  | SSMI_Term : forall pc r m,
+| SSMI_Term : forall pc r m,
       p[[pc]] = Some <{{ ret}}> ->
       p |- <(( S_Running (pc, r, m, []) ))> -->^[] <(( S_Term ))>
 
@@ -125,7 +125,7 @@ Inductive spec_eval_small_step (p:prog):
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
-      p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
+p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   | SpecSMI_CTarget_F : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))>
@@ -405,7 +405,7 @@ Inductive result : Type :=
 Definition is_fault_tgt (res_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := res_t in
   let '(pc, rs, m, sk) := c in
-  i <- p[[pc]];;
+  i <- tp[[pc]];;
   match i with
   | <{{ ctarget }}> => Some (if ct then false else true)
   | _ => Some (if ct then true else false)
@@ -414,7 +414,7 @@ Definition is_fault_tgt (res_t: spec_cfg) : option bool :=
 Definition is_normal_termination_tgt (res_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := res_t in
   let '(pc, rs, m, sk) := c in
-  i <- p[[pc]];;
+  i <- tp[[pc]];;
   match i with
   | <{{ ret }}> => Some (if seq.nilp sk then true else false)
   | _ => Some false
@@ -423,7 +423,7 @@ Definition is_normal_termination_tgt (res_t: spec_cfg) : option bool :=
 Definition is_stuck_tgt (res_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := res_t in
   let '(pc, rs, m, sk) := c in
-  _ <- p[[pc]];;
+  _ <- tp[[pc]];;
   match (is_fault_tgt res_t, is_normal_termination_tgt res_t) with
   | (Some false, Some false) => Some true
   | _ => Some false
@@ -471,7 +471,7 @@ Definition same_result_type (sc: spec_cfg) (ic: ideal_cfg) : bool :=
   let '(pc, r, m, sk) := c in
   let '(c', ms') := ic in 
   let '(pc', r', m', sk') := c' in
-  match (p[[pc]], p[[pc']]) with
+  match (tp[[pc]], p[[pc']]) with
   | (Some i, Some i') =>
       let ub_t := is_stuck_tgt sc in
       let ub_s := is_stuck_src ic in
@@ -601,7 +601,7 @@ Proof.
   contradiction.
 Qed.
 
-(* Lemma cons_app : forall {A} (l: list A) (a: A),
+Lemma cons_app : forall {A} (l: list A) (a: A),
   a :: l = [a] ++ l.
 Proof.
   intros. destruct l; [rewrite app_nil_r|]; reflexivity.
@@ -611,7 +611,7 @@ Lemma rev_cons : forall {A} (l: list A) (a: A),
   rev (a :: l) = rev l ++ [a].
 Proof.
   intros. simpl. reflexivity.
-   Qed. *)
+   Qed.
 
 (* equivalence of Utils rev and Lists rev *)
 (* shouldn't it be easier than this? they are alpha-equivalent *)
@@ -635,21 +635,145 @@ Proof.
   rewrite utils_rev_append_and_rev. rewrite IHl. reflexivity.
 Qed.
 
+(* 
+
+hd_error_nil: forall A : Type, hd_error [] = None
+
+nth_error_0: forall [A : Type] (l : list A), nth_error l 0 = hd_error l
+
+hd_error_cons:
+  forall [A : Type] (l : list A) (x : A), hd_error (x :: l) = Some x
+
+hd_error_skipn:
+  forall [A : Type] (n : nat) (l : list A),
+  hd_error (skipn n l) = nth_error l n
+
+hd_error_some_nil:
+  forall [A : Type] [l : list A] [a : A], hd_error l = Some a -> l <> []
+
+hd_error_tl_repr:
+  forall [A : Type] (l : list A) (a : A) (r : list A),
+  hd_error l = Some a /\ tl l = r <-> l = a :: r
+
+   rev_app_distr:
+  forall [A : Type] (x y : list A), rev (x ++ y) = rev y ++ rev x 
+
+  rev_cons: forall {A : Type} (l : list A) (a : A), rev (a :: l) = rev l ++ [a]
+
+rev_unit: forall [A : Type] (l : list A) (a : A), rev (l ++ [a]) = a :: rev l
+
+rev_eq_app:
+  forall [A : Type] (l l1 l2 : list A),
+  rev l = l1 ++ l2 -> l = rev l2 ++ rev l1
+
+  nth_error_rev:
+  forall [A : Type] (n : nat) (l : list A),
+  nth_error (rev l) n =
+  (if (n <? Datatypes.length l)%nat
+   then nth_error l (Datatypes.length l - S n)
+   else None)
+
+   nth_error_Some:
+  forall [A : Type] (l : list A) (n : nat),
+  nth_error l n <> None <-> n < Datatypes.length l
+
+nth_error_app1:
+  forall [A : Type] (l l' : list A) [n : nat],
+  n < Datatypes.length l -> nth_error (l ++ l') n = nth_error l n
+
+nth_error_cons_succ:
+  forall [A : Type] (x : A) (l : list A) (n : nat),
+  nth_error (x :: l) (S n) = nth_error l n
+
+th_error_cons_0:
+  forall [A : Type] (x : A) (l : list A), nth_error (x :: l) 0 = Some x
+
+nth_error_cons:
+  forall [A : Type] (x : A) (xs : list A) (n : nat),
+  nth_error (x :: xs) n =
+  match n with
+  | 0 => Some x
+  | S n0 => nth_error xs n0
+  end
+
+*)
+
+Check le_dec.
+
+(* le_dec
+     : forall n m : nat, {n <= m} + {~ n <= m} *)
+
+(*Lemma helper : forall {A} (l: list A),
+  hd_error (rev l) = nth_error l (Datatypes.length l - 1).
+Proof.
+   intros. induction l as [|h t IHl]; auto.*)
+  
+
+
+  (*destruct (hd_error (rev t)).
+  - simpl in *. rewrite sub_0_r. 
+    destruct t; try discriminate. 
+    replace (Datatypes.length (a0 :: t0)) with (S (Datatypes.length (a0 :: t0) - 1)); cycle 1.
+    { simpl in *. f_equal. rewrite sub_0_r; auto. }
+     simpl in *. rewrite sub_0_r in *. *)
+
+(* nth_error_Some:
+  forall [A : Type] (l : list A) (n : nat),
+  nth_error l n <> None <-> n < Datatypes.length l 
+
+nth_error_None:
+  forall [A : Type] (l : list A) (n : nat),
+  nth_error l n = None <-> Datatypes.length l <= n
+  *)
+
+  (* Arith_base.gt_le_S_stt: forall n m : nat, m > n -> S n <= m *)
+
+Lemma helper2 : forall (x y : nat),
+  x > S y -> x > y.
+Proof.
+  induction x; intros; lia.
+Qed.
+
+Lemma gt_le : forall {A} (n: nat) (l: list A),
+  n > Datatypes.length l -> Datatypes.length l <= n.
+Proof.
+  intros. induction (Datatypes.length l) as [|len']; lia.
+Qed.
+
 Lemma block_always_terminator b o i
     (WFB: wf_block b)
     (INST: nth_error (fst b) o = Some i)
     (NT: ~ is_terminator i) :
   exists i', nth_error (fst b) (add o 1) = Some i'.
 Proof.
-  destruct WFB. destruct H0. clear H1 H.
+  destruct WFB. destruct H0.
   red in H0. des_ifs.
-  destruct (eq_dec o (Datatypes.length (fst b))).
-  (* o = len b -> contradiction *)
-  { subst.
+  destruct (le_dec o (Datatypes.length (fst b) - 1)).
+  (* o <= Datatypes.length (fst b) - 1: this is the in-bounds case *)
+  { assert (i <> i0).
+    { unfold not; intros. unfold is_terminator in *.
+      destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify.
+    }
+    assert (exists o0, nth_error (fst b) o0 = Some i0).
+    { exists (Datatypes.length (fst b) - 1).  }
+
+
+    (* subst. 
     assert (i0 = i) by admit. (* make lemma: hd (rev l) = the last element of l *)
-    subst. destruct i; ss; clarify. }
-  (* o <> len b -> o is not the last element -> o+1 is a inbound access. *)
-  admit. (* ez *)
+       subst. destruct i; ss; clarify. } *)
+  (* ~ o <= Datatypes.length (fst b) - 1: this is the OOB case *)
+  
+
+
+  assert (i <> i0).
+  { unfold not; intros. unfold is_terminator in *.
+    destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify.
+  }
+  assert (o <> Datatypes.length (fst b) - 1). { lia. }
+  
+
+  (* ez *) 
+  
 Admitted.
 
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
