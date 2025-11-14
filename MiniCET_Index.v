@@ -655,9 +655,9 @@ Proof.
 
 
 
-  destruct (rev (fst blk)); try destruct H4. unfold is_return_or_jump in H1. 
+  (*destruct (rev (fst blk)); try destruct H4. unfold is_return_or_jump in H1. 
   destruct i0.
-  - 
+     - *)
 
 Admitted.
 
