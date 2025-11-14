@@ -698,25 +698,6 @@ nth_error_cons:
 
 *)
 
-Check le_dec.
-
-(* le_dec
-     : forall n m : nat, {n <= m} + {~ n <= m} *)
-
-(*Lemma helper : forall {A} (l: list A),
-  hd_error (rev l) = nth_error l (Datatypes.length l - 1).
-Proof.
-   intros. induction l as [|h t IHl]; auto.*)
-  
-
-
-  (*destruct (hd_error (rev t)).
-  - simpl in *. rewrite sub_0_r. 
-    destruct t; try discriminate. 
-    replace (Datatypes.length (a0 :: t0)) with (S (Datatypes.length (a0 :: t0) - 1)); cycle 1.
-    { simpl in *. f_equal. rewrite sub_0_r; auto. }
-     simpl in *. rewrite sub_0_r in *. *)
-
 (* nth_error_Some:
   forall [A : Type] (l : list A) (n : nat),
   nth_error l n <> None <-> n < Datatypes.length l 
@@ -726,19 +707,12 @@ nth_error_None:
   nth_error l n = None <-> Datatypes.length l <= n
   *)
 
-  (* Arith_base.gt_le_S_stt: forall n m : nat, m > n -> S n <= m *)
-
-Lemma helper2 : forall (x y : nat),
-  x > S y -> x > y.
-Proof.
-  induction x; intros; lia.
-Qed.
-
-Lemma gt_le : forall {A} (n: nat) (l: list A),
-  n > Datatypes.length l -> Datatypes.length l <= n.
-Proof.
-  intros. induction (Datatypes.length l) as [|len']; lia.
-Qed.
+(* nth_error_rev:
+  forall [A : Type] (n : nat) (l : list A),
+  nth_error (rev l) n =
+  (if (n <? Datatypes.length l)%nat
+   then nth_error l (Datatypes.length l - S n)
+   else None) *)
 
 Lemma block_always_terminator b o i
     (WFB: wf_block b)
@@ -750,12 +724,44 @@ Proof.
   red in H0. des_ifs.
   destruct (le_dec o (Datatypes.length (fst b) - 1)).
   (* o <= Datatypes.length (fst b) - 1: this is the in-bounds case *)
-  { assert (i <> i0).
-    { unfold not; intros. unfold is_terminator in *.
-      destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify. }
+  { assert (i <> i0). { unfold not; intros. unfold is_terminator in *. destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify. }
     destruct (eq_dec o (Datatypes.length (fst b) - 1)).
-    { admit. }
-    admit. }
+    (* o = Datatypes.length (fst b) - 1: not possible bc i ≠ i0 and i0 is last element *)
+    { assert (rev (i0 :: l) = rev l ++ [i0]). { simpl. auto. }
+      assert (rev (rev (fst b)) = rev (i0 :: l)). { rewrite Heq. simpl. auto. }
+      rewrite rev_involutive in H4. simpl in H4. 
+      assert (nth_error (fst b) o = Some i0).
+      { rewrite H4, e. simpl. rewrite H4. simpl. rewrite nth_error_app.
+        assert ((Datatypes.length (rev l ++ [i0]) - 1 <? Datatypes.length (rev l))%nat = false).
+        { induction l as [|h t]; clarify. simpl in *.
+          assert (add 1 (Datatypes.length (rev t ++ [h])) = Datatypes.length ((rev t ++ [h]) ++ [i0])).
+          { repeat rewrite length_app. assert (Datatypes.length [i0] = 1). { auto. } rewrite H5. rewrite add_comm. auto. }
+          rewrite <- H5. simpl. rewrite sub_0_r. apply ltb_irrefl.
+        }
+        rewrite H5.
+        assert (forall (n: nat), ((add n 1) - 1) - n = 0). { lia. }
+        specialize (H6 (Datatypes.length (rev l))).
+        rewrite length_app. assert (Datatypes.length [i0] = 1). { simpl. auto. }
+        rewrite H7.
+        assert (((add 1 (Datatypes.length (rev l))) - 1) = Datatypes.length (rev l)). { simpl. rewrite sub_0_r. auto. }
+        rewrite add_comm. rewrite H8. simpl.
+        assert ( ((Datatypes.length (rev l)) - (Datatypes.length (rev l))) = 0 ). { lia. }
+        rewrite H9. simpl. auto.
+      }
+      rewrite INST in H5. injection H5; intros. clarify.
+    } (* well that was tedious *)
+    (* this is the correct case, where o points to some non-last instruction in the block *)
+    assert (rev (i0 :: l) = rev l ++ [i0]). { simpl. auto. }
+    assert (rev (rev (fst b)) = rev (i0 :: l)). { rewrite Heq. simpl. auto. }
+    rewrite rev_involutive in H4. simpl in H4. rewrite H4 in INST, l0, n. rewrite H4.
+    assert (   o <= Datatypes.length (rev l ++ [i0]) - 1
+            -> o <> Datatypes.length (rev l ++ [i0]) - 1
+            -> o < Datatypes.length (rev l ++ [i0]) - 1 ).
+    { lia. }
+    specialize (H5 l0 n); intros.  
+    
+  }
+  (* o OOB *)
   exfalso. clear - n INST. eapply not_le in n.
   assert (nth_error (fst b) o <> None).
   { ii. clarify. }
