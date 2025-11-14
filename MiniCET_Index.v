@@ -603,36 +603,7 @@ Proof.
   contradiction.
 Qed.
 
-(*
-Lemma rev_empty : forall {A} (l: list A),
-  l = [] -> rev l = [].
-Proof.
-  intros; unfold not; intros. rewrite H; reflexivity.
-Qed.
-
-Lemma empty_length_0 : forall {A} (l: list A),
-  l = [] -> Datatypes.length l = 0.
-Proof.
-  intros. rewrite H. simpl; reflexivity.
-Qed.
-
-Lemma nonempty_length_nonzero : forall {A} (l: list A),
-  l <> [] -> Datatypes.length l <> 0.
-Proof.
-  intros. destruct l; try contradiction.
-  simpl. unfold not; intros; discriminate.
-Qed.
-
-Lemma rev_not_empty : forall {A} (l: list A),
-  l <> [] -> rev l <> [].
-Proof.
-  intros. destruct l; try contradiction.
-  unfold not; intros. simpl in *. apply app_eq_nil in H0.
-  destruct H0. discriminate.
-Qed.
- *)
-
-Lemma cons_app : forall {A} (l: list A) (a: A),
+(* Lemma cons_app : forall {A} (l: list A) (a: A),
   a :: l = [a] ++ l.
 Proof.
   intros. destruct l; [rewrite app_nil_r|]; reflexivity.
@@ -642,19 +613,29 @@ Lemma rev_cons : forall {A} (l: list A) (a: A),
   rev (a :: l) = rev l ++ [a].
 Proof.
   intros. simpl. reflexivity.
+   Qed. *)
+
+(* equivalence of Utils rev and Lists rev *)
+(* shouldn't it be easier than this? they are alpha-equivalent *)
+
+Import FunctionalExtensionality.
+
+Lemma utils_rev_append_and_rev : forall {X : Type} (l1 l2 : list X),
+  Utils.rev_append l1 l2 = rev l1 ++ l2.
+Proof. 
+  intros X. induction l1 as [|h1 t1 IHl1]. 
+  - reflexivity.
+  - simpl. rewrite <- IHl1. apply functional_extensionality in IHl1.
+    rewrite IHl1. intros l2. rewrite <- app_assoc. simpl. reflexivity.
 Qed.
 
-Lemma oob_block : forall (l o: nat) (blk: list inst * bool) (i: inst) (rest: list inst),
-  nth_error p l = Some blk ->
-  wf_block blk ->
-  nth_error (fst blk) o = Some i ->
-  nth_error (fst blk) (add o 1) = None ->
-  rev (fst blk) = i :: rest.
-Proof.
-  (* intros. unfold wf_block in H0. destruct H0, H4. unfold block_terminator in H1. *)
-  (* rewrite Forall_forall in H5. unfold last_inst_ret_or_jump in H4. destruct (rev (fst blk)); try destruct H4. *)
-  (* unfold is_return_or_jump in H1. Admitted. *)
-Admitted.
+Lemma revs : forall {A}, @Utils.rev A = @rev A.
+Proof. 
+  intros. apply functional_extensionality. intros.
+  rename x into l. induction l as [|h t IHl]; auto.
+  unfold Utils.rev in *. simpl. rewrite <- IHl.
+  rewrite utils_rev_append_and_rev. rewrite IHl. reflexivity.
+Qed.
 
 (* Move to MiniCET.v *)
 Definition is_terminator (i: inst) : bool :=
@@ -678,6 +659,29 @@ Proof.
     subst. destruct i; ss; clarify. }
   (* o <> len b -> o is not the last element -> true *)
   admit. (* ez *)
+Admitted.
+
+Lemma oob_block : forall (l o: nat) (blk: list inst * bool) (i: inst) (rest: list inst),
+  nth_error p l = Some blk ->
+  wf_block blk ->
+  nth_error (fst blk) o = Some i ->
+  nth_error (fst blk) (add o 1) = None ->
+  rev (fst blk) = i :: rest.
+Proof.
+  (* intros. unfold wf_block in H0. destruct H0, H4. unfold block_terminator in H1. *)
+  (* rewrite Forall_forall in H5. unfold last_inst_ret_or_jump in H4. rewrite revs in *. *)
+  (* specialize (blk_not_empty_list blk H0); intros.  *)
+  (* destruct (rev (fst blk)) as [|rh rt]; try contradiction. *)
+  (* unfold is_return_or_jump in H4.  *)
+  
+
+
+
+
+  (*destruct (rev (fst blk)); try destruct H4. unfold is_return_or_jump in H1. 
+  destruct i0.
+     - *)
+
 Admitted.
 
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
