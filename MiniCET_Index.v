@@ -752,28 +752,14 @@ Proof.
   (* o <= Datatypes.length (fst b) - 1: this is the in-bounds case *)
   { assert (i <> i0).
     { unfold not; intros. unfold is_terminator in *.
-      destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify.
-    }
-    assert (exists o0, nth_error (fst b) o0 = Some i0).
-    { exists (Datatypes.length (fst b) - 1).  }
-
-
-    (* subst. 
-    assert (i0 = i) by admit. (* make lemma: hd (rev l) = the last element of l *)
-       subst. destruct i; ss; clarify. } *)
-  (* ~ o <= Datatypes.length (fst b) - 1: this is the OOB case *)
-  
-
-
-  assert (i <> i0).
-  { unfold not; intros. unfold is_terminator in *.
-    destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify.
-  }
-  assert (o <> Datatypes.length (fst b) - 1). { lia. }
-  
-
-  (* ez *) 
-  
+      destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify. }
+    destruct (eq_dec o (Datatypes.length (fst b) - 1)).
+    { admit. }
+    admit. }
+  exfalso. clear - n INST. eapply not_le in n.
+  assert (nth_error (fst b) o <> None).
+  { ii. clarify. }
+  rewrite nth_error_Some in H. lia.
 Admitted.
 
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
