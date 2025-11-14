@@ -647,19 +647,42 @@ Qed.
 Lemma oob_block : forall (l o: nat) (blk: list inst * bool) (i: inst) (rest: list inst),
   nth_error p l = Some blk ->
   wf_block blk ->
-  block_terminator blk = true ->
   nth_error (fst blk) o = Some i ->
   nth_error (fst blk) (add o 1) = None ->
-  Utils.rev (fst blk) = i :: rest.
+  rev (fst blk) = i :: rest.
 Proof.
-  intros. unfold wf_block in H0. destruct H0, H4. unfold block_terminator in H1.
-  rewrite Forall_forall in H5. unfold last_inst_ret_or_jump in H4. destruct (rev (fst blk)); try destruct H4.
-  unfold is_return_or_jump in H1. Admitted.
+  (* intros. unfold wf_block in H0. destruct H0, H4. unfold block_terminator in H1. *)
+  (* rewrite Forall_forall in H5. unfold last_inst_ret_or_jump in H4. destruct (rev (fst blk)); try destruct H4. *)
+  (* unfold is_return_or_jump in H1. Admitted. *)
+Admitted.
+
+(* Move to MiniCET.v *)
+Definition is_terminator (i: inst) : bool :=
+  match i with
+  | <{{ jump _ }}> | <{{ ret }}> => true
+  | _ => false
+  end.
+
+Lemma block_always_terminator b o i
+    (WFB: wf_block b)
+    (INST: nth_error (fst b) o = Some i)
+    (NT: is_terminator i = false) :
+  exists i', nth_error (fst b) (add o 1) = Some i'.
+Proof.
+  destruct WFB. destruct H0. clear H1 H.
+  red in H0. des_ifs.
+  destruct (eq_decidable o (Datatypes.length (fst b))).
+  (* o = len b -> contradiction *)
+  { subst.
+    assert (i0 = i) by admit. (* make lemma: hd (rev l) = the last element of l *)
+    subst. destruct i; ss; clarify. }
+  (* o <> len b -> o is not the last element -> true *)
+  admit. (* ez *)
+Admitted.
 
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
   wf_ds (get_pc_sc sc1) ds ->
-  block_terminator_prog p = true ->
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
