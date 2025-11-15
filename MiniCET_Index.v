@@ -749,7 +749,7 @@ Proof.
         rewrite H9. simpl. auto.
       }
       rewrite INST in H5. injection H5; intros. clarify.
-    } (* well that was tedious *)
+    }
     (* this is the correct case, where o points to some non-last instruction in the block *)
     assert (rev (i0 :: l) = rev l ++ [i0]). { simpl. auto. }
     assert (rev (rev (fst b)) = rev (i0 :: l)). { rewrite Heq. simpl. auto. }
@@ -758,15 +758,18 @@ Proof.
             -> o <> Datatypes.length (rev l ++ [i0]) - 1
             -> o < Datatypes.length (rev l ++ [i0]) - 1 ).
     { lia. }
-    specialize (H5 l0 n); intros.  
-    
+    specialize (H5 l0 n); intros. 
+    assert ((add o 1) <= (Datatypes.length (rev l ++ [i0]) - 1)). { lia. }
+    assert ((add o 1) < (Datatypes.length (rev l ++ [i0]))). { lia. }
+    rewrite <- nth_error_Some in H7.
+    destruct (nth_error (rev l ++ [i0]) (add o 1)); clarify. exists i1. auto.
   }
   (* o OOB *)
   exfalso. clear - n INST. eapply not_le in n.
   assert (nth_error (fst b) o <> None).
   { ii. clarify. }
   rewrite nth_error_Some in H. lia.
-Admitted.
+Qed.
 
 Lemma ultimate_slh_bcc_single_cycle : forall ic1 sc1 sc2 n ds os,
   wf_prog ->
