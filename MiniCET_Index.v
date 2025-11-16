@@ -725,54 +725,30 @@ Proof.
       specialize (rev_fetch tp spc sblk si Hsfst Hssnd); intros.
       simpl in wfds. rewrite Forall_forall in H0, wfds.
       rewrite <- H2 in tgt_steps, ms_msf, wfds. clear cfg_sync.
-      (* the only time the instruction pointed to is different is in the call case,
-         since the decoration is added before the source instruction *)
-      assert (p[[ipc]] <> tp[[spc]] -> exists lbl, p[[ipc]] = Some <{{ call lbl }}>).
-      { intros. unfold tp in *. unfold uslh_prog in *. 
-        destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) eqn:Hmap.
-        rename l0 into trans_p. rename p0 into new_blks.
-        simpl in *. unfold Utils.app in *. rewrite revs in *.
-        rewrite utils_rev_append_and_rev in *. rewrite rev_involutive in *.
-        unfold pc_sync in Hpcsync. simpl in Hpcsync.
-        rewrite Hipc in Hfst, Hsnd. simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in *.
-        destruct p as [|b bs] eqn:Hp. { simpl in *. inv H. }
-        simpl in *. 
-        destruct o as [|o'] eqn:Hoffset.
-        (* in both of these, I'm not sure how to destruct through all the monad/applicative stuff
-           to where I can use the information about decorations added to the program *)
-        { (* offset is 0 *) destruct (Bool.eqb (snd iblk) true) eqn:Hproc.
-          { (* proc blk *) simpl in Hpcsync. injection Hpcsync; intros. 
-            rewrite <- H5, <- H6 in *. clear Hpcsync. admit.
-          }
-          { (* non-proc blk *) simpl in Hpcsync. injection Hpcsync; intros.
-            rewrite <- H5, <- H6 in *. clear Hpcsync. rewrite Hspc, Hipc in *.
-            replace (fst (l, 0)) with l in * by auto.
-            replace (snd (l, 0)) with 0 in * by auto.
-            admit.
-          }
+      intros. unfold tp in *. unfold uslh_prog in *. 
+      destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) eqn:Hmap.
+      rename l0 into trans_p. rename p0 into new_blks.
+      simpl in *. unfold Utils.app in *. rewrite revs in *.
+      rewrite utils_rev_append_and_rev in *. rewrite rev_involutive in *.
+      unfold pc_sync in Hpcsync. simpl in Hpcsync.
+      rewrite Hipc in Hfst, Hsnd. simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in *.
+      destruct p as [|b bs] eqn:Hp. { simpl in *. inv H. }
+      simpl in *. 
+      destruct o as [|o'] eqn:Hoffset.
+      { (* offset is 0 *) destruct (Bool.eqb (snd iblk) true) eqn:Hproc.
+        { (* proc blk *) simpl in Hpcsync. injection Hpcsync; intros. 
+          rewrite <- H4, <- H5 in *. clear Hpcsync. 
+          destruct i; admit.
         }
-        { (* offset is S _ *) admit.
+        { (* non-proc blk *) simpl in Hpcsync. injection Hpcsync; intros.
+          rewrite <- H4, <- H5 in *. clear Hpcsync. rewrite Hspc, Hipc in *.
+          replace (fst (l, 0)) with l in * by auto.
+          replace (snd (l, 0)) with 0 in * by auto.
+          admit.
         }
-      } (* Proving this will finish goal 1 (prove si = skip in skip case) *)
-      destruct i eqn:Hi.
-      { (* skip *)
-        assert (si = <{{ skip }}>).
-        { destruct si; auto; assert (p[[ipc]] <> tp[[spc]]); try (rewrite H3, H1; intros; discriminate);
-          apply H4 in H5; destruct H5; rewrite H1 in H5; discriminate.
-        }
-        specialize (ISMI_Skip p ipc r m sk ms H1); intros.
-        rewrite H5 in n_steps. injection n_steps; intros. rewrite <- H7 in *.
-        clear n_steps. admit.
       }
-      (* other instructions *)
-      { admit. }
-      { admit. }
-      { admit. }
-      { admit. }
-      { admit. }
-      { admit. }
-      { admit. }
-      { admit. }
+      { (* offset is S _ *) admit.
+      }
     + (* None *)
       simpl in cfg_sync. destruct (pc_sync (l, o)) eqn:Hpcsync; try discriminate.
       destruct (map_opt pc_sync sk) eqn:Hsksync; try discriminate. unfold pc_sync in Hpcsync.
