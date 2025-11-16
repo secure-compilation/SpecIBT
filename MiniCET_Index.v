@@ -98,7 +98,7 @@ Inductive spec_eval_small_step (p:prog):
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   | SpecSMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
-      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
+  p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
   | SpecSMI_Branch : forall pc pc' r m sk ms ms' b (b': bool) e n l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
@@ -577,8 +577,13 @@ Lemma blk_not_empty_list : forall (blk: list inst * bool),
   nonempty_block blk -> (fst blk) <> [].
 Proof.
   intros. unfold nonempty_block in H. unfold not; intros. rewrite H0 in H.
-  simpl in H. assert (~ 0 < 0). { apply nlt_0_r. }
-  contradiction.
+  simpl in H. apply nlt_0_r in H. destruct H.
+Qed.
+
+Lemma prog_not_empty_list : nonempty_program -> p <> [].
+Proof.
+  intros. unfold nonempty_program in H. unfold not; intros. rewrite H0 in H.
+  simpl in H. apply nlt_0_r in H. destruct H.
 Qed.
 
 Lemma cons_app : forall {A} (l: list A) (a: A),
@@ -613,6 +618,17 @@ Proof.
   unfold Utils.rev in *. simpl. rewrite <- IHl.
   rewrite utils_rev_append_and_rev. rewrite IHl. reflexivity.
 Qed.
+
+Lemma p_le_tp :
+  wf_prog ->
+  Datatypes.length p <= Datatypes.length tp.
+Proof.
+  intros. unfold tp, wf_prog in *. destruct H. specialize (prog_not_empty_list H); intros.
+  unfold uslh_prog. unfold Utils.app. 
+  rewrite revs. destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as (p', newp) eqn:Hmap.
+  rewrite utils_rev_append_and_rev. rewrite rev_involutive. rewrite length_app.
+  unfold mapM in Hmap. unfold uslh_blk in Hmap. destruct p as [|b bs] eqn:Hp; clarify. simpl in *.
+  cbn in Hmap. Admitted.
 
 Lemma block_always_terminator b o i
     (WFB: wf_block b)
@@ -712,7 +728,32 @@ Proof.
       (* the only time the instruction pointed to is different is in the call case,
          since the decoration is added before the source instruction *)
       assert (p[[ipc]] <> tp[[spc]] -> exists lbl, p[[ipc]] = Some <{{ call lbl }}>).
-      { intros. admit.  } (* Proving this will finish goal 1 (prove si = skip in skip case) *)
+      { intros. unfold tp in *. unfold uslh_prog in *. 
+        destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) eqn:Hmap.
+        rename l0 into trans_p. rename p0 into new_blks.
+        simpl in *. unfold Utils.app in *. rewrite revs in *.
+        rewrite utils_rev_append_and_rev in *. rewrite rev_involutive in *.
+        unfold pc_sync in Hpcsync. simpl in Hpcsync.
+        rewrite Hipc in Hfst, Hsnd. simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in *.
+        destruct p as [|b bs] eqn:Hp. { simpl in *. inv H. }
+        simpl in *. 
+        destruct o as [|o'] eqn:Hoffset.
+        (* in both of these, I'm not sure how to destruct through all the monad/applicative stuff
+           to where I can use the information about decorations added to the program *)
+        { (* offset is 0 *) destruct (Bool.eqb (snd iblk) true) eqn:Hproc.
+          { (* proc blk *) simpl in Hpcsync. injection Hpcsync; intros. 
+            rewrite <- H5, <- H6 in *. clear Hpcsync. admit.
+          }
+          { (* non-proc blk *) simpl in Hpcsync. injection Hpcsync; intros.
+            rewrite <- H5, <- H6 in *. clear Hpcsync. rewrite Hspc, Hipc in *.
+            replace (fst (l, 0)) with l in * by auto.
+            replace (snd (l, 0)) with 0 in * by auto.
+            admit.
+          }
+        }
+        { (* offset is S _ *) admit.
+        }
+      } (* Proving this will finish goal 1 (prove si = skip in skip case) *)
       destruct i eqn:Hi.
       { (* skip *)
         assert (si = <{{ skip }}>).
