@@ -886,7 +886,7 @@ Fixpoint beq_str (s1 s2 : string) : bool :=
   | _, _ => false
   end.
 
-Ltac uf := (autounfold with * in *).
+Ltac uf := (autounfold with * in * ).
 
 Tactic Notation "patout" constr(z) "in" hyp(a) :=
   pattern z in a; match goal with [a:=?f z|-_] => unfold a; clear a; set (a:=f) end.
@@ -968,7 +968,7 @@ Ltac inst_pairs :=
 (* Qed. *)
 
 Ltac simpl_proj :=
-  (* do 5 *) (simpl (fst (_, _)) in *; simpl (snd (_, _)) in *).
+  (* do 5 *) (simpl (fst (_, _)) in *; simpl (snd (_, _)) in * ).
 
 Ltac clean :=
   (hrepeat do 1 match goal with
