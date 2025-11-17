@@ -755,36 +755,53 @@ Proof.
       destruct p as [|b bs] eqn:Hp. { simpl in *. inv H. } simpl in *. 
       destruct i.
       { (* skip *) 
-        assert (si = <{{ skip }}>). { admit. }
+        assert (si = <{{ skip }}>).
+        { admit. }
         rewrite H4 in *. injection n_steps; intros. rewrite <- H5 in *.
         rewrite <- H2 in *. clear cfg_sync.
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
         rewrite <- app_nil_r with (l:=os) in tgt_steps.
         inv tgt_steps. exists (l, (add o 1), r, m, sk, ms). 
         unfold wf_dir in wfds. rewrite Forall_forall in wfds. simpl in wfds.
-        assert (ds = [] /\ os = []). { admit. } 
-        destruct H2. rewrite H2, H4 in *. simpl in H6, H7.
-        apply app_eq_nil in H6, H7. destruct H6, H7.
-        rewrite H5, H6, H7, H8 in *. split.
-        - apply ISMI_Skip with (r:=r) (m:=m) (sk:=sk) (ms:=ms) in H1. assumption.
+        assert (ds = [] /\ os = []).
+        { inv H12. inv H11; clarify. ss. rewrite app_nil_r in H6, H7. auto. } 
+        des; subst. simpl in H6, H7. eapply app_eq_nil in H6, H7. des; subst.
+        split.
+        - econs. auto.
         - inv H12. inv H11; clarify. clear H3. clear n_steps.
           simpl. rewrite Hsk. unfold pc_sync. cbn. rewrite Hfst. 
           assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
           { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ skip }}>); clarify.
             rewrite Forall_forall in H0. specialize (H0 iblk). 
             specialize (nth_error_In (b :: bs) l Hfst); intros.
-            apply (H0 H2).
-          }
+            apply (H0 H2). }
           destruct H2 as (i' & H2). rewrite H2.
-          assert (forall (n: nat), (add n 1) <> 0). { lia. }
-          specialize (H3 o). destruct (add o 1) as [|o']; clarify.
-          simpl. 
-          assert (fst iblk = [] -> nth_error (fst iblk) (S o') = None).
-          { intros. rewrite H5. apply nth_error_nil. }
-          assert (fst iblk <> []). { unfold not; intros. apply H5 in H6. clarify. }
-          destruct (fst iblk) as [|i insts]; clarify.
+          assert (forall n, (add n 1) = S n). { lia. }
+          specialize (H3 o). rewrite H3.
+          destruct o.
+          { admit. }
+          { admit. }
+        (*   simpl. *)
+        (*   assert (fst iblk = [] -> nth_error (fst iblk) (S o') = None). *)
+        (*   { intros. rewrite H5. apply nth_error_nil. } *)
+        (*   assert (fst iblk <> []). { unfold not; intros. apply H5 in H6. clarify. } *)
+        (*   destruct (fst iblk) as [|i insts]; clarify. *)
+        (*   unfold spec_cfg_sync. *)
+        (* destruct H2. rewrite H2, H4 in *. simpl in H6, H7. *)
+        (* apply app_eq_nil in H6, H7. destruct H6, H7. *)
+        (* rewrite H5, H6, H7, H8 in *. split. *)
+        (* - apply ISMI_Skip with (r:=r) (m:=m) (sk:=sk) (ms:=ms) in H1. assumption. *)
+        (* - *)
           
       }
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
+      { admit. }
     + (* None *)
       simpl in cfg_sync. destruct (pc_sync p (l, o)) eqn:Hpcsync; try discriminate.
       destruct (map_opt (pc_sync p) sk) eqn:Hsksync; try discriminate. unfold pc_sync in Hpcsync.
