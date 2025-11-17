@@ -318,6 +318,29 @@ Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
                    Some ((fst pc), add (snd pc) acc2)
     end.
 
+Print firstn.
+
+(* fix firstn (n : nat) (l : list A) {struct n} : list A :=
+  match n with
+  | 0 => []
+  | S n0 => match l with
+            | [] => []
+            | a :: l0 => a :: firstn n0 l0
+            end
+  end *)
+
+Definition epc := (0, 2).
+(* epc points to 3, since indices are zero-indexed *)
+(* but the nat arg to firstn is 1-indexed, so if I want only the elements before 3, I can use it for that *)
+Compute (firstn (snd epc) [1;2;3;4]).
+(* = [1; 2]
+     : list nat *)
+(* Corner cases: *)
+Compute (firstn 0 [1;2;3;4]).
+(* = []
+     : list nat *)
+Compute (firstn (snd epc) []).
+
 (* sync src and tgt registers *)
 (* can't handle callee here, not enough info if not speculating *)
 Definition r_sync (r: reg) (ms: bool) : reg :=
@@ -682,20 +705,6 @@ Proof.
   rewrite nth_error_Some in H. lia.
 Qed.
 
-(* Definition dirs_empty_by_inst (i: inst) : Prop :=
-  match i with
-  | <{{ branch _ to _ }}> | <{{ call _ }}> => False
-  | _ => True
-  end.
-
-Lemma dirs_empty (p: prog) : forall pc (ds: list direction) i,
-  p[[pc]] = Some i ->
-  dirs_empty_by_inst i ->
-  ds = [].
-Proof.
-  intros. destruct i.
-   - simpl in *. eapply ISMI_Skip in H. *)
-
 (* BCC lemma for one single instruction *)
 
 (*  
@@ -774,13 +783,41 @@ Proof.
           { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ skip }}>); clarify.
             rewrite Forall_forall in H0. specialize (H0 iblk). 
             specialize (nth_error_In (b :: bs) l Hfst); intros.
-            apply (H0 H2). }
+            apply (H0 H2). 
+          }
           destruct H2 as (i' & H2). rewrite H2.
           assert (forall n, (add n 1) = S n). { lia. }
           specialize (H3 o). rewrite H3.
           destruct o.
-          { admit. }
-          { admit. }
+          { (* o = 0 *)
+            f_equal. f_equal. f_equal. f_equal. f_equal. f_equal.
+            assert ((firstn 1 (fst iblk)) = [<{{ skip }}>]).
+            { simpl. rewrite Forall_forall in H0. specialize (H0 iblk). 
+              specialize (nth_error_In (b :: bs) l Hfst); intros. apply H0 in H5. unfold wf_block in H5.
+              destruct H5, H6. specialize (blk_not_empty_list iblk H5); intros. 
+              destruct (fst iblk); clarify. f_equal. simpl in Hsnd. injection Hsnd; intros; assumption.
+            }
+            rewrite H5. simpl. 
+            destruct (Bool.eqb (snd iblk) true).
+            { injection Hpcsync; intros. rewrite H7, H6. 
+              assert (S so = (add so 1)). { lia. }
+              rewrite H8. auto.
+            }
+            { injection Hpcsync; intros. rewrite H7. rewrite <- H6. simpl. auto. }
+          }
+          { (* o = S _ (here there are problems) *)
+            f_equal. f_equal. f_equal. f_equal. f_equal. f_equal. 
+            destruct (Bool.eqb (snd iblk) true).
+            { rewrite Forall_forall in H0. specialize (H0 iblk).
+              specialize (nth_error_In (b :: bs) l Hfst); intros. apply H0 in H5. unfold wf_block in H5.
+              destruct H5, H6. specialize (blk_not_empty_list iblk H5); intros.
+              destruct (fst iblk); clarify. f_equal.
+              destruct (Bool.eqb (snd iblk) true).
+              { simpl. destruct (is_br_or_call i); f_equal; admit. }
+              { f_equal; f_equal; f_equal; admit. }
+            }
+            { admit. }
+          }
         (*   simpl. *)
         (*   assert (fst iblk = [] -> nth_error (fst iblk) (S o') = None). *)
         (*   { intros. rewrite H5. apply nth_error_nil. } *)
