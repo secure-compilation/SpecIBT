@@ -9,6 +9,10 @@ build: Makefile.coq
 clean::
 	if [ -e Makefile.coq ]; then $(MAKE) -f Makefile.coq cleanall; fi
 	$(RM) $(wildcard Makefile.coq Makefile.coq.conf)
+	rm -rf ../_qc_$(shell basename $(CURDIR)).tmp *.bak
+
+test: Makefile.coq clean
+	quickChick -nobase -color -top SECF
 
 Makefile.coq: $(ALLVFILES)
 	coq_makefile $(COQMFFLAGS) -o Makefile.coq $(ALLVFILES)
