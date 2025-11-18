@@ -3,8 +3,7 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
-From SECF Require Import Utils.
-From SECF Require Import ListMaps.
+From SECF Require Import Utils ListMaps.
 From SECF Require Import MiniCET.
 From SECF Require Import TestingLib.
 From Stdlib Require Import Bool.Bool.
@@ -827,7 +826,6 @@ Proof.
           repeat f_equal.
           lia.
         }
-      }
       { admit. }
       { admit. }
       { admit. }
@@ -888,35 +886,25 @@ Admitted.
 Proof.
    Admitted. *)
 
-(* (** * Definition of Relative Secure *) *)
+ (** * Definition of Relative Secure *) 
 
-(* Definition seq_same_obs p c st1 st2 ast1 ast2 : Prop := *)
-(*   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2, *)
-(*     p |- <(( (pc1, r1, m1, stk1) ))> -->*^ os1 <(( (pc1', r1', m1', stk1') ))> -> *)
-(*     p |- <(( (pc2, r2, m2, stk2) ))> -->*^ os2 <(( (pc2', r2', m2', stk2') ))> -> *)
-(*     (prefix os1 os2) \/ (prefix os2 os1).  *)
+ Definition seq_same_obs p pc r1 r2 m1 m2 stk : Prop := 
+   forall os1 os2 c1 c2, 
+     p |- <(( S_Running (pc, r1, m1, stk) ))> -->*^ os1 <(( c1 ))> -> 
+     p |- <(( S_Running (pc, r2, m2, stk) ))> -->*^ os2 <(( c2 ))> -> 
+     (prefix os1 os2) \/ (prefix os2 os1).  
 
-(* Definition spec_same_obs p c st1 st2 ast1 ast2 : Prop := *)
-(*   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 n c1 c2, *)
-(*     p |- <((c, st1, ast1, false))> -->*_ds^^os1^^n <((c1, stt1, astt1, bt1))> -> *)
-(*     p |- <((c, st2, ast2, false))> -->*_ds^^os2^^n <((c2, stt2, astt2, bt2))> -> *)
-(*     os1 = os2.  *)
+ Definition spec_same_obs p pc r1 r2 m1 m2 stk : Prop := 
+   forall ds n os1 os2 c1 c2, 
+   p |- <(( S_Running (pc, r1, m1, stk, false, false) ))> -->*_ds^^os1^^n <(( c1 ))> -> 
+     p |- <(( S_Running (pc, r2, m2, stk, false, false) ))> -->*_ds^^ os2^^n <(( c2 ))> -> 
+     os1 = os2.  
 
-(* (* The new definition adds the extra program transformation we  *)
-(*    needed to check for speculation at the target of a call instruction. *)
-(*    This was needed to apply the bcc proof in the final theorem. *) *)
+ Definition relative_secure (p:prog) (trans1 : prog -> prog)
+     (r1 r2 : reg) (m1 m2 : mem): Prop := 
+   seq_same_obs p (0,0) r1 r2 m1 m2 [] -> 
+   spec_same_obs (trans1 p) (0,0) r1 r2 m1 m2 []. 
 
-(* (*  old definition: *)
-(*    Definition relative_secure (p:prog) (trans : com -> com) *)
-(*     (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop := *)
-(*   seq_same_obs p c st1 st2 ast1 ast2 -> *)
-(*    spec_same_obs p (trans c) st1 st2 ast1 ast2. *) *)
-
-(* Definition relative_secure (p:prog) (trans1 : prog -> prog) (trans2 : com -> com) *)
-(*     (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop := *)
-(*   seq_same_obs p c st1 st2 ast1 ast2 -> *)
-(*   spec_same_obs (trans1 p) (trans2 c) st1 st2 ast1 ast2. *)
-
-(* (** * Ultimate Speculative Load Hardening *) *)
+ (** * Ultimate Speculative Load Hardening *) 
 
 
