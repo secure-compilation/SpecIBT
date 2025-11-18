@@ -820,45 +820,12 @@ Proof.
           }
           destruct H2 as (i' & H2). rewrite H2.
           assert (forall n, (add n 1) = S n). { lia. }
-          specialize (H4 o). rewrite H4. simpl. f_equal.
-          f_equal. f_equal. f_equal. f_equal. f_equal. f_equal.
-          rewrite Forall_forall in H0. specialize (H0 iblk). 
-          specialize (nth_error_In (b :: bs) sl Hfst); intros. apply H0 in H5. unfold wf_block in H5.
-          destruct H5, H6. specialize (blk_not_empty_list iblk H5); intros.
-          destruct (fst iblk); clarify. 
-          (* specialize (firstnth_error (i :: l) o <{{ skip }}> Hsnd); intros. *)
-          destruct o as [|o'].
-          { (* o = 0 *)
-            do 6 f_equal. simpl.
-            destruct (Bool.eqb (snd iblk) true); simpl; simpl in Hsnd; injection Hsnd; intros; rewrite H9; auto.
-          }
-          (* Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
-               nth_error l n = Some i ->
-               firstn (S n) l = firstn n l ++ [i]. *)
+          specialize (H4 o). rewrite H4.
 
-          { (* o = S _ (here there are problems) *)
-            rewrite nth_error_cons_succ in Hsnd. rewrite firstn_cons. 
-             
-            
-
-
-            (*f_equal. f_equal. f_equal. f_equal. f_equal. f_equal. 
-            destruct (Bool.eqb (snd iblk) true).
-            { rewrite Forall_forall in H0. specialize (H0 iblk).
-              specialize (nth_error_In (b :: bs) l Hfst); intros. apply H0 in H5. unfold wf_block in H5.
-              destruct H5, H6. specialize (blk_not_empty_list iblk H5); intros.
-              destruct (fst iblk); clarify. f_equal.
-              destruct (Bool.eqb (snd iblk) true).
-              { simpl. destruct (is_br_or_call i); f_equal; admit. }
-              { f_equal; f_equal; f_equal; admit. }
-            }
-            { injection Hpcsync; intros. rewrite <- H6. rewrite Forall_forall in H0. specialize (H0 iblk). 
-              specialize (nth_error_In (b :: bs) l Hfst); intros. apply H0 in H7. unfold wf_block in H7.
-              destruct H7, H8. specialize (blk_not_empty_list iblk H7); intros. 
-              destruct (fst iblk); clarify.
-              admit.
-               }*)
-          }
+          specialize (firstnth_error (fst iblk) o <{{ skip }}> Hsnd) as ->.
+          rewrite fold_left_app. cbn.
+          repeat f_equal.
+          lia.
         }
       }
       { admit. }
