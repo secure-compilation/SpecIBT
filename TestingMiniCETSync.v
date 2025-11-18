@@ -337,16 +337,15 @@ Definition is_br_or_call (i : inst) :=
 *)
 
 Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
-  blk <- nth_error p (fst pc);; (* label in bounds *)
-  i <- nth_error (fst blk) (snd pc);; (* offset in bounds *)
-  let acc1 := if (Bool.eqb (snd blk) true) then 2 else 0 in (* procedure blocks add 2 insts *)
-    match (snd pc) with
-    | 0 => Some ((fst pc), add (snd pc) acc1)
-    | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in (* accumulate extra insts from br and call insts preceding pc inst *)
-               let acc2 := fold_left (fun acc (i: inst) =>
-                 if (is_br_or_call i) then (add acc 1) else acc) insts_before_pc acc1 in
-                   Some ((fst pc), add (snd pc) acc2)
-    end.
+  blk <- nth_error p (fst pc);; 
+  i <- nth_error (fst blk) (snd pc);; 
+  let acc1 := if (Bool.eqb (snd blk) true) then 2 else 0 in
+  let insts_before_pc := (firstn (snd pc) (fst blk)) in
+               let acc2 := fold_left (fun acc (i: inst) => if (is_br_or_call i) 
+                                                           then (add acc 1) 
+                                                           else acc) 
+                                                           insts_before_pc acc1 
+               in Some ((fst pc), add (snd pc) acc2).
 
 (* given a source register, sync with target register *)
 (* can't handle callee here, not enough info if not speculating *)
