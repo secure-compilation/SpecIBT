@@ -51,7 +51,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
       to_nat (eval r e) = Some n ->
 nth_error m n = Some v' ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OLoad n] <(( S_Running (pc+1, (x !-> v'; r), m, sk) ))>
-  | SSMI_Store : forall pc r m sk e e' n,
+| SSMI_Store : forall pc r m sk e e' n,
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
@@ -305,41 +305,19 @@ Definition is_br_or_call (i : inst) :=
   | _                                  => false
   end.
 
+Print fold_left.
+
 (* given src pc and program, obtain tgt pc *)
 Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
-  blk <- nth_error p (fst pc);; (* label in bounds *)
-  i <- nth_error (fst blk) (snd pc);; (* offset in bounds *)
-  let acc1 := if (Bool.eqb (snd blk) true) then 2 else 0 in (* procedure blocks add 2 insts *)
-    match (snd pc) with
-    | 0 => Some ((fst pc), add (snd pc) acc1)
-    | S _ => let insts_before_pc := (firstn (snd pc) (fst blk)) in (* accumulate extra insts from br and call insts preceding pc inst *)
-               let acc2 := fold_left (fun acc (i: inst) =>
-                 if (is_br_or_call i) then (add acc 1) else acc) insts_before_pc acc1 in
-                   Some ((fst pc), add (snd pc) acc2)
-    end.
-
-Print firstn.
-
-(* fix firstn (n : nat) (l : list A) {struct n} : list A :=
-  match n with
-  | 0 => []
-  | S n0 => match l with
-            | [] => []
-            | a :: l0 => a :: firstn n0 l0
-            end
-  end *)
-
-Definition epc := (0, 2).
-(* epc points to 3, since indices are zero-indexed *)
-(* but the nat arg to firstn is 1-indexed, so if I want only the elements before 3, I can use it for that *)
-Compute (firstn (snd epc) [1;2;3;4]).
-(* = [1; 2]
-     : list nat *)
-(* Corner cases: *)
-Compute (firstn 0 [1;2;3;4]).
-(* = []
-     : list nat *)
-Compute (firstn (snd epc) []).
+  blk <- nth_error p (fst pc);; 
+  i <- nth_error (fst blk) (snd pc);; 
+  let acc1 := if (Bool.eqb (snd blk) true) then 2 else 0 in
+  let insts_before_pc := (firstn (snd pc) (fst blk)) in
+               let acc2 := fold_left (fun acc (i: inst) => if (is_br_or_call i) 
+                                                           then (add acc 1) 
+                                                           else acc) 
+                                                           insts_before_pc acc1 
+               in Some ((fst pc), add (snd pc) acc2).
 
 (* sync src and tgt registers *)
 (* can't handle callee here, not enough info if not speculating *)
@@ -746,6 +724,20 @@ Proof.
   rewrite nth_error_Some in H. lia.
 Qed.
 
+Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
+  nth_error l n = Some i ->
+  firstn (S n) l = firstn n l ++ [i].
+Proof.
+  induction l as [|h t IHl]; intros.
+  - rewrite nth_error_nil in H; discriminate.
+  - rewrite firstn_cons. replace (h :: t) with ([h] ++ t) by auto.
+    replace (h :: firstn n t) with ([h] ++ (firstn n t)) by auto.
+    rewrite firstn_app. simpl.
+    rewrite nth_error_cons in H. destruct n as [|n']; clarify.
+    specialize IHl with (n:=n') (i:=i). specialize (IHl H).
+    rewrite IHl. simpl. rewrite firstn_nil. simpl. rewrite sub_0_r. auto.
+Qed.
+
 (* BCC lemma for one single instruction *)
 
 (*  
@@ -802,7 +794,7 @@ Proof.
       rewrite Hipc in Hfst, Hsnd. simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in *.
 
       (* put program in form where we can access block 0 and rest *)
-      destruct p as [|b bs] eqn:Hp. { simpl in *. inv H. } simpl in *. 
+      destruct p as [|b bs] eqn:Hp. { simpl in *. inv H. } (*simpl in *.*) 
       destruct i.
       { (* skip *) 
         assert (si = <{{ skip }}>).
@@ -812,42 +804,45 @@ Proof.
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
         rewrite <- app_nil_r with (l:=os) in tgt_steps.
         inv tgt_steps. exists (l, (add o 1), r, m, sk, ms). 
-        unfold wf_dir in wfds. rewrite Forall_forall in wfds. simpl in wfds.
+        (*unfold wf_dir in wfds. rewrite Forall_forall in wfds. simpl in wfds.*)
         assert (ds = [] /\ os = []).
         { inv H12. inv H11; clarify. ss. rewrite app_nil_r in H6, H7. auto. } 
         des; subst. simpl in H6, H7. eapply app_eq_nil in H6, H7. des; subst.
         split.
         - econs. auto.
-        - inv H12. inv H11; clarify. clear H3. clear n_steps.
-          simpl. rewrite Hsk. unfold pc_sync. cbn. rewrite Hfst. 
+        - inv H12. inv H11; clarify. clear H4. clear n_steps.
+          (*simpl in *.*) simpl. rewrite Hsk. unfold pc_sync. cbn. rewrite Hfst. 
           assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
           { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ skip }}>); clarify.
             rewrite Forall_forall in H0. specialize (H0 iblk). 
-            specialize (nth_error_In (b :: bs) l Hfst); intros.
+            specialize (nth_error_In (b :: bs) sl Hfst); intros.
             apply (H0 H2). 
           }
           destruct H2 as (i' & H2). rewrite H2.
           assert (forall n, (add n 1) = S n). { lia. }
-          specialize (H3 o). rewrite H3.
-          destruct o.
+          specialize (H4 o). rewrite H4. simpl. f_equal.
+          f_equal. f_equal. f_equal. f_equal. f_equal. f_equal.
+          rewrite Forall_forall in H0. specialize (H0 iblk). 
+          specialize (nth_error_In (b :: bs) sl Hfst); intros. apply H0 in H5. unfold wf_block in H5.
+          destruct H5, H6. specialize (blk_not_empty_list iblk H5); intros.
+          destruct (fst iblk); clarify. 
+          (* specialize (firstnth_error (i :: l) o <{{ skip }}> Hsnd); intros. *)
+          destruct o as [|o'].
           { (* o = 0 *)
-            f_equal. f_equal. f_equal. f_equal. f_equal. f_equal.
-            assert ((firstn 1 (fst iblk)) = [<{{ skip }}>]).
-            { simpl. rewrite Forall_forall in H0. specialize (H0 iblk). 
-              specialize (nth_error_In (b :: bs) l Hfst); intros. apply H0 in H5. unfold wf_block in H5.
-              destruct H5, H6. specialize (blk_not_empty_list iblk H5); intros. 
-              destruct (fst iblk); clarify. f_equal. simpl in Hsnd. injection Hsnd; intros; assumption.
-            }
-            rewrite H5. simpl. 
-            destruct (Bool.eqb (snd iblk) true).
-            { injection Hpcsync; intros. rewrite H7, H6. 
-              assert (S so = (add so 1)). { lia. }
-              rewrite H8. auto.
-            }
-            { injection Hpcsync; intros. rewrite H7. rewrite <- H6. simpl. auto. }
+            do 6 f_equal. simpl.
+            destruct (Bool.eqb (snd iblk) true); simpl; simpl in Hsnd; injection Hsnd; intros; rewrite H9; auto.
           }
+          (* Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
+               nth_error l n = Some i ->
+               firstn (S n) l = firstn n l ++ [i]. *)
+
           { (* o = S _ (here there are problems) *)
-            f_equal. f_equal. f_equal. f_equal. f_equal. f_equal. 
+            rewrite nth_error_cons_succ in Hsnd. rewrite firstn_cons. 
+             
+            
+
+
+            (*f_equal. f_equal. f_equal. f_equal. f_equal. f_equal. 
             destruct (Bool.eqb (snd iblk) true).
             { rewrite Forall_forall in H0. specialize (H0 iblk).
               specialize (nth_error_In (b :: bs) l Hfst); intros. apply H0 in H5. unfold wf_block in H5.
@@ -857,20 +852,14 @@ Proof.
               { simpl. destruct (is_br_or_call i); f_equal; admit. }
               { f_equal; f_equal; f_equal; admit. }
             }
-            { admit. }
+            { injection Hpcsync; intros. rewrite <- H6. rewrite Forall_forall in H0. specialize (H0 iblk). 
+              specialize (nth_error_In (b :: bs) l Hfst); intros. apply H0 in H7. unfold wf_block in H7.
+              destruct H7, H8. specialize (blk_not_empty_list iblk H7); intros. 
+              destruct (fst iblk); clarify.
+              admit.
+               }*)
           }
-        (*   simpl. *)
-        (*   assert (fst iblk = [] -> nth_error (fst iblk) (S o') = None). *)
-        (*   { intros. rewrite H5. apply nth_error_nil. } *)
-        (*   assert (fst iblk <> []). { unfold not; intros. apply H5 in H6. clarify. } *)
-        (*   destruct (fst iblk) as [|i insts]; clarify. *)
-        (*   unfold spec_cfg_sync. *)
-        (* destruct H2. rewrite H2, H4 in *. simpl in H6, H7. *)
-        (* apply app_eq_nil in H6, H7. destruct H6, H7. *)
-        (* rewrite H5, H6, H7, H8 in *. split. *)
-        (* - apply ISMI_Skip with (r:=r) (m:=m) (sk:=sk) (ms:=ms) in H1. assumption. *)
-        (* - *)
-          
+        }
       }
       { admit. }
       { admit. }
