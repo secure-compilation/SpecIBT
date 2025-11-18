@@ -10,6 +10,27 @@ Definition rev {A : Type} (l : list A) := rev_append l [].
 Definition app {A:Type} (l1:list A) := rev_append (rev l1).
 Notation "x ++ y" := (app x y) (right associativity, at level 60).
 
+Lemma rev_append_correct {A} (l1 l2 : list A) :
+  rev_append l1 l2 = List.app (List.rev l1) l2.
+Proof.
+  induction l1 in l2 |-*.
+  { reflexivity. }
+  cbn. rewrite <- app_assoc. cbn.
+  apply IHl1.
+Qed.
+
+Lemma tr_app_correct {A} (l1: list A) l2 :
+  app l1 l2 = List.app l1 l2.
+Proof.
+  induction l1.
+  {reflexivity. }
+  cbn. do 2 rewrite rev_append_correct.
+  change [a] with (List.rev [a]).
+  rewrite <- rev_app_distr.
+  rewrite rev_involutive. rewrite <- app_assoc.
+  reflexivity.
+Qed.
+
 Fixpoint upd {A:Type} (i:nat) (ns:list A) (n:A) : list A :=
   match i, ns with
   | 0, _ :: ns' => n :: ns'

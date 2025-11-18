@@ -642,11 +642,52 @@ Qed.
 Lemma p_le_tp : forall (p: prog),
   Datatypes.length p <= Datatypes.length (uslh_prog p).
 Proof.
-  intros. induction p as [|b bs IHp]; auto.
-  replace (b :: bs) with ([b] ++ bs) by auto.
-  rewrite length_app. simpl.
-  destruct b as (insts & proc) eqn:Hb.
-Admitted. 
+  intros.
+  unfold uslh_prog.
+  destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn: Huslh.
+  enough (length p' = length p).
+  {
+    rewrite tr_app_correct.
+    rewrite length_app.
+    lia.
+  }
+  (* The remaining proof is surprisingly ugly, as it depends on the interplay of mapT, combine, and uslh_bind. *)
+  (* unfold mapM until we have the underlying List functions *)
+  unfold mapM in Huslh. 
+  unfold Traversable.sequence in Huslh.
+  unfold Traversable.mapT in Huslh.
+  cbn in Huslh.
+  revert Huslh.
+  generalize (Datatypes.length p) at 1 as len.
+  (* need generalized version for induction *)
+  unfold add_index. generalize 0 as n.
+  revert p' newp.
+  induction p.
+  - intros p' newp n len [= ->]. reflexivity.
+  - intros p' newp n len Huslh. cbn in Huslh.
+    unfold uslh_bind, uslh_ret in Huslh. cbn in Huslh.
+    (* all these destructors don't simplify by themselves, unfortunately. *)
+    (* first, we need to destruct the outer layer to recover the arguments of the recursive call *)
+    match goal with 
+    | [H: (let '(r, p0) := ?e in _) = _ |- _] => destruct e eqn: He
+    end.
+    (* Now, we can use the induction hypothesis to get the length of this part *)
+    destruct (List.mapT_list id (map uslh_blk (combine (seq (S n) (Datatypes.length p)) p)) (len + Datatypes.length p0)) as [ p'' newp' ] eqn: Heq.
+    apply IHp in Heq.
+    inv Huslh.
+    (* We now need to destruct the expressions in He further, just enough to recover that the function applied here is cons. We don't care about the value, only the length. *)
+    match goal with 
+    | [H: (let '(_, _) := ?e in _) = _ |- _] => destruct e eqn: He'
+    end.
+    inv He.
+    match goal with 
+    | [H: (let '(_, _) := ?e in _) = _ |- _] => destruct e eqn: He''
+    end.
+    inv He'.
+    cbn.
+    now rewrite Heq.
+Qed.
+
 
 Lemma block_always_terminator p b o i
     (WFB: wf_block p b)
@@ -659,7 +700,7 @@ Proof.
   destruct (le_dec o (Datatypes.length (fst b) - 1)).
   (* o <= Datatypes.length (fst b) - 1: this is the in-bounds case *)
   { assert (i <> i0). { unfold not; intros. unfold is_terminator in *. destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify. }
-    destruct (eq_dec o (Datatypes.length (fst b) - 1)).
+  destruct (eq_dec o (Datatypes.length (fst b) - 1)).
     (* o = Datatypes.length (fst b) - 1: not possible bc i ≠ i0 and i0 is last element *)
     { assert (rev (i0 :: l) = rev l ++ [i0]). { simpl. auto. }
       assert (rev (rev (fst b)) = rev (i0 :: l)). { rewrite Heq. simpl. auto. }
