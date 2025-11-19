@@ -371,6 +371,7 @@ Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   (*! let stk' := stk in *)
   ret (pc', r_sync r ms, m, stk', false, ms).
 
+(*
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
 Definition steps_to_sync_point (p: prog) (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
@@ -415,6 +416,58 @@ Definition steps_to_sync_point (p: prog) (tsc: spec_cfg) (ds: dirs) : option nat
                                (*! | DBranch b :: _ => Some (if b then 2 else 3) *)
                                | [] => untrace "empty directives for branch" None
                                | _ => untrace "missing directive for branch" None
+                               end
+    | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
+   end.*)
+Print untrace.
+(* How many steps does it take for target program to reach the program point the source reaches in one step? *)
+Definition steps_to_sync_point (tp: prog) (tsc: spec_cfg) (ds: dirs) : option nat :=
+  let '(tc, ct, ms) := tsc in
+  let '(pc, r, m, sk) := tc in
+    (* check pc is well-formed *)
+    blk <- nth_error tp (fst pc);;
+    i <- nth_error (fst blk) (snd pc);;
+    match i with
+    | <{{x := _}}> => match (String.eqb x callee) with
+                      | true => match tp[[pc+1]] with
+                                    | Some i => match i with
+                                                | <{{call _}}> => match ds with
+                                                                  | [DCall lo] => (* decorated call with correct directive *)
+                                                                                  let '(l, o) := lo in
+                                                                                  (* check attacker pc is well-formed *)
+                                                                                  blk <- nth_error tp l;;
+                                                                                  i <- nth_error (fst blk) o;;
+                                                                                  (* 4 steps if procedure block, fault otherwise *)
+                                                                                  if (Bool.eqb (snd blk) true) && (o =? 0) then 
+                                                                                  (*! *)
+                                                                                  Some 4 
+                                                                                  (*!! steps_to_sync_point-call-3 *)
+                                                                                  (*! Some 3 *)
+                                                                                  (*!! steps_to_sync_point-call-5 *)
+                                                                                  (*! Some 5 *)
+                                                                                  else None
+                                                                  | _ => None (* incorrect directive for call *)
+                                                                  end
+                                                | _ => None (* callee assignment preceding any instruction other than call is ill-formed *)
+                                                end
+                                    | None => None (* callee assignment as last instruction in block is ill-formed *)
+                                    end
+                      | false => match (String.eqb x msf) with 
+                                 | true => None (* target starting pc is never going to point to msf assignment *)
+                                 | false => Some 1 (* assignment statements that existed in src program *)
+                                 end
+                      end
+    | <{{ branch _ to _ }}> => (* branch decorations all come after the instruction itself, so this is the sync point *)
+                               match ds with
+                               (*! *)
+                               | [DBranch b] => Some (if b then 3 else 2)
+                               (*!! step_to_sync_point-branch-always-3 *)
+                               (*! | DBranch b :: _ => Some 3 *)
+                               (*!! step_to_sync_point-branch-always-2 *)
+                               (*! | DBranch b :: _ => Some 2 *)
+                               (*!! step_to_sync_point-branch-inverted *)
+                               (*! | DBranch b :: _ => Some (if b then 2 else 3) *)
+                               | _ => None
                                end
     | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
     end.
@@ -556,7 +609,7 @@ Definition single_step_cc := (
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
           | None => match spec_steps 4 (uslh_prog p) (S_Running tcfg) ds with 
                     | (S_Fault, _, ospec) => (*untrace "fault"*) (checker (obs_eqb oideal ospec)) (* speculative execution should fail if it won't sync again *)
-                    | _ => untrace "spec exec didn't fail"%string (checker false)
+                    | _ => trace "spec exec didn't fail"%string (checker false)
                     end
           | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
           end
@@ -564,13 +617,13 @@ Definition single_step_cc := (
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
           | None => match spec_steps 1 (uslh_prog p) (S_Running tcfg) ds with 
                     | (S_Term, _, ospec) => (*untrace "term"*) (checker (obs_eqb oideal ospec))
-                    | _ => untrace "spec exec didn't terminate"%string (checker false)
+                    | _ => trace "spec exec didn't terminate"%string (checker false)
                     end
           | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
           end
       | (S_Running icfg', _, oideal) => 
           match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
-          | None => untrace "Ideal step succeeds, but steps_to_sync_point undefined" (checker false)
+          | None => trace "Ideal step succeeds, but steps_to_sync_point undefined" (checker false)
           | Some n => match spec_steps n (uslh_prog p) (S_Running tcfg) ds with 
                       | (S_Running tcfg', _, ospec) => match (spec_cfg_sync p icfg') with
                                               | None => collect "sync fails "%string (checker tt)
@@ -579,7 +632,7 @@ Definition single_step_cc := (
                                                                 | false => (*untrace (show tcfg' ++ "|||||" ++ show tcfgref)*) (checker false)
                                                                 end
                                               end
-                      | (_, ds, os) => untrace ("spec exec fails "%string ++ (show os) ++ show (uslh_prog p)) (checker false)
+                      | (_, ds, os) => trace ("spec exec fails "%string ++ (show os) ++ show (uslh_prog p)) (checker false)
                       end
           end
       | _ => collect "ideal exec undef"%string (checker tt)
