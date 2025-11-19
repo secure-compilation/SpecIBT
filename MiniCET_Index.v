@@ -33,7 +33,7 @@ Reserved Notation
 Inductive seq_eval_small_step_inst (p:prog) :
   @state cfg -> @state cfg -> obs -> Prop :=
   | SSMI_Skip : forall pc rs m stk,
-      p[[pc]] = Some <{{ skip }}> ->
+p[[pc]] = Some <{{ skip }}> ->
       p |- <(( S_Running (pc, rs, m, stk) ))> -->^[] <(( S_Running (pc+1, rs, m, stk) ))>
   | SSMI_Asgn : forall pc r m sk e x,
       p[[pc]] = Some <{{ x := e }}> ->
@@ -160,7 +160,7 @@ Definition ideal_cfg :=  (cfg * bool)%type.
 Definition uslh_inst (i: inst) : M (list inst) :=
   match i with
   | <{{ctarget}}> => ret [<{{skip}}>]
-  | <{{x<-load[e]}}> =>
+| <{{x<-load[e]}}> =>
       let e' := <{ (msf=1) ? 0 : e }> in
       ret [<{{x<-load[e']}}>]
   | <{{store[e] <- e1}}> =>
@@ -304,8 +304,6 @@ Definition is_br_or_call (i : inst) :=
   | _                                  => false
   end.
 
-Print fold_left.
-
 (* given src pc and program, obtain tgt pc *)
 Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
   blk <- nth_error p (fst pc);; 
@@ -339,29 +337,37 @@ Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   stk' <- map_opt (pc_sync p) stk;;
   ret (pc', r_sync r ms, m, stk', false, ms).
 
+
+
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
-Definition steps_to_sync_point (p: prog) (tsc: spec_cfg) (ds: dirs) : option nat :=
+Definition steps_to_sync_point (tp: prog) (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
   let '(pc, r, m, sk) := tc in
     (* check pc is well-formed *)
-    blk <- nth_error (uslh_prog p) (fst pc);;
+    blk <- nth_error tp (fst pc);;
     i <- nth_error (fst blk) (snd pc);;
     match i with
-    | <{{_ := _}}> => match (uslh_prog p)[[pc+1]] with
-                      | Some i => match i with
-                                  | <{{call _}}> => match ds with
-                                                    | [DCall lo] => (* decorated call with correct directive *)
-                                                                    let '(l, o) := lo in
-                                                                    (* check attacker pc is well-formed *)
-                                                                    blk <- nth_error (uslh_prog p) l;;
-                                                                    i <- nth_error (fst blk) o;;
-                                                                    (* 4 steps if procedure block, fault otherwise *)
-                                                                    if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
-                                                    | _ => None (* incorrect directive for call *)
-                                                    end
-                                  | _ => Some 1 (* assignment from source program, not decoration *)
-                                  end
-                      | None => Some 1 (* assignment from source program, last instruction in block *)
+    | <{{x := _}}> => match (String.eqb x callee) with
+                      | true => match tp[[pc+1]] with
+                                    | Some i => match i with
+                                                | <{{call _}}> => match ds with
+                                                                  | [DCall lo] => (* decorated call with correct directive *)
+                                                                                  let '(l, o) := lo in
+                                                                                  (* check attacker pc is well-formed *)
+                                                                                  blk <- nth_error tp l;;
+                                                                                  i <- nth_error (fst blk) o;;
+                                                                                  (* 4 steps if procedure block, fault otherwise *)
+                                                                                  if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
+                                                                  | _ => None (* incorrect directive for call *)
+                                                                  end
+                                                | _ => None (* callee assignment preceding any instruction other than call is ill-formed *)
+                                                end
+                                    | None => None (* callee assignment as last instruction in block is ill-formed *)
+                                    end
+                      | false => match (String.eqb x msf) with 
+                                 | true => None (* target starting pc is never going to point to msf assignment *)
+                                 | false => Some 1 (* assignment statements that existed in src program *)
+                                 end
                       end
     | <{{ branch _ to _ }}> => (* branch decorations all come after the instruction itself, so this is the sync point *)
                                match ds with
@@ -400,36 +406,36 @@ Inductive result : Type :=
 
 (* target *)
 
-Definition is_fault_tgt (p:prog) (res_t: spec_cfg) : option bool :=
+Definition is_fault_tgt (tp:prog) (res_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := res_t in
   let '(pc, rs, m, sk) := c in
-  i <- (uslh_prog p)[[pc]];;
+  i <- tp[[pc]];;
   match i with
   | <{{ ctarget }}> => Some (if ct then false else true)
   | _ => Some (if ct then true else false)
   end.
 
-Definition is_normal_termination_tgt (p:prog) (res_t: spec_cfg) : option bool :=
+Definition is_normal_termination_tgt (tp:prog) (res_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := res_t in
   let '(pc, rs, m, sk) := c in
-  i <- (uslh_prog p)[[pc]];;
+  i <- tp[[pc]];;
   match i with
   | <{{ ret }}> => Some (if seq.nilp sk then true else false)
   | _ => Some false
   end.
 
-Definition is_stuck_tgt (p: prog) (res_t: spec_cfg) : option bool :=
+Definition is_stuck_tgt (tp: prog) (res_t: spec_cfg) : option bool :=
   let '(c, ct, ms) := res_t in
   let '(pc, rs, m, sk) := c in
-  _ <- (uslh_prog p)[[pc]];;
-  match (is_fault_tgt (uslh_prog p) res_t, is_normal_termination_tgt (uslh_prog p) res_t) with
+  _ <- tp[[pc]];;
+  match (is_fault_tgt tp res_t, is_normal_termination_tgt tp res_t) with
   | (Some false, Some false) => Some true
   | _ => Some false
   end.
 
-Definition classify_res_tgt (p: prog) (res_t: spec_cfg) : result :=
-  if (is_fault_tgt (uslh_prog p) res_t) then R_Fault else
-  if (is_normal_termination_tgt (uslh_prog p) res_t) then R_Normal else R_UB.
+Definition classify_res_tgt (tp: prog) (res_t: spec_cfg) : result :=
+  if (is_fault_tgt tp res_t) then R_Fault else
+  if (is_normal_termination_tgt tp res_t) then R_Normal else R_UB.
 
 (* source *)
 
@@ -463,18 +469,18 @@ Definition classify_term_src (p: prog) (res_s: ideal_cfg) : result :=
   if (is_fault_src p res_s) then R_Fault else
   if (is_normal_termination_src p res_s) then R_Normal else R_UB.
 
-Definition same_result_type (p: prog) (sc: spec_cfg) (ic: ideal_cfg) : bool :=
+Definition same_result_type (p tp: prog) (sc: spec_cfg) (ic: ideal_cfg) : bool :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
   let '(c', ms') := ic in
   let '(pc', r', m', sk') := c' in
-  match ((uslh_prog p)[[pc]], p[[pc']]) with
+  match (tp[[pc]], p[[pc']]) with
   | (Some i, Some i') =>
-      let ub_t := is_stuck_tgt (uslh_prog p) sc in
+      let ub_t := is_stuck_tgt tp sc in
       let ub_s := is_stuck_src p ic in
-      let normal_t := is_normal_termination_tgt (uslh_prog p) sc in
+      let normal_t := is_normal_termination_tgt tp sc in
       let normal_s := is_normal_termination_src p ic in
-      let fault_t := is_fault_tgt (uslh_prog p) sc in
+      let fault_t := is_fault_tgt tp sc in
       let fault_s := is_fault_src p ic in
       let ub_match :=
         match (ub_t, ub_s) with
@@ -665,7 +671,6 @@ Proof.
     now rewrite Heq.
 Qed.
 
-
 Lemma block_always_terminator p b o i
     (WFB: wf_block p b)
     (INST: nth_error (fst b) o = Some i)
@@ -737,8 +742,47 @@ Proof.
     rewrite IHl. simpl. rewrite firstn_nil. simpl. rewrite sub_0_r. auto.
 Qed.
 
-(* Yonghyun's lemma, prove this
+(* 
+(msf !-> N 1; x !-> eval r e; r) =
+(x !-> eval (msf !-> N 1; r) e; msf !-> N 1; r)
 
+Is this true? 
+
+In more general terms, is
+
+   x1 !-> v; x2 !-> eval r e; r) = 
+   x2 !-> eval (x1 !-> v; r) e; x1 !-> v; r
+
+That is, two values we know to be not the same (x1 and x2),
+we know that swapping their positions in the map doesn't make a difference, 
+but is it true that mapping x2 to the evaluation of some expr e given r 
+is the same as mapping x2 to the evaluation of e in r with the x1 to v mapping prepended?
+
+This is like saying, will the evaluation of e be different according to whether you add the x1 mapping to r?
+
+What would this depend on? Whether x1 is used in e. If it isn't used, then it's impossible for any change in its 
+value to affect the evaluation of e.
+
+   So: e_unused x e -> eval r e = eval (x !-> v; r) e.
+*) 
+
+Lemma unused_eval : forall r e x v,
+  e_unused x e -> eval r e = eval (x !-> v; r) e.
+Proof. 
+  destruct r. simpl. induction e; clarify.
+  - intros. simpl in *. destruct (string_dec x x0); clarify.
+  - intros. simpl in *. destruct H. specialize (IHe1 x v0). 
+    specialize (IHe1 H). specialize (IHe2 x v0). specialize (IHe2 H0).
+    rewrite IHe1, IHe2. auto.
+  - intros. simpl in *. destruct H, H0. specialize (IHe1 x v0).
+    specialize (IHe1 H). specialize (IHe2 x v0). specialize (IHe2 H0).
+    specialize (IHe3 x v0). specialize (IHe3 H1). rewrite IHe1, IHe2, IHe3.
+    simpl. destruct (to_nat (eval (v, map_set m x v0) e1)); auto.
+Qed.
+    
+
+(* Yonghyun's lemma, prove this *)
+(*
    fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then acc + 1 else acc)
     (l0 ++ [<{{ skip }}>]) (if Bool.eqb (snd iblk) true then 2 else 0) =
   fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then acc + 1 else acc) l0
@@ -746,23 +790,13 @@ Qed.
 
 (* BCC lemma for one single instruction *)
 
-(*  
-
-Lemma block_always_terminator p b o i
-    (WFB: wf_block p b)
-    (INST: nth_error (fst b) o = Some i)
-    (NT: ~ is_terminator i) :
-    exists i', nth_error (fst b) (add o 1) = Some i'.
-
-*)
-
 Lemma ultimate_slh_bcc_single_cycle (p: prog) : forall ic1 sc1 sc2 n ds os,
   wf_prog p ->
   wf_ds p (get_pc_sc sc1) ds ->
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
-  steps_to_sync_point p sc1 ds = Some n ->
+  steps_to_sync_point (uslh_prog p) sc1 ds = Some n ->
   spec_cfg_sync p ic1 = Some sc1 ->
   uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( S_Running sc2 ))> ->
   exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> /\ spec_cfg_sync p ic2 = Some sc2.
@@ -831,8 +865,83 @@ Proof.
           rewrite fold_left_app. cbn.
           repeat f_equal.
           lia.
+      }
+      { (* x := e *) 
+        assert (si = <{{ x := e }}>).
+        { admit. }
+        rewrite H4 in *. 
+        assert (x <> callee).
+        { unfold unused_prog in unused_p_callee. destruct (split (b :: bs)) eqn:Hsplit; clarify.
+          rename l0 into insts. rename l1 into bools. rewrite Forall_forall in unused_p_callee.
+          specialize unused_p_callee with (x:=(fst iblk)). specialize (nth_error_In (b :: bs) sl Hfst); intros.
+          specialize (split_combine (b :: bs) Hsplit); intros. rewrite <- H4 in H2.
+          assert (iblk = ((fst iblk), (snd iblk))). { destruct iblk. simpl. auto. }
+          rewrite H5 in H2. specialize (in_combine_l insts bools (fst iblk) (snd iblk) H2); intros.
+          specialize (unused_p_callee H6). unfold b_unused in unused_p_callee. rewrite Forall_forall in unused_p_callee.
+          specialize (nth_error_In (fst iblk) o Hsnd); intros. specialize unused_p_callee with (x:=<{{ x := e }}>).
+          specialize (unused_p_callee H7).  cbn in unused_p_callee. destruct unused_p_callee. assumption.
         }
-      { admit. }
+        rewrite <- String.eqb_neq in H5. rewrite H5 in n_steps.
+        assert (x <> msf).
+        { unfold unused_prog in unused_p_msf. destruct (split (b :: bs)) eqn:Hsplit; clarify.
+          rename l0 into insts. rename l1 into bools. rewrite Forall_forall in unused_p_msf.
+          specialize unused_p_msf with (x:=(fst iblk)). specialize (nth_error_In (b :: bs) sl Hfst); intros.
+          specialize (split_combine (b :: bs) Hsplit); intros. rewrite <- H4 in H2.
+          assert (iblk = ((fst iblk), (snd iblk))). { destruct iblk. simpl. auto. }
+          rewrite H6 in H2. specialize (in_combine_l insts bools (fst iblk) (snd iblk) H2); intros.
+          specialize (unused_p_msf H7). unfold b_unused in unused_p_msf. rewrite Forall_forall in unused_p_msf.
+          specialize (nth_error_In (fst iblk) o Hsnd); intros. specialize unused_p_msf with (x:=<{{ x := e }}>).
+          specialize (unused_p_msf H8).  cbn in unused_p_msf. destruct unused_p_msf. assumption.
+        }
+        rewrite <- String.eqb_neq in H6. rewrite H6 in n_steps. 
+        injection n_steps; intros. rewrite <- H5 in *.
+        rewrite <- H2 in *. clear cfg_sync.
+        rewrite <- app_nil_r with (l:=ds) in tgt_steps.
+        rewrite <- app_nil_r with (l:=os) in tgt_steps. rewrite H5 in tgt_steps.
+        inv tgt_steps; try discriminate. assert (n0 = 0). { lia. } rewrite H2 in H13.
+        exists (l, (add o 1), x !-> (eval r e); r, m, sk, ms). 
+        (*unfold wf_dir in wfds. rewrite Forall_forall in wfds. simpl in wfds.*)
+        assert (ds = [] /\ os = []).
+        { inv H13. inv H12; clarify. ss. rewrite app_nil_r in H8, H9. auto. } 
+        des; subst. simpl in H8, H9. eapply app_eq_nil in H8, H9. des; subst.
+        split.
+        - econs. auto.
+        - inv H13. inv H12; clarify. clear H14. clear n_steps.
+          simpl. rewrite Hsk. unfold pc_sync. cbn. rewrite Hfst. 
+          assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
+          { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ x := e }}>); clarify.
+            rewrite Forall_forall in H0. specialize (H0 iblk). 
+            specialize (nth_error_In (b :: bs) sl Hfst); intros.
+            apply (H0 H2). 
+          }
+          destruct H2 as (i' & H2). rewrite H2.
+          assert (forall n, (add n 1) = S n). { lia. }
+          specialize (H3 o). rewrite H3.
+          specialize (firstnth_error (fst iblk) o <{{ x := e }}> Hsnd) as ->.
+          rewrite fold_left_app. cbn.
+          repeat f_equal; [lia|].
+          unfold r_sync. cbn in ms_msf. destruct ms.
+          { unfold unused_prog in unused_p_msf. destruct (split (b :: bs)) eqn:Hsplit; clarify.
+            rename l into insts. rename l0 into bools. rewrite Forall_forall in unused_p_msf.
+            specialize unused_p_msf with (x:=(fst iblk)). specialize (nth_error_In (b :: bs) sl Hfst); intros.
+            specialize (split_combine (b :: bs) Hsplit); intros. rewrite <- H8 in H7.
+            assert (iblk = ((fst iblk), (snd iblk))). { destruct iblk. simpl. auto. }
+            rewrite H9 in H7. specialize (in_combine_l insts bools (fst iblk) (snd iblk) H7); intros.
+            specialize (unused_p_msf H10). unfold b_unused in unused_p_msf. rewrite Forall_forall in unused_p_msf.
+            specialize (nth_error_In (fst iblk) o Hsnd); intros. specialize unused_p_msf with (x:=<{{ x := e }}>).
+            specialize (unused_p_msf H11). simpl in unused_p_msf. destruct unused_p_msf. 
+            specialize (unused_eval r e msf (N 1) H13); intros. Set Printing All.
+
+            (* H13 : @Logic.eq  val (eval r e)   (eval (@t_update val r msf (N (S O))) e) *)
+
+            (* Goal : @Logic.eq reg (@t_update val (@t_update val r x (eval r e)) msf (N (S O)))
+                      
+               (@t_update val (@t_update val r msf (N (S O))) x (eval (@t_update val r msf (N (S O))) e)) *)
+          }
+      }
+
+      (* Lemma unused_eval : forall r e x v,
+  e_unused x e -> eval r e = eval (x !-> v; r) e. *)
       { admit. }
       { admit. }
       { admit. }
