@@ -930,7 +930,7 @@ Proof.
             specialize (unused_p_msf H10). unfold b_unused in unused_p_msf. rewrite Forall_forall in unused_p_msf.
             specialize (nth_error_In (fst iblk) o Hsnd); intros. specialize unused_p_msf with (x:=<{{ x := e }}>).
             specialize (unused_p_msf H11). simpl in unused_p_msf. destruct unused_p_msf. 
-            specialize (unused_eval r e msf (N 1) H13); intros. Set Printing All.
+            specialize (unused_eval r e msf (N 1) H13); intros. Set Printing All. admit.
 
             (* H13 : @Logic.eq  val (eval r e)   (eval (@t_update val r msf (N (S O))) e) *)
 
@@ -938,6 +938,7 @@ Proof.
                       
                (@t_update val (@t_update val r msf (N (S O))) x (eval (@t_update val r msf (N (S O))) e)) *)
           }
+          { admit. }
       }
 
       (* Lemma unused_eval : forall r e x v,
