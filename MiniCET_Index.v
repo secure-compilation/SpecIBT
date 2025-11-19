@@ -737,6 +737,13 @@ Proof.
     rewrite IHl. simpl. rewrite firstn_nil. simpl. rewrite sub_0_r. auto.
 Qed.
 
+(* Yonghyun's lemma, prove this
+
+   fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then acc + 1 else acc)
+    (l0 ++ [<{{ skip }}>]) (if Bool.eqb (snd iblk) true then 2 else 0) =
+  fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then acc + 1 else acc) l0
+    (if Bool.eqb (snd iblk) true then 2 else 0) *)
+
 (* BCC lemma for one single instruction *)
 
 (*  
@@ -797,7 +804,7 @@ Proof.
       destruct i.
       { (* skip *) 
         assert (si = <{{ skip }}>).
-        { admit. }
+        { admit.        }
         rewrite H4 in *. injection n_steps; intros. rewrite <- H5 in *.
         rewrite <- H2 in *. clear cfg_sync.
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
@@ -810,7 +817,7 @@ Proof.
         split.
         - econs. auto.
         - inv H12. inv H11; clarify. clear H4. clear n_steps.
-          (*simpl in *.*) simpl. rewrite Hsk. unfold pc_sync. cbn. rewrite Hfst. 
+          simpl. rewrite Hsk. unfold pc_sync. cbn. rewrite Hfst. 
           assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
           { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ skip }}>); clarify.
             rewrite Forall_forall in H0. specialize (H0 iblk). 
@@ -820,7 +827,6 @@ Proof.
           destruct H2 as (i' & H2). rewrite H2.
           assert (forall n, (add n 1) = S n). { lia. }
           specialize (H4 o). rewrite H4.
-
           specialize (firstnth_error (fst iblk) o <{{ skip }}> Hsnd) as ->.
           rewrite fold_left_app. cbn.
           repeat f_equal.
