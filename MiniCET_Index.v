@@ -61,7 +61,7 @@ nth_error m n = Some v' ->
   | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
-| SSMI_Term : forall pc r m,
+  | SSMI_Term : forall pc r m,
       p[[pc]] = Some <{{ ret}}> ->
       p |- <(( S_Running (pc, r, m, []) ))> -->^[] <(( S_Term ))>
 
@@ -130,7 +130,10 @@ p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))>
   | SpecSMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
-      p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( S_Term ))>
+      p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
+  | SpecSMI_Term : forall pc r m ms,
+      p[[pc]] = Some <{{ ret }}> -> 
+      p |- <(( S_Running ((pc, r, m, []), false, ms) ))> -->_[]^^[] <(( S_Term ))>
 
   where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
     (spec_eval_small_step p sc sct ds os).
@@ -245,7 +248,10 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Fault ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
-      p |- <(( S_Running ((pc, r, m, pc'::sk), ms) ))> -->i_[]^^[] <(( S_Term ))>
+      p |- <(( S_Running ((pc, r, m, pc'::sk), ms) ))> -->i_[]^^[] <(( S_Running ((pc', r, m, sk), ms) ))>
+  | ISMI_Term : forall pc r m ms,
+      p[[pc]] = Some <{{ ret }}> ->
+      p |- <(( S_Running ((pc, r, m, []), ms) ))> -->i_[]^^[] <(( S_Term ))>
 
   where "p |- <(( ic ))> -->i_ ds ^^ os  <(( ict ))>" :=
     (ideal_eval_small_step_inst p ic ict ds os).
@@ -742,45 +748,6 @@ Proof.
     rewrite IHl. simpl. rewrite firstn_nil. simpl. rewrite sub_0_r. auto.
 Qed.
 
-(* 
-(msf !-> N 1; x !-> eval r e; r) =
-(x !-> eval (msf !-> N 1; r) e; msf !-> N 1; r)
-
-Is this true? 
-
-In more general terms, is
-
-   x1 !-> v; x2 !-> eval r e; r) = 
-   x2 !-> eval (x1 !-> v; r) e; x1 !-> v; r
-
-That is, two values we know to be not the same (x1 and x2),
-we know that swapping their positions in the map doesn't make a difference, 
-but is it true that mapping x2 to the evaluation of some expr e given r 
-is the same as mapping x2 to the evaluation of e in r with the x1 to v mapping prepended?
-
-This is like saying, will the evaluation of e be different according to whether you add the x1 mapping to r?
-
-What would this depend on? Whether x1 is used in e. If it isn't used, then it's impossible for any change in its 
-value to affect the evaluation of e.
-
-   So: e_unused x e -> eval r e = eval (x !-> v; r) e.
-*) 
-
-Lemma unused_eval : forall r e x v,
-  e_unused x e -> eval r e = eval (x !-> v; r) e.
-Proof. 
-  destruct r. simpl. induction e; clarify.
-  - intros. simpl in *. destruct (string_dec x x0); clarify.
-  - intros. simpl in *. destruct H. specialize (IHe1 x v0). 
-    specialize (IHe1 H). specialize (IHe2 x v0). specialize (IHe2 H0).
-    rewrite IHe1, IHe2. auto.
-  - intros. simpl in *. destruct H, H0. specialize (IHe1 x v0).
-    specialize (IHe1 H). specialize (IHe2 x v0). specialize (IHe2 H0).
-    specialize (IHe3 x v0). specialize (IHe3 H1). rewrite IHe1, IHe2, IHe3.
-    simpl. destruct (to_nat (eval (v, map_set m x v0) e1)); auto.
-Qed.
-    
-
 (* Yonghyun's lemma, prove this *)
 (*
    fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then acc + 1 else acc)
@@ -930,26 +897,53 @@ Proof.
             specialize (unused_p_msf H10). unfold b_unused in unused_p_msf. rewrite Forall_forall in unused_p_msf.
             specialize (nth_error_In (fst iblk) o Hsnd); intros. specialize unused_p_msf with (x:=<{{ x := e }}>).
             specialize (unused_p_msf H11). simpl in unused_p_msf. destruct unused_p_msf. 
-            specialize (unused_eval r e msf (N 1) H13); intros. Set Printing All. admit.
-
-            (* H13 : @Logic.eq  val (eval r e)   (eval (@t_update val r msf (N (S O))) e) *)
-
-            (* Goal : @Logic.eq reg (@t_update val (@t_update val r x (eval r e)) msf (N (S O)))
-                      
-               (@t_update val (@t_update val r msf (N (S O))) x (eval (@t_update val r msf (N (S O))) e)) *)
+            (* specialize (eval_unused_update r e msf (N 1) H13); intros. admit. *)
+            (* use Maps rather than ListMaps. *) admit.
           }
           { admit. }
       }
-
-      (* Lemma unused_eval : forall r e x v,
-  e_unused x e -> eval r e = eval (x !-> v; r) e. *)
-      { admit. }
-      { admit. }
-      { admit. }
-      { admit. }
-      { admit. }
-      { admit. }
-      { admit. }
+      { (* branch *) admit. }
+      { (* jump *) 
+        assert (si = <{{ jump l0 }}>). { admit. }
+        rewrite H4 in *. injection n_steps; intros. rewrite <- H5 in tgt_steps.
+        rewrite <- H2 in *. clear cfg_sync.
+        rewrite <- app_nil_r with (l:=ds) in tgt_steps.
+        rewrite <- app_nil_r with (l:=os) in tgt_steps.
+        inv tgt_steps. exists (l0, 0, r, m, sk, ms).
+        assert (ds = [] /\ os = []).
+        { inv H12. inv H11; clarify. ss. rewrite app_nil_r in H6, H7. auto. } 
+        des; subst. simpl in H6, H7. eapply app_eq_nil in H6, H7. des; subst.
+        split.
+        - econs. auto.
+        - inv H12. inv H11; clarify. clear n_steps.
+          simpl. rewrite Hsk. unfold pc_sync. cbn. unfold wf_block in H0. rewrite Forall_forall in H0.
+          specialize (nth_error_In (b :: bs) sl Hfst); intros. 
+          apply H0 in H2. destruct H2, H3. rewrite Forall_forall in H5. 
+          specialize (H5 <{{ jump l0 }}>). specialize (nth_error_In (fst iblk) o Hsnd); intros. 
+          apply H5 in H6. unfold wf_instr in H6. unfold wf_lbl in H6. 
+          destruct (nth_error (b :: bs) l0) eqn:Hlbl; clarify. rename p into jblk. 
+          destruct jblk as (jinsts & jbool) eqn:Hjblk. cbn. rewrite <- H6 in *. cbn. 
+          specialize (nth_error_In (b :: bs) l0 Hlbl); intros. apply H0 in H7. destruct H7, H8.
+          specialize (blk_not_empty_list (jinsts, false) H7); intros. 
+          simpl in H10. destruct jinsts; clarify.
+      }
+      { (* load *) admit. }
+      { (* store *) admit. }
+      { (* call *) admit. }
+      { (* ctarget: this is an impossible case bc an ideal pc can't be pointing to a ctarget inst 
+           uslh_inst replaces ctargets with skips, adds ctargets at block level: is this a way of 
+           avoiding having a premise about source programs not using the ctarget inst? just get rid of 
+           any ctargets the source happened to use during the transformation itself? 
+        *) admit.
+      }
+      { assert (si = <{{ ret }}>). { admit. } 
+        rewrite H4 in *. injection n_steps; intros. rewrite <- H5 in tgt_steps.
+        rewrite <- H2 in *. clear cfg_sync.
+        rewrite <- app_nil_r with (l:=ds) in tgt_steps.
+        rewrite <- app_nil_r with (l:=os) in tgt_steps.
+        inv tgt_steps. destruct sk as [|pc' sk'] eqn:Hretsk;
+        admit.
+      }
     + (* None *)
       simpl in cfg_sync. destruct (pc_sync p (l, o)) eqn:Hpcsync; try discriminate.
       destruct (map_opt (pc_sync p) sk) eqn:Hsksync; try discriminate. unfold pc_sync in Hpcsync.
