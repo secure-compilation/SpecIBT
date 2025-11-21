@@ -27,7 +27,7 @@ Reserved Notation
 Inductive seq_eval_small_step_inst (p:prog) :
   @state cfg -> @state cfg -> obs -> Prop :=
   | SSMI_Skip : forall pc rs m stk,
-p[[pc]] = Some <{{ skip }}> ->
+      p[[pc]] = Some <{{ skip }}> ->
       p |- <(( S_Running (pc, rs, m, stk) ))> -->^[] <(( S_Running (pc+1, rs, m, stk) ))>
   | SSMI_Asgn : forall pc r m sk e x,
       p[[pc]] = Some <{{ x := e }}> ->
@@ -42,7 +42,7 @@ p[[pc]] = Some <{{ skip }}> ->
   | SSMI_Load : forall pc r m sk x e n v',
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
-nth_error m n = Some v' ->
+      nth_error m n = Some v' ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OLoad n] <(( S_Running (pc+1, (x !-> v'; r), m, sk) ))>
   | SSMI_Store : forall pc r m sk e e' n,
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
@@ -320,10 +320,6 @@ Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
 Definition r_sync (r: reg) (ms: bool) : reg :=
    msf !-> N (if ms then 1 else 0); r.
 
-Definition Rsync (sr tr: reg) (ms: bool) : Prop :=
-   (forall x, x <> msf /\ x <> callee -> 
-   apply sr  x =  apply tr x) /\ (apply tr msf = N (if ms then 1 else 0) ).
-
 Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
   match l with
   | [] => Some []
@@ -339,6 +335,18 @@ Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   pc' <- pc_sync p pc;;
   stk' <- map_opt (pc_sync p) stk;;
   ret (pc', r_sync r ms, m, stk', false, ms).
+
+Definition Rsync (sr tr: reg) (ms: bool) : Prop :=
+   (forall x, x <> msf /\ x <> callee ->
+   apply sr  x =  apply tr x) /\ (apply tr msf = N (if ms then 1 else 0) ).
+
+Variant match_cfgs (p: prog) : ideal_cfg -> spec_cfg -> Prop :=
+| match_cfgs_intro pc r m stk ms pc' r' stk'
+  (PC: pc_sync p pc = Some pc')
+  (REG: Rsync r r' ms)
+  (STK: map_opt (pc_sync p) stk = Some stk') :
+  match_cfgs p ((pc, r, m, stk), ms) ((pc', r', m, stk'), false, ms)
+.
 
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
 Definition steps_to_sync_point (tp: prog) (tsc: spec_cfg) (ds: dirs) : option nat :=
