@@ -658,6 +658,19 @@ Definition unused_prog (x: string) (p:prog) : Prop :=
   let '(bs, cts) := split p in
   Forall (fun b => b_unused x b) bs.
 
+Definition no_ct_inst (i: inst) : Prop :=
+  match i with
+  | <{{ctarget}}> => False
+  | _ => True
+  end.
+
+Definition no_ct_blk (blk: list inst) : Prop :=
+  Forall no_ct_inst blk.
+
+Definition no_ct_prog (p:prog) : Prop :=
+  let '(bs, cts) := split p in
+  Forall no_ct_blk bs.
+
 Inductive state A : Type :=
   | S_Running (a: A)
   | S_Undef

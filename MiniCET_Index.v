@@ -73,7 +73,7 @@ Inductive multi_seq_inst (p : prog) (c : @state cfg) : @state cfg -> obs -> Prop
   | multi_seq_inst_trans (c' c'' : @state cfg) (os1 os2 : obs) :
       p |- <(( c ))> -->^os1 <(( c' ))> ->
       p |- <(( c' ))> -->*^os2 <(( c'' ))> ->
-p |- <(( c ))> -->*^(os1 ++ os2) <(( c'' ))>
+      p |- <(( c ))> -->*^(os1 ++ os2) <(( c'' ))>
 
   where "p |- <(( c ))> -->*^ os <(( ct ))>" :=
       (multi_seq_inst p c ct os).
@@ -752,6 +752,7 @@ Qed.
 (* BCC lemma for one single instruction *)
 
 Lemma ultimate_slh_bcc_single_cycle (p: prog) : forall ic1 sc1 sc2 n ds os,
+  no_ct_prog p ->
   wf_prog p ->
   wf_ds p (get_pc_sc sc1) ds ->
   unused_prog msf p ->
@@ -762,7 +763,7 @@ Lemma ultimate_slh_bcc_single_cycle (p: prog) : forall ic1 sc1 sc2 n ds os,
   uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( S_Running sc2 ))> ->
   exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> /\ spec_cfg_sync p ic2 = Some sc2.
 Proof.
-  intros until os. intros wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
+  intros until os. intros nct wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
   destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r).
   unfold wf_prog in wfp. destruct wfp. unfold nonempty_program in H.
   unfold wf_ds in wfds. simpl in ms_msf.
