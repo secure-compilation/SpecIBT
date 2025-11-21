@@ -18,12 +18,6 @@ Set Default Goal Selector "!".
 
 (* %s/\s\+$//e to strip trailing whitespace *)
 
-Inductive state {A} : Type :=
-| S_Running (a: A)
-| S_Undef
-| S_Fault
-| S_Term.
-
 (** Sequential small-step semantics for MiniCET *)
 
 Reserved Notation
@@ -50,7 +44,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
       to_nat (eval r e) = Some n ->
 nth_error m n = Some v' ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OLoad n] <(( S_Running (pc+1, (x !-> v'; r), m, sk) ))>
-| SSMI_Store : forall pc r m sk e e' n,
+  | SSMI_Store : forall pc r m sk e e' n,
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
@@ -96,8 +90,8 @@ Inductive spec_eval_small_step (p:prog):
       p[[pc]] = Some <{{ skip }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   | SpecSMI_Asgn : forall pc r m sk ms e x,
-p[[pc]] = Some <{{ x := e }}> ->
-  p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
+      p[[pc]] = Some <{{ x := e }}> ->
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
   | SpecSMI_Branch : forall pc pc' r m sk ms ms' b (b': bool) e n l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
@@ -124,7 +118,7 @@ ms' = ms || negb (Bool.eqb b b') ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
-p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   | SpecSMI_CTarget_F : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))>
@@ -897,12 +891,12 @@ Proof.
  Definition spec_same_obs p pc r1 r2 m1 m2 stk : Prop := 
    forall ds n os1 os2 c1 c2, 
    p |- <(( S_Running (pc, r1, m1, stk, false, false) ))> -->*_ds^^os1^^n <(( c1 ))> -> 
-     p |- <(( S_Running (pc, r2, m2, stk, false, false) ))> -->*_ds^^ os2^^n <(( c2 ))> -> 
+   p |- <(( S_Running (pc, r2, m2, stk, false, false) ))> -->*_ds^^ os2^^n <(( c2 ))> ->
      os1 = os2.  
 
  Definition relative_secure (p:prog) (trans1 : prog -> prog)
-     (r1 r2 : reg) (m1 m2 : mem): Prop := 
-   seq_same_obs p (0,0) r1 r2 m1 m2 [] -> 
+   (r1 r2 : reg) (m1 m2 : mem): Prop := 
+   seq_same_obs p (0,0) r1 r2 m1 m2 [] ->
    spec_same_obs (trans1 p) (0,0) r1 r2 m1 m2 []. 
 
  (** * Ultimate Speculative Load Hardening *) 

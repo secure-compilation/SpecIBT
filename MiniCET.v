@@ -35,7 +35,6 @@ Definition is_some {A} (v : option A) : bool := match v with
   | None => false
   end.
 
-
 (** The factoring of expressions is taken from the latest SpecCT chapter *)
 
 Inductive binop : Type :=
@@ -658,4 +657,27 @@ Definition b_unused (x: string) (blk: list inst) : Prop :=
 Definition unused_prog (x: string) (p:prog) : Prop :=
   let '(bs, cts) := split p in
   Forall (fun b => b_unused x b) bs.
+
+Inductive state A : Type :=
+  | S_Running (a: A)
+  | S_Undef
+  | S_Fault
+  | S_Term.
+Arguments S_Running {A} a.
+Arguments S_Undef {A}.
+Arguments S_Fault {A}.
+Arguments S_Term {A}.
+
+Instance state_Monad : Monad state.
+Proof.
+  constructor.
+  - intros T t.
+    now apply S_Running.
+  - intros T U st f.
+    destruct st eqn: H.
+    + now apply f.
+    + apply S_Undef.
+    + apply S_Fault.
+    + apply S_Term.
+Defined.
 

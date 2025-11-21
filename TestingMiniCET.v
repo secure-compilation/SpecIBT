@@ -23,7 +23,7 @@ From Stdlib Require Import String.
 
 From SECF Require Import Utils.
 From SECF Require Import ListMaps.
-Require Import Stdlib.Classes.EquivDec.
+From Stdlib Require Import Classes.EquivDec.
 
 (** TestingMiniCET-related Gen and Show instances *)
 
@@ -716,6 +716,8 @@ Definition gen_prog_ty_ctx_wt (bsz pl: nat) : G (rctx * tmem * prog) :=
   ret (c, tm, p).
 
 Definition ty_prog_wf := (forAll (gen_prog_ty_ctx_wt 3 8) (fun '(c, tm, p) => ((ty_prog c tm p) && (wf p)))).
+
+QuickChick ty_prog_wf.
 (*! QuickChick ty_prog_wf. *)
 
 (** Relative Security *)
@@ -1101,7 +1103,7 @@ Definition m_wtb (m: mem) (tm: tmem) : bool :=
   let mtm := combine m tm in
   forallb (fun '(v, t) => wt_valb v t) mtm.
 
-(** Sanity-Check *)
+(*! Section Sanity_Check *)
 
 (* Extract Constant defNumTests => "1000000". *)
 
@@ -1452,6 +1454,8 @@ Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (os: obs) (ds: dirs) :
 Definition spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (ds: dirs) : spec_exec_result :=
   _spec_steps_acc f p sc [] ds.
 
+(*! Section Safety_Preservation *)
+
 (** Safety Preservation *)
 
 (* Extract Constant defNumTests => "1000000". *)
@@ -1478,6 +1482,8 @@ Definition test_safety_preservation := (
 
 (* +++ Passed 1000000 tests (431506 discards) *)
 (* Time Elapsed: 137.819446s *)
+
+(*! Section Relative_Security *)
 
 (** Testing Relative Security *)
 

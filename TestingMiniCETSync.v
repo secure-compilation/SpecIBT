@@ -30,30 +30,6 @@ From SECF Require Import TestingMiniCET.
 (* Same type as trace, so that you can easily "disable" trace using find+replace *)
 Definition untrace {A : Type} (s : string) (a : A) : A := a.
 
-
-Inductive state A : Type :=
-  | S_Running (a: A)
-  | S_Undef
-  | S_Fault
-  | S_Term.
-Arguments S_Running {A} a.
-Arguments S_Undef {A}.
-Arguments S_Fault {A}.
-Arguments S_Term {A}.
-
-Instance state_Monad : Monad state.
-Proof.
-  constructor.
-  - intros T t.
-    now apply S_Running.
-  - intros T U st f.
-    destruct st eqn: H.
-    + now apply f.
-    + apply S_Undef.
-    + apply S_Fault.
-    + apply S_Term.
-Defined.
-
 Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
   match sc with
   | S_Running c =>
@@ -596,6 +572,53 @@ Definition single_step_cc := (
   If ideal execution succeeds, so does speculative, and it reaches a point that is considered synchronized.
   If ideal execution is undefined, no requirement on spec.
 *)
+
+(* Testing (single-step) seq stuck free *)
+
+Definition single_step_sf := (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  let p' := transform_load_store_prog c tm p in
+  forAll (gen_reg_wt c pst) (fun rs1 =>
+  forAll (gen_wt_mem tm pst) (fun m1 =>
+  forAll (gen_pc_from_prog p') (fun pc =>
+  forAll (gen_call_stack_from_prog_sized 3 p') (fun stk =>
+  let sc := (pc, rs1, m1, stk) in
+  match step p' (S_Running sc) with
+  | (S_Undef, _) => trace ("seq exec fails sc: "%string ++ (show sc) ++ ", prog: "%string ++ show p' ++ " prog end!!!"%string) (checker false)
+  | _ => checker true
+  end)))))).
+
+(*! QuickChick single_step_sf. *)
+
+(* Testing (single-step) ideal stuck free *)
+
+Definition single_step_ideal_sf := (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  let p' := transform_load_store_prog c tm p in
+  forAll (gen_reg_wt c pst) (fun rs1 =>
+  forAll (gen_wt_mem tm pst) (fun m1 =>
+  forAll (gen_pc_from_prog p') (fun pc =>
+  forAll (gen_call_stack_from_prog_sized 3 p') (fun stk =>
+  forAll (@arbitrary bool _) (fun ms =>
+  let icfg := (pc, rs1, m1, stk, ms) in
+  forAll (gen_directive_from_ideal_cfg p' pst icfg) (fun ds =>
+  match ideal_step p' (S_Running icfg) ds with
+  | (S_Undef, _, _) => trace ("ideal exec fails sc: "%string ++ (show icfg) ++ ", prog: "%string ++ show p' ++ " prog end!!!"%string) (checker false)
+  | _ => checker true
+  end)))))))).
+
+(*! QuickChick single_step_ideal_sf. *)
+
+(* YH:
+   Current single-step testing generates states with a nearly random strategy,
+   only checking well-typedness. This approach can produce ill-formed states
+   unreachable from the initial state, so stuck-free testing in a single step
+   setting may be unsound. That said, this stuck-free testing failure doesn't
+   make the other single-step tests incorrect. Other tests simply discard these
+   cases, and the discard rate is not significant (~2%).
+
+   However, this statement seems true: States reachable from the initial state are safe
+   (Stuck-free testing in an end-to-end setting is sound).*)
 
 (* Testing (single-step) Gilles' lemma *)
 Definition single_step_gilles := (
