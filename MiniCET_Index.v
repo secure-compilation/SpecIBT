@@ -901,8 +901,8 @@ Proof.
             rewrite H9 in H7. specialize (in_combine_l insts bools (fst iblk) (snd iblk) H7); intros.
             specialize (unused_p_msf H10). unfold b_unused in unused_p_msf. rewrite Forall_forall in unused_p_msf.
             specialize (nth_error_In (fst iblk) o Hsnd); intros. specialize unused_p_msf with (x:=<{{ x := e }}>).
-            specialize (unused_p_msf H11). simpl in unused_p_msf. destruct unused_p_msf. 
-            (* specialize (eval_unused_update r e msf (N 1) H13); intros. admit. *)
+            specialize (unused_p_msf H11). simpl in unused_p_msf. destruct unused_p_msf.
+            Set Printing Parentheses. unfold t_update. unfold map_set. destruct r.
             (* use Maps rather than ListMaps. *) admit.
           }
           { admit. }
@@ -934,12 +934,12 @@ Proof.
       }
       { (* load *) admit. }
       { (* store *) admit. }
-      { (* call *) admit. }
-      { (* ctarget: this is an impossible case bc an ideal pc can't be pointing to a ctarget inst 
-           uslh_inst replaces ctargets with skips, adds ctargets at block level: is this a way of 
-           avoiding having a premise about source programs not using the ctarget inst? just get rid of 
-           any ctargets the source happened to use during the transformation itself? 
-        *) admit.
+      { (* call *) admit. } Print split.
+      { (* ctarget *) unfold no_ct_prog in nct. destruct (split (b :: bs)) as (b_insts & b_bools).
+        rewrite Forall_forall in nct. specialize (nth_error_In (b :: bs) l Hfst); intros.
+      
+
+        admit.
       }
       { assert (si = <{{ ret }}>). { admit. } 
         rewrite H4 in *. injection n_steps; intros. rewrite <- H5 in tgt_steps.
