@@ -27,9 +27,6 @@ From SECF Require Import TestingMiniCET.
 
 (*! Section testing_sync *)
 
-(* Same type as trace, so that you can easily "disable" trace using find+replace *)
-Definition untrace {A : Type} (s : string) (a : A) : A := a.
-
 Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
   match sc with
   | S_Running c =>

@@ -141,3 +141,8 @@ Proof.
       apply IH in H2. destruct H2 as [HL | HR];
       [left | right]; apply prefix_cons; auto.
 Qed.
+
+From Stdlib Require Import String.
+
+(* Same type as trace, so that you can easily "disable" trace using find+replace *)
+Definition untrace {A : Type} (s : string) (a : A) : A := a.

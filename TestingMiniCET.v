@@ -25,6 +25,283 @@ From SECF Require Import Utils.
 From SECF Require Import ListMaps.
 From Stdlib Require Import Classes.EquivDec.
 
+(*! Section testing_ETE *)
+
+(* Executable Semantics *)
+
+Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
+  match sc with
+  | S_Running c =>
+      let '(pc, r, m, sk) := c in
+      match p[[pc]] with
+      | Some i =>
+          match i with
+          | <{{skip}}> | <{{ctarget}}> =>
+            (S_Running (pc+1, r, m, sk), [])
+          | <{{x:=e}}> =>
+            (S_Running (pc+1, (x !-> eval r e; r), m, sk), [])
+          | <{{branch e to l}}> =>
+            match
+              n <- to_nat (eval r e);;
+              let b := not_zero n in
+              ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
+            with
+            | Some (c, o) => (S_Running c, o)
+            | None => (S_Undef, [])
+            end
+          | <{{jump l}}> =>
+            (S_Running ((l,0), r, m, sk), [])
+          | <{{x<-load[e]}}> =>
+            match
+              n <- to_nat (eval r e);;
+              v' <- nth_error m n;;
+              ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])
+            with
+            | Some (c, o) => (S_Running c, o)
+            | None => (S_Undef, [])
+            end
+          | <{{store[e]<-e'}}> =>
+            match
+              n <- to_nat (eval r e);;
+              ret ((pc+1, r, upd n m (eval r e'), sk), [OStore n])
+            with
+            | Some (c, o) => (S_Running c, o)
+            | None => (S_Undef, [])
+            end
+          | <{{call e}}> =>
+            match
+              l <- to_fp (eval r e);;
+              ret (((l,0), r, m, (pc+1)::sk), [OCall l])
+            with
+            | Some (c, o) => (S_Running c, o)
+            | None => (S_Undef, [])
+            end
+          | <{{ret}}> =>
+            match sk with
+            | [] => (S_Term, [])
+            | pc'::stk' => (S_Running (pc', r, m, stk'), [])
+            end
+          end
+      | None => (S_Fault, [])
+      end
+  | s => (s, [])
+  end.
+
+(* Morally state+output monad hidden in here: step p >> steps f' p  *)
+Fixpoint steps (f:nat) (p:prog) (sc: state cfg) : (state cfg * obs) :=
+  match f with
+  | S f' =>
+      match sc with
+      | S_Running c =>
+          let '(c1, o1) := step p sc in
+          let '(c2, o2) := steps f' p c1 in
+          (c2, o1++o2)
+      | s => (s, [])
+      end
+  | 0 =>
+      (sc, [])
+  end.
+
+Definition ideal_cfg :=  (cfg * bool)%type.
+
+Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_cfg * dirs * obs) :=
+  match sic with
+  | S_Running ic =>
+      let '(c, ms) := ic in
+      let '(pc, r, m, sk) := c in
+      match p[[pc]] with
+        None => untrace "lookup fail" (S_Undef, ds, [])
+      | Some i =>
+          match i with
+            | <{{branch e to l}}> =>
+              if seq.nilp ds then
+                untrace "idealBranch: directions are empty!" (S_Undef, ds, [])
+              else
+                match
+                  d <- hd_error ds;;
+                  b' <- is_dbranch d;;
+                  n <- to_nat (eval r e);;
+                  let b := (negb ms) && not_zero n in
+                  (*! *)
+                  let ms' := ms || negb (Bool.eqb b b') in
+                  (*!! ideal_branch_bad_update_ms *)
+                  (*! let ms' := negb (Bool.eqb b b') in *)
+                  let _ := I in (* just to separate the two mutants *)
+                  (*! *)
+                  let pc' := if b' then (l, 0) else (pc+1) in
+                  (*!! ideal_branch_ignore_directive *)
+                  (*! let pc' := if b then (l, 0) else (pc+1) in *)
+                  ret ((S_Running ((pc', r, m, sk), ms'), tl ds), [OBranch b])
+                with
+                | None => (S_Undef, ds, [])
+                | Some (c, ds, os) => (c, ds, os)
+                end
+            | <{{call e}}> =>
+              if seq.nilp ds then
+                untrace "idealCall: directions are empty!" (S_Undef, ds, [])
+              else
+                match
+                  d <- hd_error ds;;
+                  pc' <- is_dcall d;;
+                  l <- (if ms then Some 0 else to_fp (eval r e));;
+                  blk <- nth_error p (fst pc');;
+                  (*! *)
+                  if (snd blk && (snd pc' ==b 0)) then
+                  (*!! ideal_call_no_check_target *)
+                  (*! if true then *)
+                    let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+                    ret ((S_Running ((pc', r, m, (pc+1)::sk), ms'), tl ds), [OCall l])
+                  else Some (S_Fault, ds, [OCall l])
+                with
+                | None => (S_Undef, ds, [])
+                | Some (c, ds, os) => (c, ds, os)
+                end
+            | <{{x<-load[e]}}> =>
+              match
+                (*! *)
+                let i := if ms then (ANum 0) else e in
+                (*!! ideal-load-no-mask *)
+                (*! let i := e in *)
+                n <- to_nat (eval r i);;
+                v' <- nth_error m n;;
+                let c := (pc+1, (x !-> v'; r), m, sk) in
+                ret (S_Running (c, ms), ds, [OLoad n])
+              with
+              | None => (S_Undef, ds, [])
+              | Some (c, ds, os) => (c, ds, os)
+              end
+            | <{{store[e]<-e'}}> =>
+              match
+                (*! *)
+                let i := if ms then (ANum 0) else e in
+                (*!! ideal-store-no-mask *)
+                (*! let i := e in *)
+                n <- to_nat (eval r i);;
+                let c:= (pc+1, r, upd n m (eval r e'), sk) in
+                ret (S_Running (c, ms), ds, [OStore n])
+              with
+              | None => (S_Undef, ds, [])
+              | Some (c, ds, os) => (c, ds, os)
+              end
+          | _ =>
+              match step p (S_Running c) with
+              | (S_Running c', o) => (S_Running (c', ms), ds, o)
+              | (S_Undef, o) => (S_Undef, ds, o)
+              | (S_Fault, o) => (S_Fault, ds, o)
+              | (S_Term, o) => (S_Term, ds, o)
+              end
+          end
+      end
+  | s => (s, ds, [])
+  end.
+
+Fixpoint ideal_steps (f: nat) (p: prog) (sic: state ideal_cfg) (ds: dirs)
+  : (state ideal_cfg * dirs * obs) :=
+  match f with
+  | S f' =>
+      match sic with
+      | S_Running ic =>
+          let '(c1, ds1, o1) := ideal_step p sic ds in
+          let '(c2, ds2, o2) := ideal_steps f' p c1 ds1 in
+          (c2, ds2, o1++o2)
+      | s => (s, ds, [])
+      end
+  | 0 =>
+      (sic, ds, [])
+  end.
+
+Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg * dirs * obs) :=
+  match ssc with
+  | S_Running sc =>
+      let '(c, ct, ms) := sc in
+      let '(pc, r, m, sk) := c in
+      match p[[pc]] with
+      | None => untrace "lookup fail" (S_Undef, ds, [])
+      | Some i =>
+          match i with
+          | <{{branch e to l}}> =>
+            if ct then (*untrace "ct set at branch"*) (S_Fault, ds, []) else
+            match
+              if seq.nilp ds then
+                untrace "Branch: Directions are empty!" None
+              else
+                d <- hd_error ds;;
+                b' <- is_dbranch d;;
+                n <- to_nat (eval r e);;
+                let b := not_zero n in
+                let ms' := ms || negb (Bool.eqb b b') in
+                let pc' := if b' then (l, 0) else (pc+1) in
+                ret ((S_Running ((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
+            with
+            | None => untrace "branch fail" (S_Undef, ds, [])
+            | Some (c, ds, os) => (c, ds, os)
+            end
+          | <{{call e}}> =>
+            if ct then (*untrace "ct set at call"*) (S_Fault, ds, []) else
+            match
+              if seq.nilp ds then
+                untrace "Call: Directions are empty!" None
+              else
+                d <- hd_error ds;;
+                pc' <- is_dcall d;;
+                l <- to_fp (eval r e);;
+                let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+                (*! *)
+                ret ((S_Running ((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
+                (*!! spec-call-no-set-ct *)
+                (*! ret ((S_Running ((pc', r, m, (pc+1)::sk), ct, ms'), tl ds), [OCall l]) *)
+            with
+            | None => untrace "call fail" (S_Undef, ds, [])
+            | Some (c, ds, os) => (c, ds, os)
+            end
+          | <{{ctarget}}> =>
+            match
+              is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
+              (*! *)
+              (ret (S_Running ((pc+1, r, m, sk), false, ms), ds, []))
+              (*!! spec_ctarget_no_clear *)
+              (*! (ret (S_Running ((pc+1, r, m, sk), ct, ms), ds, [])) *)
+            with
+            | None => untrace "ctarget fail!" (S_Undef, ds, [])
+            | Some (c, ds, os) => (c, ds, os)
+            end
+          | _ =>
+            if ct then (*untrace ("ct set at " ++ show i)*) (S_Fault, ds, [])
+            else
+              match step p (S_Running c) with
+              | (S_Running c', o) => (S_Running (c', false, ms), ds, o)
+              | (S_Undef, o) => (S_Undef, ds, o)
+              | (S_Fault, o) => (S_Fault, ds, o)
+              | (S_Term, o) => (S_Term, ds, o)
+              end
+          end
+      end
+  | s => (s, ds, [])
+  end.
+
+Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds:dirs)
+  : (state spec_cfg * dirs * obs) :=
+  match f with
+  | S f' =>
+      match sc with
+      | S_Running c =>
+          let '(c1,ds1,o1) := spec_step p sc ds in
+          let '(c2,ds2,o2) := spec_steps f' p c1 ds1 in
+          (c2,ds2,o1++o2)
+      | s => (s, ds, [])
+      end
+  | 0 =>
+      (sc, ds, []) (* JB: executing for 0 steps should be just the identity... *)
+      (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
+  end.
+
+(* predicate for fold *)
+Definition is_br_or_call (i : inst) :=
+  match i with
+  | <{{branch _ to _}}> | <{{call _}}> => true
+  | _                                  => false
+  end.
+
 (** TestingMiniCET-related Gen and Show instances *)
 
 #[export] Instance genId : Gen string :=
@@ -128,7 +405,6 @@ Fixpoint max n m := match n, m with
                    | _, 0 => n
                    | S n', S m' => S (max n' m')
                    end.
-(*! Section wf_programs *)
 
 (** Well-formed Program Generator *)
 
@@ -629,8 +905,6 @@ Definition wt_expr_is_defined := (
 (* To evaluate our generator, we proceed by creating a predicate, which checks kind of type checks the
   program. *)
 
-(*! Section ty_exps *)
-
 Fixpoint ty_exp (c: rctx) (e: exp) : option ty :=
   match e with
   | ANum _ => Some TNum
@@ -716,9 +990,6 @@ Definition gen_prog_ty_ctx_wt (bsz pl: nat) : G (rctx * tmem * prog) :=
   ret (c, tm, p).
 
 Definition ty_prog_wf := (forAll (gen_prog_ty_ctx_wt 3 8) (fun '(c, tm, p) => ((ty_prog c tm p) && (wf p)))).
-
-QuickChick ty_prog_wf.
-(*! QuickChick ty_prog_wf. *)
 
 (** Relative Security *)
 
@@ -949,8 +1220,8 @@ Definition step_taint_track (p: prog) : evaluator unit :=
     let '(c, tc, tobs) := ist in
     let '(pc, rs, m, s) := c in
     let '(tpc, trs, tm, ts) := tc in
-    match step p c with
-    | Some (c', os) =>
+    match step p (S_Running c) with
+    | (S_Running c', os) =>
         match (fetch p pc) with
         | Some i => match get_ctx rs i with
                    | Some tctx => match taint_step i c tc tobs tctx with
@@ -961,9 +1232,8 @@ Definition step_taint_track (p: prog) : evaluator unit :=
                    end
         | _ => RError _ [] ist
         end
-    | None => if final_cfg p c
-             then RTerm _ [] ist
-             else RError _ [] ist
+    | (S_Term, []) => RTerm _ [] ist
+    | _ => RError _ [] ist
     end
     ).
 
@@ -1103,8 +1373,6 @@ Definition m_wtb (m: mem) (tm: tmem) : bool :=
   let mtm := combine m tm in
   forallb (fun '(v, t) => wt_valb v t) mtm.
 
-(*! Section Sanity_Check *)
-
 (* Extract Constant defNumTests => "1000000". *)
 
 (* check 0: load/store transformation creates basic blocks *)
@@ -1140,6 +1408,7 @@ Definition load_store_trans_stuck_free := (
   | TaintTracking.EOutOfFuel st os => checker tt
   | TaintTracking.EError st os => printTestCase (show p' ++ nl) (checker false)
   end)))).
+
 (*! QuickChick load_store_trans_stuck_free. *)
 
 (* +++ Passed 10000 tests (6173 discards) *)
@@ -1211,6 +1480,7 @@ Definition no_obs_prog_no_obs := (
     | None => checker tt
     end
   )).
+
 (*! QuickChick no_obs_prog_no_obs. *)
 
 (* check 3: implicit flow *)
@@ -1280,6 +1550,7 @@ Definition gen_pub_equiv_is_pub_equiv := (forAll gen_pub_vars (fun P =>
       pub_equivb P s1 s2
   )))).
 (*! QuickChick gen_pub_equiv_is_pub_equiv. *)
+
 
 (* check 6: generated register set is well-typed. *)
 
@@ -1368,28 +1639,26 @@ Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G sc_output_st
       match i with
       | <{{branch e to l}}> =>
           d <- gen_dbr;;
-          ret (match spec_step p sc [d] with
-               | Some (sc', dir', os') => SRStep os' [d] sc'
-               | None => SRError [] [] sc
+          ret (match spec_step p (S_Running sc) [d] with
+               | (S_Running sc', dir', os') => SRStep os' [d] sc'
+               | _ => SRError [] [] sc
                end)
       | <{{call e}}> =>
           d <- gen_dcall pst;;
-          ret (match spec_step p sc [d] with
-               | Some (sc', dir', os') => SRStep os' [d] sc'
-               | None => SRError [] [] sc
+          ret (match spec_step p (S_Running sc) [d] with
+               | (S_Running sc', dir', os') => SRStep os' [d] sc'
+               | _ => SRError [] [] sc
                end)
       | IRet | ICTarget =>
-          ret (match spec_step p sc [] with
-               | Some (sc', dir', os') => SRStep os' [ ] sc'
-               | None =>
-                   if final_spec_cfg p sc
-                   then SRTerm [] [] sc
-                   else SRError [] [] sc
+          ret (match spec_step p (S_Running sc) [] with
+               | (S_Running sc', dir', os') => SRStep os' [ ] sc'
+               | (S_Term, _, _) => SRTerm [] [] sc
+               | _ => SRError [] [] sc
                end)
       | _ =>
-          ret (match spec_step p sc [] with
-               | Some (sc', dir', os') => SRStep os' [ ] sc'
-               | None => SRError [] [] sc
+          ret (match spec_step p (S_Running sc) [] with
+               | (S_Running sc', dir', os') => SRStep os' [ ] sc'
+               | _ => SRError [] [] sc
                end)
       end
   | None => ret (SRError [] [] sc)
@@ -1419,7 +1688,7 @@ Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) 
           _gen_spec_steps_sized f' p pst sc1 (os ++ os1) (ds ++ ds1)
       | SRError os1 ds1 sc1 =>
           (* trace ("ERROR STATE: " ++ show sc1)%string *)
-            (ret (SEError sc1 (os ++ os1) (ds ++ ds1)))
+          (ret (SEError sc1 (os ++ os1) (ds ++ ds1)))
       | SRTerm  os1 ds1 sc1 =>
           ret (SETerm sc1 (os ++ os1) (ds ++ ds1))
       end
@@ -1430,11 +1699,10 @@ Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg)
 
 (* Speculative Step functions *)
 Definition spec_step_acc (p:prog) (sc:spec_cfg) (ds: dirs) : sc_output_st :=
-  match spec_step p sc ds with
-  | Some (sc', ds', os) => SRStep os ds' sc' (* sc': current spec_cfg, os: observations, ds': remaining dirs *)
-  | None => if final_spec_cfg p sc
-           then SRTerm [] ds sc
-           else SRError [] ds sc
+  match spec_step p (S_Running sc) ds with
+  | (S_Running sc', ds', os) => SRStep os ds' sc' (* sc': current spec_cfg, os: observations, ds': remaining dirs *)
+  | (S_Term, _, _) => SRTerm [] [] sc
+  | _ => SRError [] [] sc
   end.
 
 Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (os: obs) (ds: dirs) : spec_exec_result :=
@@ -1453,8 +1721,6 @@ Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (os: obs) (ds: dirs) :
 
 Definition spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (ds: dirs) : spec_exec_result :=
   _spec_steps_acc f p sc [] ds.
-
-(*! Section Safety_Preservation *)
 
 (** Safety Preservation *)
 
@@ -1482,8 +1748,6 @@ Definition test_safety_preservation := (
 
 (* +++ Passed 1000000 tests (431506 discards) *)
 (* Time Elapsed: 137.819446s *)
-
-(*! Section Relative_Security *)
 
 (** Testing Relative Security *)
 
