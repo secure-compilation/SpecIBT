@@ -97,12 +97,12 @@ Inductive spec_eval_small_step (p:prog):
       to_nat (eval r e) = Some n ->
       b = (not_zero n) ->
       pc' = (if b' then (l, 0) else (pc+1)) ->
-ms' = ms || negb (Bool.eqb b b') ->
+      ms' = ms || negb (Bool.eqb b b') ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DBranch b']^^[OBranch b] <(( S_Running ((pc', r, m, sk), false, ms') ))>
   | SpecSMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running (((l,0), r, m, sk), false, ms) ))>
-| SpecSMI_Load : forall pc r m sk x e n v' ms,
+  | SpecSMI_Load : forall pc r m sk x e n v' ms,
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
@@ -317,9 +317,12 @@ Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
                in Some ((fst pc), add (snd pc) acc2).
 
 (* sync src and tgt registers *)
-(* can't handle callee here, not enough info if not speculating *)
 Definition r_sync (r: reg) (ms: bool) : reg :=
-  msf !-> N (if ms then 1 else 0); r.
+   msf !-> N (if ms then 1 else 0); r.
+
+Definition Rsync (sr tr: reg) (ms: bool) : Prop :=
+   (forall x, x <> msf /\ x <> callee -> 
+   apply sr  x =  apply tr x) /\ (apply tr msf = N (if ms then 1 else 0) ).
 
 Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
   match l with
@@ -949,7 +952,7 @@ Proof.
         rewrite <- H2 in *. clear cfg_sync.
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
         rewrite <- app_nil_r with (l:=os) in tgt_steps.
-        inv tgt_steps. destruct sk as [|pc' sk'] eqn:Hretsk;
+        inv tgt_steps. destruct sk as [|pc' sk'] eqn:Hretsk; 
         admit.
       }
     + (* None *)
