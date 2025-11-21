@@ -337,8 +337,6 @@ Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   stk' <- map_opt (pc_sync p) stk;;
   ret (pc', r_sync r ms, m, stk', false, ms).
 
-
-
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
 Definition steps_to_sync_point (tp: prog) (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
@@ -728,6 +726,18 @@ Proof.
   rewrite nth_error_Some in H. lia.
 Qed.
 
+Lemma src_safe_inv p tp pc tpc
+  (TRP: uslh_prog p = tp)
+  (PS: pc_sync p pc = Some tpc)
+  (INST: p[[pc]] = Some <{{ skip }}>) :
+  tp[[tpc]] = Some <{{ skip }}>.
+Proof.
+  unfold pc_sync in PS. ss.
+  des_ifs_safe.
+  destruct pc as [b o]; ss.
+  des_ifs_safe.
+Admitted.
+
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
   firstn (S n) l = firstn n l ++ [i].
@@ -800,7 +810,7 @@ Proof.
       destruct i.
       { (* skip *) 
         assert (si = <{{ skip }}>).
-        { admit.        }
+        { admit. }
         rewrite H4 in *. injection n_steps; intros. rewrite <- H5 in *.
         rewrite <- H2 in *. clear cfg_sync.
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
