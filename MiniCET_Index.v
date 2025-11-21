@@ -935,11 +935,14 @@ Proof.
       { (* load *) admit. }
       { (* store *) admit. }
       { (* call *) admit. } Print split.
-      { (* ctarget *) unfold no_ct_prog in nct. destruct (split (b :: bs)) as (b_insts & b_bools).
-        rewrite Forall_forall in nct. specialize (nth_error_In (b :: bs) l Hfst); intros.
-      
-
-        admit.
+      { (* ctarget *) unfold no_ct_prog in nct. destruct (split (b :: bs)) as (b_insts & b_bools) eqn:Hbb.
+        rewrite Forall_forall in nct. specialize (split_combine (b :: bs) Hbb); intros.
+        rewrite <- H4 in Hfst. specialize (nth_error_In (combine b_insts b_bools) l Hfst); intros.
+        destruct iblk as (iinsts & ibool) eqn:Hiblk. specialize (in_combine_l b_insts b_bools iinsts ibool H5); intros.
+        apply nct in H6. assert (iinsts = (fst iblk)). { rewrite Hiblk. simpl. auto. }
+        rewrite H7 in H6. unfold no_ct_blk in H6. rewrite Forall_forall in H6. rewrite <- Hiblk in Hsnd.
+        specialize (nth_error_In (fst iblk) o Hsnd); intros. apply H6 in H8. 
+        unfold no_ct_inst in H8. destruct H8.
       }
       { assert (si = <{{ ret }}>). { admit. } 
         rewrite H4 in *. injection n_steps; intros. rewrite <- H5 in tgt_steps.
