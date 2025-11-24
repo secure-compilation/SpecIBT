@@ -26,15 +26,6 @@ Require Import Stdlib.Classes.EquivDec.
 
 (* ** Property testing of MiniCET *)
 
-(* Simple utility function to check if a value is Some.
-  TODO: Check if there is an Stdlib or Extlib function with the same
-  functionality. *)
-
-Definition is_some {A} (v : option A) : bool := match v with
-  | Some _ => true
-  | None => false
-  end.
-
 (** The factoring of expressions is taken from the latest SpecCT chapter *)
 
 Inductive binop : Type :=
