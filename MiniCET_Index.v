@@ -3,6 +3,7 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
+From stdpp Require Import stringmap.
 From SECF Require Import Utils ListMaps.
 From SECF Require Import MiniCET.
 From SECF Require Import TestingLib.
@@ -15,6 +16,7 @@ From Stdlib Require Import List. Import ListNotations.
 Require Import ExtLib.Data.Monads.OptionMonad.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
+
 
 (* %s/\s\+$//e to strip trailing whitespace *)
 
@@ -306,15 +308,20 @@ Definition is_br_or_call (i : inst) :=
 
 (* given src pc and program, obtain tgt pc *)
 Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
-  blk <- nth_error p (fst pc);; 
-  i <- nth_error (fst blk) (snd pc);; 
-  let acc1 := if (Bool.eqb (snd blk) true) then 2 else 0 in
-  let insts_before_pc := (firstn (snd pc) (fst blk)) in
-               let acc2 := fold_left (fun acc (i: inst) => if (is_br_or_call i) 
-                                                           then (add acc 1) 
-                                                           else acc) 
-                                                           insts_before_pc acc1 
-               in Some ((fst pc), add (snd pc) acc2).
+  match nth_error p (fst pc) with
+  | Some blk => match nth_error (fst blk) (snd pc) with
+               | Some i =>
+                   let acc1 := if (Bool.eqb (snd blk) true) then 2 else 0 in
+                   let insts_before_pc := (firstn (snd pc) (fst blk)) in
+                   let acc2 := fold_left (fun acc (i: inst) => if (is_br_or_call i)
+                                                            then (add acc 1)
+                                                            else acc)
+                                 insts_before_pc acc1
+                   in Some ((fst pc), add (snd pc) acc2)
+               | _ => None
+               end
+  | _ => None
+  end.
 
 (* sync src and tgt registers *)
 Definition r_sync (r: reg) (ms: bool) : reg :=
@@ -323,18 +330,24 @@ Definition r_sync (r: reg) (ms: bool) : reg :=
 Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
   match l with
   | [] => Some []
-  | a :: l' => a' <- f a;;
-      l'' <- map_opt f l';;
-      ret (a' :: l'')
+  | a :: l' => match f a with
+             | Some a' =>
+                 match map_opt f l' with
+                 | Some l'' => Some (a' :: l'')
+                 | _ => None
+                 end
+             | _ => None
+             end
   end.
 
 (* given src state and program, obtain tgt state *)
 Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   let '(c, ms) := ic in
   let '(pc, r, m, stk) := c in
-  pc' <- pc_sync p pc;;
-  stk' <- map_opt (pc_sync p) stk;;
-  ret (pc', r_sync r ms, m, stk', false, ms).
+  match pc_sync p pc, map_opt (pc_sync p) stk with
+  | Some pc', Some stk' => Some (pc', r_sync r ms, m, stk', false, ms)
+  | _, _ => None
+  end.
 
 Definition Rsync (sr tr: reg) (ms: bool) : Prop :=
    (forall x, x <> msf /\ x <> callee -> apply sr x = apply tr x) /\ 
@@ -352,39 +365,50 @@ Variant match_cfgs (p: prog) : ideal_cfg -> spec_cfg -> Prop :=
 Definition steps_to_sync_point (tp: prog) (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
   let '(pc, r, m, sk) := tc in
-    (* check pc is well-formed *)
-    blk <- nth_error tp (fst pc);;
-    i <- nth_error (fst blk) (snd pc);;
-    match i with
-    | <{{x := _}}> => match (String.eqb x callee) with
-                      | true => match tp[[pc+1]] with
-                                    | Some i => match i with
-                                                | <{{call _}}> => match ds with
-                                                                  | [DCall lo] => (* decorated call with correct directive *)
-                                                                                  let '(l, o) := lo in
-                                                                                  (* check attacker pc is well-formed *)
-                                                                                  blk <- nth_error tp l;;
-                                                                                  i <- nth_error (fst blk) o;;
-                                                                                  (* 4 steps if procedure block, fault otherwise *)
-                                                                                  if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
-                                                                  | _ => None (* incorrect directive for call *)
-                                                                  end
-                                                | _ => None (* callee assignment preceding any instruction other than call is ill-formed *)
-                                                end
-                                    | None => None (* callee assignment as last instruction in block is ill-formed *)
+  (* check pc is well-formed *)
+  match nth_error tp (fst pc) with
+  | Some blk => match nth_error (fst blk) (snd pc) with
+               | Some i =>
+                   match i with
+                   | <{{x := _}}> => match (String.eqb x callee) with
+                                    | true => match tp[[pc+1]] with
+                                             | Some i => match i with
+                                                        | <{{call _}}> => match ds with
+                                                                         | [DCall lo] => (* decorated call with correct directive *)
+                                                                             let '(l, o) := lo in
+                                                                             (* check attacker pc is well-formed *)
+                                                                             match nth_error tp l with
+                                                                             | Some blk =>
+                                                                                 match nth_error (fst blk) o with
+                                                                                 | Some i =>
+                                                                                     (* 4 steps if procedure block, fault otherwise *)
+                                                                                     if (Bool.eqb (snd blk) true) && (o =? 0) then Some 4 else None
+                                                                                 | _ => None
+                                                                                 end
+                                                                             | _ => None
+                                                                             end
+                                                                         | _ => None (* incorrect directive for call *)
+                                                                         end
+                                                        | _ => None (* callee assignment preceding any instruction other than call is ill-formed *)
+                                                        end
+                                             | None => None (* callee assignment as last instruction in block is ill-formed *)
+                                             end
+                                    | false => match (String.eqb x msf) with
+                                              | true => None (* target starting pc is never going to point to msf assignment *)
+                                              | false => Some 1 (* assignment statements that existed in src program *)
+                                              end
                                     end
-                      | false => match (String.eqb x msf) with 
-                                 | true => None (* target starting pc is never going to point to msf assignment *)
-                                 | false => Some 1 (* assignment statements that existed in src program *)
-                                 end
-                      end
-    | <{{ branch _ to _ }}> => (* branch decorations all come after the instruction itself, so this is the sync point *)
-                               match ds with
-                               | [DBranch b] => Some (if b then 3 else 2)
-                               | _ => None
-                               end
-    | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
-    end.
+                   | <{{ branch _ to _ }}> => (* branch decorations all come after the instruction itself, so this is the sync point *)
+                       match ds with
+                       | [DBranch b] => Some (if b then 3 else 2)
+                       | _ => None
+                       end
+                   | _ => Some 1 (* branch and call are the only instructions that add extra decorations *)
+                   end
+               | _ => None
+               end
+  | _ => None
+  end.
 
 Definition get_reg_sc (sc: spec_cfg) : reg :=
   let '(c, ct, ms) := sc in
@@ -406,109 +430,109 @@ Definition get_pc_ic (ic: ideal_cfg) : cptr :=
   let '(pc, r, m, sk) := c in
   pc.
 
-(* Termination *)
+(* (* Termination *) *)
 
-Inductive result : Type :=
-| R_Normal
-| R_Fault
-| R_UB.
+(* Inductive result : Type := *)
+(* | R_Normal *)
+(* | R_Fault *)
+(* | R_UB. *)
 
-(* target *)
+(* (* target *) *)
 
-Definition is_fault_tgt (tp:prog) (res_t: spec_cfg) : option bool :=
-  let '(c, ct, ms) := res_t in
-  let '(pc, rs, m, sk) := c in
-  i <- tp[[pc]];;
-  match i with
-  | <{{ ctarget }}> => Some (if ct then false else true)
-  | _ => Some (if ct then true else false)
-  end.
+(* Definition is_fault_tgt (tp:prog) (res_t: spec_cfg) : option bool := *)
+(*   let '(c, ct, ms) := res_t in *)
+(*   let '(pc, rs, m, sk) := c in *)
+(*   i <- tp[[pc]];; *)
+(*   match i with *)
+(*   | <{{ ctarget }}> => Some (if ct then false else true) *)
+(*   | _ => Some (if ct then true else false) *)
+(*   end. *)
 
-Definition is_normal_termination_tgt (tp:prog) (res_t: spec_cfg) : option bool :=
-  let '(c, ct, ms) := res_t in
-  let '(pc, rs, m, sk) := c in
-  i <- tp[[pc]];;
-  match i with
-  | <{{ ret }}> => Some (if seq.nilp sk then true else false)
-  | _ => Some false
-  end.
+(* Definition is_normal_termination_tgt (tp:prog) (res_t: spec_cfg) : option bool := *)
+(*   let '(c, ct, ms) := res_t in *)
+(*   let '(pc, rs, m, sk) := c in *)
+(*   i <- tp[[pc]];; *)
+(*   match i with *)
+(*   | <{{ ret }}> => Some (if seq.nilp sk then true else false) *)
+(*   | _ => Some false *)
+(*   end. *)
 
-Definition is_stuck_tgt (tp: prog) (res_t: spec_cfg) : option bool :=
-  let '(c, ct, ms) := res_t in
-  let '(pc, rs, m, sk) := c in
-  _ <- tp[[pc]];;
-  match (is_fault_tgt tp res_t, is_normal_termination_tgt tp res_t) with
-  | (Some false, Some false) => Some true
-  | _ => Some false
-  end.
+(* Definition is_stuck_tgt (tp: prog) (res_t: spec_cfg) : option bool := *)
+(*   let '(c, ct, ms) := res_t in *)
+(*   let '(pc, rs, m, sk) := c in *)
+(*   _ <- tp[[pc]];; *)
+(*   match (is_fault_tgt tp res_t, is_normal_termination_tgt tp res_t) with *)
+(*   | (Some false, Some false) => Some true *)
+(*   | _ => Some false *)
+(*   end. *)
 
-Definition classify_res_tgt (tp: prog) (res_t: spec_cfg) : result :=
-  if (is_fault_tgt tp res_t) then R_Fault else
-  if (is_normal_termination_tgt tp res_t) then R_Normal else R_UB.
+(* Definition classify_res_tgt (tp: prog) (res_t: spec_cfg) : result := *)
+(*   if (is_fault_tgt tp res_t) then R_Fault else *)
+(*   if (is_normal_termination_tgt tp res_t) then R_Normal else R_UB. *)
 
-(* source *)
+(* (* source *) *)
 
-Definition is_fault_src (p: prog) (res_s: ideal_cfg) : option bool :=
-  let '(c, ms) := res_s in
-  let '(pc, rs, m, sk) := c in
-  i <- p[[pc]];;
-  Some true.
+(* Definition is_fault_src (p: prog) (res_s: ideal_cfg) : option bool := *)
+(*   let '(c, ms) := res_s in *)
+(*   let '(pc, rs, m, sk) := c in *)
+(*   i <- p[[pc]];; *)
+(*   Some true. *)
 
-(* Normal termination: ret + empty stack *)
-Definition is_normal_termination_src (p: prog) (res_s: ideal_cfg) : option bool :=
-  let '(c, ms) := res_s in
-  let '(pc, rs, m, sk) := c in
-  i <- p[[pc]];;
-  match i with
-  | <{{ ret }}> => Some (if seq.nilp sk then true else false)
-  | _ => Some false
-  end.
+(* (* Normal termination: ret + empty stack *) *)
+(* Definition is_normal_termination_src (p: prog) (res_s: ideal_cfg) : option bool := *)
+(*   let '(c, ms) := res_s in *)
+(*   let '(pc, rs, m, sk) := c in *)
+(*   i <- p[[pc]];; *)
+(*   match i with *)
+(*   | <{{ ret }}> => Some (if seq.nilp sk then true else false) *)
+(*   | _ => Some false *)
+(*   end. *)
 
-(* any other final state means the program got stuck because of UB *)
-Definition is_stuck_src (p: prog) (res_s: ideal_cfg) : option bool :=
-  let '(c, ms) := res_s in
-  let '(pc, rs, m, sk) := c in
-  _ <- p[[pc]];;
-  match (is_fault_src p res_s, is_normal_termination_src p res_s) with
-  | (Some false, Some false) => Some true
-  | _ => Some false
-  end.
+(* (* any other final state means the program got stuck because of UB *) *)
+(* Definition is_stuck_src (p: prog) (res_s: ideal_cfg) : option bool := *)
+(*   let '(c, ms) := res_s in *)
+(*   let '(pc, rs, m, sk) := c in *)
+(*   _ <- p[[pc]];; *)
+(*   match (is_fault_src p res_s, is_normal_termination_src p res_s) with *)
+(*   | (Some false, Some false) => Some true *)
+(*   | _ => Some false *)
+(*   end. *)
 
-Definition classify_term_src (p: prog) (res_s: ideal_cfg) : result :=
-  if (is_fault_src p res_s) then R_Fault else
-  if (is_normal_termination_src p res_s) then R_Normal else R_UB.
+(* Definition classify_term_src (p: prog) (res_s: ideal_cfg) : result := *)
+(*   if (is_fault_src p res_s) then R_Fault else *)
+(*   if (is_normal_termination_src p res_s) then R_Normal else R_UB. *)
 
-Definition same_result_type (p tp: prog) (sc: spec_cfg) (ic: ideal_cfg) : bool :=
-  let '(c, ct, ms) := sc in
-  let '(pc, r, m, sk) := c in
-  let '(c', ms') := ic in
-  let '(pc', r', m', sk') := c' in
-  match (tp[[pc]], p[[pc']]) with
-  | (Some i, Some i') =>
-      let ub_t := is_stuck_tgt tp sc in
-      let ub_s := is_stuck_src p ic in
-      let normal_t := is_normal_termination_tgt tp sc in
-      let normal_s := is_normal_termination_src p ic in
-      let fault_t := is_fault_tgt tp sc in
-      let fault_s := is_fault_src p ic in
-      let ub_match :=
-        match (ub_t, ub_s) with
-        | (Some b1, Some b2) => b1 && b2
-        | _ => false
-        end in
-      let normal_match :=
-        match (normal_t, normal_s) with
-        | (Some b1', Some b2') => b1' && b2'
-        | _ => false
-        end in
-      let fault_match :=
-        match (fault_t, fault_s) with
-        | (Some b1'', Some b2'') => b1'' && b2''
-        | _ => false
-        end in
-          ub_match || normal_match || fault_match
-  | _ => false
-   end.
+(* Definition same_result_type (p tp: prog) (sc: spec_cfg) (ic: ideal_cfg) : bool := *)
+(*   let '(c, ct, ms) := sc in *)
+(*   let '(pc, r, m, sk) := c in *)
+(*   let '(c', ms') := ic in *)
+(*   let '(pc', r', m', sk') := c' in *)
+(*   match (tp[[pc]], p[[pc']]) with *)
+(*   | (Some i, Some i') => *)
+(*       let ub_t := is_stuck_tgt tp sc in *)
+(*       let ub_s := is_stuck_src p ic in *)
+(*       let normal_t := is_normal_termination_tgt tp sc in *)
+(*       let normal_s := is_normal_termination_src p ic in *)
+(*       let fault_t := is_fault_tgt tp sc in *)
+(*       let fault_s := is_fault_src p ic in *)
+(*       let ub_match := *)
+(*         match (ub_t, ub_s) with *)
+(*         | (Some b1, Some b2) => b1 && b2 *)
+(*         | _ => false *)
+(*         end in *)
+(*       let normal_match := *)
+(*         match (normal_t, normal_s) with *)
+(*         | (Some b1', Some b2') => b1' && b2' *)
+(*         | _ => false *)
+(*         end in *)
+(*       let fault_match := *)
+(*         match (fault_t, fault_s) with *)
+(*         | (Some b1'', Some b2'') => b1'' && b2'' *)
+(*         | _ => false *)
+(*         end in *)
+(*           ub_match || normal_match || fault_match *)
+(*   | _ => false *)
+(*    end. *)
 
 (* Well-formedness properties *)
 
@@ -553,7 +577,7 @@ Fixpoint wf_expr (p: prog) (e: exp) : Prop :=
 Definition wf_instr (p: prog) (i: inst) : Prop :=
   match i with
   | <{{skip}}> | <{{ctarget}}> | <{{ret}}> => True
-  | <{{_:=e}}> | <{{_<-load[e]}}> | <{{call e}}> => wf_expr p e
+  | <{{_:=e}}> | ILoad _ e | <{{call e}}> => wf_expr p e
   | <{{store[e]<-e'}}> => wf_expr p e /\ wf_expr p e'
   | <{{branch e to l}}> => wf_expr p e /\ wf_lbl p false l
   | <{{jump l}}> => wf_lbl p false l
@@ -608,7 +632,7 @@ Lemma rev_cons : forall {A} (l: list A) (a: A),
   rev (a :: l) = rev l ++ [a].
 Proof.
   intros. simpl. reflexivity.
-   Qed.
+Qed.
 
 (* equivalence of Utils rev and Lists rev *)
 
@@ -840,14 +864,14 @@ Proof.
         rewrite <- H2 in *. clear cfg_sync.
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
         rewrite <- app_nil_r with (l:=os) in tgt_steps.
-        inv tgt_steps. exists (l, (add o 1), r, m, sk, ms). 
+        inv tgt_steps. exists (sl, (add o 1), r, m, sk, ms). 
         (*unfold wf_dir in wfds. rewrite Forall_forall in wfds. simpl in wfds.*)
         assert (ds = [] /\ os = []).
-        { inv H12. inv H11; clarify. ss. rewrite app_nil_r in H6, H7. auto. } 
+        { inv H12. inv H11; clarify. ss. rewrite app_nil_r in H6, H7. auto. }
         des; subst. simpl in H6, H7. eapply app_eq_nil in H6, H7. des; subst.
         split.
         - econs. auto.
-        - inv H12. inv H11; clarify. clear H4. clear n_steps.
+        - inv H12. inv H11; clarify.
           econs; eauto.
           { unfold pc_sync. cbn. rewrite Hfst. 
             assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
@@ -867,7 +891,7 @@ Proof.
                     (S ((o + fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc)
                       (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0))) ) ). { lia. }
             rewrite H5. auto.
-          } 
+          }
           { econs; eauto. intros. destruct H2. unfold apply. destruct r. cbn. 
             destruct (map_get m0 x); clarify; destruct (string_dec x msf); clarify.
           }
@@ -904,27 +928,27 @@ Proof.
         rewrite <- H2 in *. clear cfg_sync.
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
         rewrite <- app_nil_r with (l:=os) in tgt_steps. rewrite H5 in tgt_steps.
-        inv tgt_steps; try discriminate. assert (n0 = 0). { lia. } rewrite H2 in H13.
-        exists (l, (add o 1), x !-> (eval r e); r, m, sk, ms). 
+        inv tgt_steps; try discriminate. (* assert (n0 = 0). { lia. } rewrite H2 in H13. *)
+        exists (sl, (add o 1), x !-> (eval r e); r, m, sk, ms). 
         (*unfold wf_dir in wfds. rewrite Forall_forall in wfds. simpl in wfds.*)
         assert (ds = [] /\ os = []).
         { inv H13. inv H12; clarify. ss. 
           rewrite app_nil_r in H8, H9. auto. 
-        } 
+        }
         des; subst. simpl in H8, H9. eapply app_eq_nil in H8, H9. des; subst.
         split; [econs; auto|].
-        inv H13. inv H12; clarify. clear H14. clear n_steps.
+        inv H13. inv H12; clarify.
         simpl. econs; eauto.
         { unfold pc_sync. cbn. rewrite Hfst. 
           assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
           { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ x := e }}>); clarify.
             rewrite Forall_forall in H0. specialize (H0 iblk). 
             specialize (nth_error_In (b :: bs) sl Hfst); intros.
-            apply (H0 H2). 
+            apply (H0 H2).
           }
           destruct H2 as (i' & H2). rewrite H2.
           assert (forall n, (add n 1) = S n). { lia. }
-          specialize (H3 o). rewrite H3.
+          specialize (H4 o). rewrite H4.
           specialize (firstnth_error (fst iblk) o <{{ x := e }}> Hsnd) as ->.
           rewrite fold_left_app. cbn.
           assert ((add (o + fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc)
@@ -974,7 +998,7 @@ Proof.
         des; subst. simpl in H6, H7. eapply app_eq_nil in H6, H7. des; subst.
         split.
         - econs. auto.
-        - inv H12. inv H11; clarify. clear n_steps.
+        - inv H12. inv H11; clarify.
           simpl. rewrite Hsk. unfold pc_sync. cbn. unfold wf_block in H0. rewrite Forall_forall in H0.
           specialize (nth_error_In (b :: bs) sl Hfst); intros. 
           apply H0 in H2. destruct H2, H3. rewrite Forall_forall in H5. 

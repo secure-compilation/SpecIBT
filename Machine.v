@@ -11,8 +11,6 @@ From Stdlib Require Import List. Import ListNotations.
 From Stdlib Require Import Classes.EquivDec.
 From Stdlib Require Import String.
 
-(* From stdpp Require Import stringmap. *)
-
 Set Default Goal Selector "!".
 
 From QuickChick Require Import QuickChick Tactics.
@@ -22,13 +20,14 @@ Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Structures.Traversable.
 Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
-Export MonadNotation. Open Scope monad_scope.
+Import MonadNotation. Open Scope monad_scope.
 
 From SECF Require Import TestingLib.
 From SECF Require Import Utils.
 From SECF Require Import ListMaps.
 From SECF Require Import MiniCET.
 From SECF Require Import sflib.
+
 
 (* TODO: change reg to some better Map. *)
 (* cfg for sequential semantics: (pc, register set, memory, stack frame) *)
@@ -38,13 +37,6 @@ Definition cfg : Type := ((nat * reg) * mem) * list nat.
 
 (* 0 ~ length m : data area *)
 (* length m ~ length m + length p : code area *)
-
-Definition wf_mem (m: mem) : Prop :=
-  Forall (fun x => match x with
-                | FP _ => False
-                | _ => True
-                end) m.
-
 
 (* memory injection *)
 
@@ -144,7 +136,7 @@ Variant final_cfg_seq (p: prog) : cfg -> Prop :=
   final_cfg_seq p (pc, r, m, stk)
 .
 
-(* Executable Semantics *)
+(* Executable Semantics for testing *)
 
 Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
   let '(pc, r, m, sk) := c in
@@ -180,6 +172,5 @@ Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
   | _ => None
   end.
 
-(* Semantics *)
 
 

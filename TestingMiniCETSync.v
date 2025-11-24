@@ -15,7 +15,7 @@ Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Structures.Traversable.
 Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
-Export MonadNotation. Open Scope monad_scope.
+Import MonadNotation. Open Scope monad_scope.
 From SECF Require Import TestingLib.
 From Stdlib Require Import String.
 

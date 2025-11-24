@@ -13,7 +13,7 @@ From QuickChick Require Import QuickChick Tactics.
 Import QcNotation QcDefaultNotation. Open Scope qc_scope.
 Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Data.List.
-Export MonadNotation.
+Import MonadNotation.
 From Stdlib Require Import String.
 From SECF Require Import ListMaps.
 Require Import Stdlib.Classes.EquivDec.
