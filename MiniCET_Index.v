@@ -3,7 +3,6 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
-From stdpp Require Import stringmap.
 From SECF Require Import Utils ListMaps.
 From SECF Require Import MiniCET.
 From SECF Require Import TestingLib.
@@ -154,40 +153,6 @@ Inductive multi_spec_inst (p:prog) :
 (** Ideal small-step semantics for MiniCET *)
 
 Definition ideal_cfg :=  (cfg * bool)%type.
-
-(*
-Definition uslh_inst (i: inst) : M (list inst) :=
-  match i with
-  | <{{ctarget}}> => ret [<{{skip}}>]
-| <{{x<-load[e]}}> =>
-      let e' := <{ (msf=1) ? 0 : e }> in
-      ret [<{{x<-load[e']}}>]
-  | <{{store[e] <- e1}}> =>
-      let e' := <{ (msf=1) ? 0 : e }> in
-      ret [<{{store[e'] <- e1}}>]
-  | <{{branch e to l}}> =>
-      let e' := <{ (msf=1) ? 0 : e }> in (* if mispeculating always pc+1 *)
-      l' <- add_block_M <{{ i[(msf := ((~e') ? 1 : msf)); jump l] }}>;;
-      ret <{{ i[branch e' to l'; (msf := (e' ? 1 : msf))] }}>
-  | <{{call e}}> =>
-      let e' := <{ (msf=1) ? &0 : e }> in
-      ret <{{ i[callee:=e'; call e'] }}>
-  | _ => ret [i]
-  end.
-
-Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
-  let '(l, (bl, is_proc)) := nblk in
-  bl' <- concatM (mapM uslh_inst bl);;
-  if is_proc then
-    ret (<{{ i[ctarget; msf := (callee = &l) ? msf : 1] }}> ++ bl', true)
-  else
-    ret (bl', false).
-
-Definition uslh_prog (p: prog) : prog :=
-  let idx_p := (add_index p) in
-  let '(p',newp) := mapM uslh_blk idx_p (Datatypes.length p) in
-  (p' ++ newp).
-*)
 
 Reserved Notation
   "p '|-' '<((' ic '))>' '-->i_' ds '^^' os '<((' ict '))>'"
@@ -592,6 +557,9 @@ Definition nonempty_program (p: prog) : Prop :=
 Definition wf_prog (p: prog) : Prop :=
   nonempty_program p /\ Forall (wf_block p) p.
 
+Definition wf_uslh (p: prog) : Prop :=
+  wf_prog p -> wf_prog (uslh_prog p).
+
 (* Tactics *)
 
 From SECF Require Import sflib.
@@ -762,11 +730,15 @@ Proof.
 Qed.
 
 Lemma src_safe_inv p tp pc tpc
+  (WFP: wf_prog p)
+  (WFTP: wf_uslh p)
   (TRP: uslh_prog p = tp)
   (PS: pc_sync p pc = Some tpc)
   (INST: p[[pc]] = Some <{{ skip }}>) :
   tp[[tpc]] = Some <{{ skip }}>.
 Proof.
+  unfold wf_uslh in WFTP.
+  specialize (WFTP WFP).
   unfold pc_sync in PS. ss.
   des_ifs_safe.
   rename p0 into iblk.
@@ -785,6 +757,10 @@ Proof.
     contradiction.
   }
   rewrite <- nth_error_app. destruct (nth_error (p' ++ newp) l) as [sblk|] eqn:Happ; clarify.
+  unfold wf_prog in WFTP. destruct WFTP. rewrite Forall_forall in H2.
+  unfold wf_block in H2. specialize (nth_error_In (p' ++ newp) l Happ); intros. 
+  apply H2 in H3. destruct H3, H4. rewrite Forall_forall in H5.
+  destruct o as [|o'] eqn:Hoffset.
 Admitted.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
