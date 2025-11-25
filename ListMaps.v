@@ -53,3 +53,8 @@ Definition apply {A:Type} (m : total_map A) (x:string) : A :=
                | None => d
                end
   end.
+
+Definition lm_map {A B: Type} (f: A -> B) (m: total_map A) : total_map B :=
+  let '(d, sl) := m in
+  let '(kl, vl) := split sl in
+  (f d, combine kl (List.map f vl)).
