@@ -155,8 +155,6 @@ Inductive multi_spec_inst (p:prog) :
 
 (** Ideal small-step semantics for MiniCET *)
 
-Definition ideal_cfg :=  (cfg * bool)%type.
-
 Reserved Notation
   "p '|-' '<((' ic '))>' '-->i_' ds '^^' os '<((' ict '))>'"
   (at level 40, ic constr, ict constr).

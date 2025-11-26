@@ -103,8 +103,6 @@ Fixpoint steps (f:nat) (p:prog) (sc: state cfg) : (state cfg * obs) :=
       (sc, [])
   end.
 
-Definition ideal_cfg :=  (cfg * bool)%type.
-
 Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_cfg * dirs * obs) :=
   match sic with 
   | S_Running ic => 

@@ -597,6 +597,8 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
   | None => false
   end.
 
+Definition ideal_cfg : Type := (cfg * bool)%type.
+
 End MiniCETCommon.
 
 Module MiniCETTest1.
