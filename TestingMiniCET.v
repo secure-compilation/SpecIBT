@@ -23,13 +23,28 @@ From Stdlib Require Import String.
 
 From SECF Require Import Utils.
 From SECF Require Import ListMaps.
+From SECF Require Import MapsFunctor.
 From Stdlib Require Import Classes.EquivDec.
 
 (*! Section testing_ETE *)
 
+(** Type system for soundenss *)
+
+Inductive ty : Type := | TNum | TPtr.
+
+Derive (Arbitrary, Shrink) for ty.
+Derive Show for ty.
+
+Definition ty_eqb (x y: ty) := match x, y with
+                               | TNum, TNum | TPtr, TPtr => true
+                               | _, _ => false
+                               end.
+
 (* Executable Semantics *)
 
-Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
+Module MCC := MiniCETCommon(ListTotalMap).
+
+Definition step (p:prog) (sc:state MCC.cfg) : (state MCC.cfg * obs) :=
   match sc with
   | S_Running c =>
       let '(pc, r, m, sk) := c in
@@ -39,10 +54,10 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
           | <{{skip}}> | <{{ctarget}}> =>
             (S_Running (pc+1, r, m, sk), [])
           | <{{x:=e}}> =>
-            (S_Running (pc+1, (x !-> eval r e; r), m, sk), [])
+            (S_Running (pc+1, (x !-> MCC.eval r e; r), m, sk), [])
           | <{{branch e to l}}> =>
             match
-              n <- to_nat (eval r e);;
+              n <- to_nat (MCC.eval r e);;
               let b := not_zero n in
               ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
             with
@@ -53,7 +68,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
             (S_Running ((l,0), r, m, sk), [])
           | <{{x<-load[e]}}> =>
             match
-              n <- to_nat (eval r e);;
+              n <- to_nat (MCC.eval r e);;
               v' <- nth_error m n;;
               ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])
             with
@@ -62,15 +77,15 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
             end
           | <{{store[e]<-e'}}> =>
             match
-              n <- to_nat (eval r e);;
-              ret ((pc+1, r, upd n m (eval r e'), sk), [OStore n])
+              n <- to_nat (MCC.eval r e);;
+              ret ((pc+1, r, upd n m (MCC.eval r e'), sk), [OStore n])
             with
             | Some (c, o) => (S_Running c, o)
             | None => (S_Undef, [])
             end
           | <{{call e}}> =>
             match
-              l <- to_fp (eval r e);;
+              l <- to_fp (MCC.eval r e);;
               ret (((l,0), r, m, (pc+1)::sk), [OCall l])
             with
             | Some (c, o) => (S_Running c, o)
@@ -88,7 +103,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
   end.
 
 (* Morally state+output monad hidden in here: step p >> steps f' p  *)
-Fixpoint steps (f:nat) (p:prog) (sc: state cfg) : (state cfg * obs) :=
+Fixpoint steps (f:nat) (p:prog) (sc: state MCC.cfg) : (state MCC.cfg * obs) :=
   match f with
   | S f' =>
       match sc with
@@ -102,7 +117,7 @@ Fixpoint steps (f:nat) (p:prog) (sc: state cfg) : (state cfg * obs) :=
       (sc, [])
   end.
 
-Definition ideal_cfg :=  (cfg * bool)%type.
+Definition ideal_cfg := (MCC.cfg * bool)%type.
 
 Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_cfg * dirs * obs) :=
   match sic with
@@ -120,7 +135,7 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
                 match
                   d <- hd_error ds;;
                   b' <- is_dbranch d;;
-                  n <- to_nat (eval r e);;
+                  n <- to_nat (MCC.eval r e);;
                   let b := (negb ms) && not_zero n in
                   (*! *)
                   let ms' := ms || negb (Bool.eqb b b') in
@@ -143,7 +158,7 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
                 match
                   d <- hd_error ds;;
                   pc' <- is_dcall d;;
-                  l <- (if ms then Some 0 else to_fp (eval r e));;
+                  l <- (if ms then Some 0 else to_fp (MCC.eval r e));;
                   blk <- nth_error p (fst pc');;
                   (*! *)
                   if (snd blk && (snd pc' ==b 0)) then
@@ -162,7 +177,7 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
                 let i := if ms then (ANum 0) else e in
                 (*!! ideal-load-no-mask *)
                 (*! let i := e in *)
-                n <- to_nat (eval r i);;
+                n <- to_nat (MCC.eval r i);;
                 v' <- nth_error m n;;
                 let c := (pc+1, (x !-> v'; r), m, sk) in
                 ret (S_Running (c, ms), ds, [OLoad n])
@@ -176,8 +191,8 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
                 let i := if ms then (ANum 0) else e in
                 (*!! ideal-store-no-mask *)
                 (*! let i := e in *)
-                n <- to_nat (eval r i);;
-                let c:= (pc+1, r, upd n m (eval r e'), sk) in
+                n <- to_nat (MCC.eval r i);;
+                let c:= (pc+1, r, upd n m (MCC.eval r e'), sk) in
                 ret (S_Running (c, ms), ds, [OStore n])
               with
               | None => (S_Undef, ds, [])
@@ -210,7 +225,7 @@ Fixpoint ideal_steps (f: nat) (p: prog) (sic: state ideal_cfg) (ds: dirs)
       (sic, ds, [])
   end.
 
-Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg * dirs * obs) :=
+Definition spec_step (p:prog) (ssc: state MCC.spec_cfg) (ds:dirs) : (state MCC.spec_cfg * dirs * obs) :=
   match ssc with
   | S_Running sc =>
       let '(c, ct, ms) := sc in
@@ -227,7 +242,7 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
               else
                 d <- hd_error ds;;
                 b' <- is_dbranch d;;
-                n <- to_nat (eval r e);;
+                n <- to_nat (MCC.eval r e);;
                 let b := not_zero n in
                 let ms' := ms || negb (Bool.eqb b b') in
                 let pc' := if b' then (l, 0) else (pc+1) in
@@ -244,7 +259,7 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
               else
                 d <- hd_error ds;;
                 pc' <- is_dcall d;;
-                l <- to_fp (eval r e);;
+                l <- to_fp (MCC.eval r e);;
                 let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
                 (*! *)
                 ret ((S_Running ((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
@@ -279,8 +294,8 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
   | s => (s, ds, [])
   end.
 
-Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds:dirs)
-  : (state spec_cfg * dirs * obs) :=
+Fixpoint spec_steps (f:nat) (p:prog) (sc: state MCC.spec_cfg) (ds:dirs)
+  : (state MCC.spec_cfg * dirs * obs) :=
   match f with
   | S f' =>
       match sc with
@@ -294,6 +309,39 @@ Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds:dirs)
       (sc, ds, []) (* JB: executing for 0 steps should be just the identity... *)
       (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
   end.
+
+Definition rctx := ListTotalMap.t ty.
+Definition tmem := list ty.
+
+Fixpoint ty_of_exp (c : rctx) (e : exp) : ty :=
+  match e with
+  | ANum _ => TNum
+  | AId x => ListTotalMap.t_apply c x
+  | ABin _ _ _ => TNum
+  (* Here we assume that "e" is well-typed and infer the type by the second branch of "ACTIf"  *)
+  | ACTIf _ _ x => ty_of_exp c x
+  | FPtr _ => TPtr
+end.
+
+Definition filter_vars_by_ty (t: ty) (c: rctx) : list string :=
+  filter (fun x => ty_eqb (ListTotalMap.t_apply c x) t) (map_dom (snd c)).
+
+Definition is_ptr (c : rctx) (var : string) :=
+  match ListTotalMap.t_apply c var with
+  | TPtr => true
+  | _ => false
+  end.
+
+(* Definition tmem := MiniCETTestE2E.tmem. *)
+(* Definition rctx := MiniCETTestE2E.rctx. *)
+(* Definition is_ptr := MiniCETTestE2E.is_ptr. *)
+(* Definition reg := ListTotalMap.t val. *)
+(* Definition eval := MiniCETTestE2E.MCC.eval. *)
+(* Definition ty_of_exp := MiniCETTestE2E.ty_of_exp. *)
+(* Definition step := MiniCETTestE2E.step. *)
+(* Definition steps := MiniCETTestE2E.steps. *)
+(* Definition spec_step := MiniCETTestE2E.spec_step. *)
+(* Definition spec_steps := MiniCETTestE2E.spec_steps. *)
 
 (* predicate for fold *)
 Definition is_br_or_call (i : inst) :=
@@ -371,7 +419,7 @@ Eval compute in (shrink "X0")%string.
   }.
 
 (* As in [TestingStaticIFC.v], we generate a finite total map which we use as state. *)
-#[export] Instance genTotalMap (A:Type) `{Gen A} : Gen (total_map A) :=
+#[export] Instance genTotalMap (A:Type) `{Gen A} : Gen (ListTotalMap.t A) :=
   {arbitrary := (d <- arbitrary;;
                  v0 <- arbitrary;;
                  v1 <- arbitrary;;
@@ -425,8 +473,6 @@ Fixpoint _gen_partition (fuel program_length: nat) : G (list nat) :=
 
 Definition gen_partition (pl: nat): G (list nat) := _gen_partition pl pl.
 
-Sample (gen_partition 8).
-
 Fixpoint proc_hd (pst: list nat) : list nat :=
   match pst with
   | [] => []
@@ -455,44 +501,10 @@ Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
                else x :: remove_dupes eqb xs
   end.
 
-(** Type system for soundenss *)
-
-Inductive ty : Type := | TNum | TPtr.
-
-Derive (Arbitrary, Shrink) for ty.
-Derive Show for ty.
-
-Definition rctx := total_map ty.
-Definition tmem := list ty.
-
-Fixpoint ty_of_exp (c : rctx) (e : exp) : ty :=
-  match e with
-  | ANum _ => TNum
-  | AId x => apply c x
-  | ABin _ _ _ => TNum
-  (* Here we assume that "e" is well-typed and infer the type by the second branch of "ACTIf"  *)
-  | ACTIf _ _ x => ty_of_exp c x
-  | FPtr _ => TPtr
-end.
-
 #[export] Instance genTMem `{Gen ty} : Gen tmem :=
   {arbitrary := t <- arbitrary;;
                 tm <- arbitrary;;
                 ret (t :: tm) }.
-
-Definition ty_eqb (x y: ty) := match x, y with
-                               | TNum, TNum | TPtr, TPtr => true
-                               | _, _ => false
-                               end.
-
-Definition filter_vars_by_ty (t: ty) (c: rctx) : list string :=
-  filter (fun x => ty_eqb (apply c x) t) (map_dom (snd c)).
-
-Definition is_ptr (c : rctx) (var : string) :=
-  match apply c var with
-  | TPtr => true
-  | _ => false
-  end.
 
 (* Similar to the previous expressions generators, we now generate the well-typed leaves, which
   differentiate between different types of values in the program. *)
@@ -563,7 +575,7 @@ Definition gen_val_wt (t: ty) (pst: list nat) : G val :=
            end
   end.
 
-Definition gen_reg_wt (c: rctx) (pst: list nat) : G reg :=
+Definition gen_reg_wt (c: rctx) (pst: list nat) : G MCC.reg :=
   let wt_vars := snd c in
   let gen_binds := mapGen (fun '(name, t) =>  (v <- gen_val_wt t pst;; ret (name, v))) wt_vars in
   default_val <- gen_val_wt (fst c) pst;;
@@ -571,9 +583,9 @@ Definition gen_reg_wt (c: rctx) (pst: list nat) : G reg :=
   ret (default_val, b).
 
 Definition wt_exp_is_defined := (forAll arbitrary (fun (c : rctx) =>
-            forAll (gen_reg_wt c [3; 3; 1; 1]) (fun (state: reg) =>
+            forAll (gen_reg_wt c [3; 3; 1; 1]) (fun (state: MCC.reg) =>
             forAll (gen_exp_wt 4 c [3; 3; 1; 1]) (fun (exp : exp) =>
-            implication (is_defined (eval state exp)) true)))).
+            implication (is_defined (MCC.eval state exp)) true)))).
 (*! QuickChick wt_exp_is_defined. *)
 
 Definition gen_asgn_wt (t: ty) (c: rctx) (pst: list nat) : G inst :=
@@ -586,8 +598,6 @@ Definition gen_asgn_wt (t: ty) (c: rctx) (pst: list nat) : G inst :=
     a <- gen_exp_ty_wt t 1 c pst;;
     ret <{ x := a }>.
 
-Sample (c <- arbitrary;; i <- gen_asgn_wt TPtr c [3; 3; 1; 1];; ret (c, i)).
-
 Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) (default : nat) : G inst :=
   let vars := (map_dom (snd c)) in
   let jlst := (list_minus (seq 0 pl) (proc_hd pst)) in
@@ -595,13 +605,9 @@ Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) (default : nat) : G
   l <- elems_ default jlst;; (* 0 is unreachable *)
   ret <{ branch e to l }>.
 
-Sample (c <- arbitrary;; i <- gen_branch_wt c 8 [3; 3; 1; 1] 2;; ret (c, i)).
-
 Definition gen_jump_wt (pl: nat) (pst: list nat) (default : nat) : G inst :=
   l <- elems_ default (list_minus (seq 0 pl) (proc_hd pst));; (* 0 is unreachable *)
   ret <{ jump l }>.
-
-Sample (gen_jump_wt 8 [3; 3; 1; 1] 2).
 
 Definition filter_typed {A : Type} (t : ty) (l : list (A * ty)): list A := 
   map fst (filter (fun '(_, t') => ty_eqb t t') l).
@@ -620,8 +626,6 @@ Definition gen_load_wt (t: ty) (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : 
   | _ => ret <{ skip }>
   end.
 
-Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_load_wt TPtr c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
-
 Definition gen_store_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
   match tm with
   | h :: tl =>
@@ -631,10 +635,6 @@ Definition gen_store_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst 
     ret <{ store[e1] <- e2 }>
   | _ => ret <{ skip }>
   end.
-
-Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_store_wt c tm 8 [3; 3; 1; 1];; ret (c, tm, i)).
-
-
 
 Definition compose_load_store_guard (t : ty) (id_exp : exp) (mem : tmem) : exp :=
   let indices := seq 0 (Datatypes.length mem) in
@@ -692,8 +692,6 @@ Definition gen_call_wt (c: rctx) (pst: list nat) : G inst :=
   e <- gen_exp_ptr_wt 1 c pst;;
   ret <{ call e }>.
 
-Sample (c <- arbitrary;; gen_call_wt c [3; 3; 1; 1]).
-
 Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
                         (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
                         (gen_jump : nat -> list nat -> nat -> G inst)
@@ -738,18 +736,12 @@ Definition _gen_term_wt (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
 Definition gen_term_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
   _gen_term_wt gen_branch_wt gen_jump_wt c tm pl pst.
 
-Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_term_wt c tm 8 [3; 3; 1; 1];; ret (i)).
-
 Definition gen_inst_wt (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
   _gen_inst_wt gen_asgn_wt gen_branch_wt gen_jump_wt gen_load_wt gen_store_wt gen_call_wt
                c tm sz pl pst.
 
-Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_inst_wt c tm 3 8 [3; 3; 1; 1];; ret (c, tm, i)).
-
 Definition gen_blk_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst: list nat) : G (list inst) :=
   vectorOf bsz (gen_inst_wt c tm bsz pl pst).
-
-Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_blk_wt c tm 5 8 [3; 3; 1; 1];; ret (c, tm, i)).
 
 Definition _gen_blk_body_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst: list nat) : G (list inst) :=
   vectorOf (bsz - 1) (gen_inst_wt c tm bsz pl pst).
@@ -758,8 +750,6 @@ Definition gen_blk_with_term_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst: list na
   blk <- _gen_blk_body_wt c tm bsz pl pst;;
   term <- gen_term_wt c tm pl pst;;
   ret (blk ++ [term]).
-
-Sample (tm <- arbitrary;; c <- arbitrary;; i <- gen_blk_with_term_wt c tm 5 8 [3; 3; 1; 1];; ret i).
 
 Definition basic_block_checker (blk: list inst) : bool :=
   match blk with
@@ -787,8 +777,6 @@ Fixpoint _gen_proc_with_term_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: lis
              ret ((blk, false) :: rest)
   end.
 
-Sample (tm <- arbitrary;; c <- arbitrary;; proc <- _gen_proc_with_term_wt c tm 3 3 8 [3; 3; 1; 1];; ret proc).
-
 Definition gen_proc_with_term_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match fsz with
   | O => ret [] (* unreachable *)
@@ -798,8 +786,6 @@ Definition gen_proc_with_term_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: li
              ret ((blk, true) :: rest)
   end.
 
-Sample (tm <- arbitrary;; c <- arbitrary;; proc <- gen_proc_with_term_wt c tm 3 3 8 [3; 3; 1; 1];; ret proc).
-
 Fixpoint _gen_prog_with_term_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst pst': list nat) : G (list (list inst * bool)) :=
   match pst' with
   | [] => ret []
@@ -807,8 +793,6 @@ Fixpoint _gen_prog_with_term_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst pst': li
                tl_proc <- _gen_prog_with_term_wt c tm bsz pl pst tl;;
                ret (hd_proc ++ tl_proc)
   end.
-
-Sample (tm <- arbitrary;; c <- arbitrary;; p <- _gen_prog_with_term_wt c tm 3 8 [3; 3; 1; 1] [3; 3; 1; 1];; ret  p).
 
 Definition gen_prog_with_term_wt_example (pl: nat) :=
   c <- arbitrary;;
@@ -835,8 +819,6 @@ Fixpoint _gen_proc_wt (c: rctx) (tm: tmem) (psz bsz pl: nat) (pst: list nat) : G
              ret ((blk, false) :: rest)
   end.
 
-Sample (tm <- arbitrary;; c <- arbitrary;; proc <- _gen_proc_wt c tm 3 3 8 [3; 3; 1; 1];; ret (c, tm, proc)).
-
 Definition gen_proc_wt (c: rctx) (tm: tmem) (psz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match psz with
   | O => ret [] (* unreachable *)
@@ -846,8 +828,6 @@ Definition gen_proc_wt (c: rctx) (tm: tmem) (psz bsz pl: nat) (pst: list nat) : 
              ret ((blk, true) :: rest)
   end.
 
-Sample (tm <- arbitrary;; c <- arbitrary;; proc <- gen_proc_wt c tm 3 3 8 [3; 3; 1; 1];; ret (c, tm, proc)).
-
 Fixpoint _gen_prog_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst pst': list nat) : G (list (list inst * bool)) :=
   match pst' with
   | [] => ret []
@@ -856,8 +836,6 @@ Fixpoint _gen_prog_wt (c: rctx) (tm: tmem) (bsz pl: nat) (pst pst': list nat) : 
                ret (hd_proc ++ tl_proc)
   end.
 
-Sample (tm <- arbitrary;; c <- arbitrary;; p <- _gen_prog_wt c tm 3 8 [3; 3; 1; 1] [3; 3; 1; 1];; ret  p).
-
 Definition gen_prog_wt_example (pl: nat) :=
   c <- arbitrary;;
   tm <- arbitrary;;
@@ -865,13 +843,9 @@ Definition gen_prog_wt_example (pl: nat) :=
   let bsz := 5%nat in
   _gen_prog_wt c tm bsz pl pst pst.
 
-Sample (gen_prog_wt_example 5).
-
 Definition test_wt_example : G bool :=
   prog <- gen_prog_wt_example 8;;
   ret (wf prog).
-
-Sample (vectorOf 1 test_wt_example).
 
 Definition gen_prog_wt (bsz pl: nat) :=
   c <- arbitrary;;
@@ -894,9 +868,9 @@ Definition wt_expr_is_defined := (
     forAll arbitrary (fun (pl : nat) =>
     forAll (choose (2, 5)) (fun (exp_sz : nat) => 
     pst <- gen_partition pl;;
-    forAll (gen_reg_wt c pst) (fun (r : reg) =>
+    forAll (gen_reg_wt c pst) (fun (r : MCC.reg) =>
     forAll (gen_exp_wt exp_sz c pst) (fun (e : exp) =>
-    is_defined (eval r e)
+    is_defined (MCC.eval r e)
   )))))).
 (*! QuickChick wt_expr_is_defined. *)
 
@@ -996,10 +970,9 @@ Definition ty_prog_wf := (forAll (gen_prog_ty_ctx_wt 3 8) (fun '(c, tm, p) => ((
 (* Taint Tracker for input pairs *)
 
 Notation label := TestingLib.label.
-Notation apply := ListMaps.apply.
 Definition join (l1 l2 : label) : label := l1 && l2.
 
-Definition pub_vars := total_map label.
+Definition pub_vars := ListTotalMap.t label.
 Definition pub_arrs := list label. (* true: public, false: secret *)
 
 Fixpoint vars_exp (e:exp) : list string :=
@@ -1034,7 +1007,7 @@ Definition vars_prog (p: prog) : list string :=
   remove_dupes String.eqb (_vars_prog p).
 
 Definition label_of_exp (P:pub_vars) (e:exp) : label :=
-  List.fold_left (fun l a => join l (apply P a)) (vars_exp e) public.
+  List.fold_left (fun l a => join l (ListTotalMap.t_apply P a)) (vars_exp e) public.
 
 (* Copied from TestingFlexSLH.v *)
 
@@ -1071,7 +1044,7 @@ Definition tamem := list taint.
 Definition tstk := list tcptr.
 
 Definition tcfg := (tcptr * treg * tamem * tstk)%type.
-Definition input_st : Type := cfg * tcfg * taint.
+Definition input_st : Type := MCC.cfg * tcfg * taint.
 
 (* Currently, we generate UB-free programs based on abstract states.
    Going forward, we'll transition to execution-based program
@@ -1112,7 +1085,7 @@ Definition interpreter: Type := evaluator unit.
 Fixpoint _calc_taint_exp (e: exp) (treg: total_map taint) : taint :=
   match e with
   | ANum _ | FPtr _ => []
-  | AId x => apply treg x
+  | AId x => ListTotalMap.t_apply treg x
   | ABin _ e1 e2 => join_taints (_calc_taint_exp e1 treg) (_calc_taint_exp e2 treg)
   | ACTIf e1 e2 e3 => join_taints (_calc_taint_exp e1 treg)
                                  (join_taints (_calc_taint_exp e2 treg) (_calc_taint_exp e3 treg))
@@ -1123,7 +1096,7 @@ Variant taint_ctx :=
   | CDefault.
 
 (* None cases are unreachable. *)
-Definition taint_step (i: inst) (c: cfg) (tc: tcfg) (tobs: taint) (tctx: taint_ctx) : option (tcfg * taint) :=
+Definition taint_step (i: inst) (c: MCC.cfg) (tc: tcfg) (tobs: taint) (tctx: taint_ctx) : option (tcfg * taint) :=
   let '(pc, rs, m, s) := c in
   let '(tpc, trs, tm, ts) := tc in
   match i with
@@ -1195,17 +1168,17 @@ Definition taint_step (i: inst) (c: cfg) (tc: tcfg) (tobs: taint) (tctx: taint_c
       end
   end.
 
-Definition get_ctx (rs: reg) (i: inst) : option taint_ctx  :=
+Definition get_ctx (rs: MCC.reg) (i: inst) : option taint_ctx  :=
   match i with
-  | <{ x <- load[e] }> => n <- to_nat (eval rs e);;
+  | <{ x <- load[e] }> => n <- to_nat (MCC.eval rs e);;
                         Some (CMem n)
-  | <{ store[e] <- e' }> => n <- to_nat (eval rs e);;
+  | <{ store[e] <- e' }> => n <- to_nat (MCC.eval rs e);;
                           Some (CMem n)
   | _ => Some CDefault
   end.
 
 (* ret with empty stackframe *)
-Definition final_cfg (p: prog) (c: cfg) : bool :=
+Definition final_cfg (p: prog) (c: MCC.cfg) : bool :=
   let '(pc, rs, m, stk) := c in
   match fetch p pc with
   | Some i => match i with
@@ -1271,7 +1244,7 @@ Fixpoint split_sum_list {A B : Type} (l : list (A + B)) : (list A * list B) :=
   | inr b :: xs => let (la, lb) := split_sum_list xs in (la, b :: lb)
   end.
 
-Definition taint_tracking (f : nat) (p : prog) (c: cfg)
+Definition taint_tracking (f : nat) (p : prog) (c: MCC.cfg)
   : option (obs * list string * list nat) :=
   let '(pc, rs, m, ts) := c in
   let tpc := [] in
@@ -1385,7 +1358,7 @@ Definition load_store_trans_basic_blk := (
 
 (* check 1: generated program is stuck-free. *)
 
-Definition stuck_free (f : nat) (p : prog) (c: cfg)
+Definition stuck_free (f : nat) (p : prog) (c: MCC.cfg)
   : TaintTracking.exec_result :=
   let '(pc, rs, m, ts) := c in
   let tpc := [] in
@@ -1425,8 +1398,6 @@ Definition gen_inst_no_obs (pl: nat) (pst: list nat) : G inst :=
            (1, l <- elems_ 0 jlb;; ret (IJump l))
          ].
 
-Sample (gen_inst_no_obs 8 [3;3;1;1]).
-
 Definition gen_blk_no_obs (bsz pl: nat) (pst: list nat) : G (list inst) :=
   vectorOf bsz (gen_inst_no_obs pl pst).
 
@@ -1465,11 +1436,9 @@ Definition gen_no_obs_prog : G prog :=
   let bsz := 3 in (* Max instructions per block *)
   _gen_prog_no_obs bsz pl pst pst.
 
-Sample gen_no_obs_prog.
-
 Definition empty_mem : mem := [].
 
-Definition empty_rs : reg := t_empty (FP 0).
+Definition empty_rs : MCC.reg := t_empty (FP 0).
 
 Definition no_obs_prog_no_obs := (
   forAll gen_no_obs_prog (fun p =>
@@ -1608,7 +1577,7 @@ Definition test_ni := (
 Derive Show for direction.
 Derive Show for observation.
 
-Definition spec_rs (rs: reg) := (callee !-> (FP 0); (msf !-> (N 0); rs)).
+Definition spec_rs (rs: MCC.reg) := (callee !-> (FP 0); (msf !-> (N 0); rs)).
 
 (* ** Direction generators *)
 
@@ -1619,11 +1588,11 @@ Definition gen_dcall (pst: list nat) : G direction :=
   l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
 
 Variant sc_output_st : Type :=
-  | SRStep : obs -> dirs -> spec_cfg -> sc_output_st
-  | SRError : obs -> dirs -> spec_cfg -> sc_output_st
-  | SRTerm : obs -> dirs -> spec_cfg -> sc_output_st.
+  | SRStep : obs -> dirs -> MCC.spec_cfg -> sc_output_st
+  | SRError : obs -> dirs -> MCC.spec_cfg -> sc_output_st
+  | SRTerm : obs -> dirs -> MCC.spec_cfg -> sc_output_st.
 
-Definition gen_step_direction (i: inst) (c: cfg) (pst: list nat) : G dirs :=
+Definition gen_step_direction (i: inst) (c: MCC.cfg) (pst: list nat) : G dirs :=
   let '(pc, rs, m, s) := c in
   match i with
   | <{ branch e to l }> => db <- gen_dbr;; ret [db]
@@ -1631,7 +1600,7 @@ Definition gen_step_direction (i: inst) (c: cfg) (pst: list nat) : G dirs :=
   | _ => ret []
   end.
 
-Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G sc_output_st :=
+Definition gen_spec_step (p:prog) (sc:MCC.spec_cfg) (pst: list nat) : G sc_output_st :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
   match p[[pc]] with
@@ -1665,9 +1634,9 @@ Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G sc_output_st
   end.
 
 Variant spec_exec_result : Type :=
-  | SETerm (sc: spec_cfg) (os: obs) (ds: dirs)
-  | SEError (sc: spec_cfg) (os: obs) (ds: dirs)
-  | SEOutOfFuel (sc: spec_cfg) (os: obs) (ds: dirs).
+  | SETerm (sc: MCC.spec_cfg) (os: obs) (ds: dirs)
+  | SEError (sc: MCC.spec_cfg) (os: obs) (ds: dirs)
+  | SEOutOfFuel (sc: MCC.spec_cfg) (os: obs) (ds: dirs).
 
 #[export] Instance showSER : Show spec_exec_result :=
   {show :=fun ser => 
@@ -1678,7 +1647,7 @@ Variant spec_exec_result : Type :=
       end
   }.
 
-Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) (os: obs) (ds: dirs) : G (spec_exec_result) :=
+Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:MCC.spec_cfg) (os: obs) (ds: dirs) : G (spec_exec_result) :=
   match f with
   | 0 => ret (SEOutOfFuel sc os ds)
   | S f' =>
@@ -1694,18 +1663,18 @@ Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) 
       end
   end.
 
-Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) : G (spec_exec_result) :=
+Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:MCC.spec_cfg) : G (spec_exec_result) :=
   _gen_spec_steps_sized f p pst sc [] [].
 
 (* Speculative Step functions *)
-Definition spec_step_acc (p:prog) (sc:spec_cfg) (ds: dirs) : sc_output_st :=
+Definition spec_step_acc (p:prog) (sc:MCC.spec_cfg) (ds: dirs) : sc_output_st :=
   match spec_step p (S_Running sc) ds with
   | (S_Running sc', ds', os) => SRStep os ds' sc' (* sc': current spec_cfg, os: observations, ds': remaining dirs *)
   | (S_Term, _, _) => SRTerm [] [] sc
   | _ => SRError [] [] sc
   end.
 
-Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (os: obs) (ds: dirs) : spec_exec_result :=
+Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:MCC.spec_cfg) (os: obs) (ds: dirs) : spec_exec_result :=
   match f with
   | 0 => SEOutOfFuel sc os ds (* sc: current spec_cfg, os: observations, ds: remaining dirs *)
   | S f' =>
@@ -1719,7 +1688,7 @@ Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (os: obs) (ds: dirs) :
       end
   end.
 
-Definition spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (ds: dirs) : spec_exec_result :=
+Definition spec_steps_acc (f : nat) (p:prog) (sc:MCC.spec_cfg) (ds: dirs) : spec_exec_result :=
   _spec_steps_acc f p sc [] ds.
 
 (** Safety Preservation *)
@@ -1810,7 +1779,9 @@ Definition test_relative_security := (
    | None => collect "tt1 failed"%string (checker tt) (* discard *)
   end)))).
 (*! QuickChick test_relative_security. *)
-
+QuickChick test_relative_security.
 (* Outdated. available commit: 58fa2d5c090d764b548c967ff4c40a6d6f2fb679*)
 (* +++ Passed 1000000 tests (0 discards) *)
 (* Time Elapsed: 1308.843714s *)
+(* QuickChick test_relative_security. *)
+
