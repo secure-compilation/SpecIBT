@@ -21,10 +21,11 @@ From SECF Require Import TestingLib.
 From Stdlib Require Import String.
 
 From SECF Require Import Utils.
-From SECF Require Import ListMaps.
+From SECF Require Import MapsFunctor.
 Require Import Stdlib.Classes.EquivDec.
 
-(* ** Property testing of MiniCET *)
+Declare Custom Entry com.
+Declare Scope com_scope.
 
 (** The factoring of expressions is taken from the latest SpecCT chapter *)
 
@@ -95,9 +96,6 @@ Definition callee : string := "callee".
 
 Coercion AId : string >-> exp.
 Coercion ANum : nat >-> exp.
-
-Declare Custom Entry com.
-Declare Scope com_scope.
 
 (* HIDE: BCP: Again, these notations are in flux in PLF... *)
 Notation "<{ e }>" := e (at level 0, e custom com at level 99) : com_scope.
@@ -170,21 +168,6 @@ Definition eval_binop (o:binop) (v1 v2 : val) : val :=
       end
   | _, _ => UV (* Type error; treating UV as a 3rd type; reasonable?
                   - alternative: make && and || short-circuiting *)
-  end.
-
-Definition reg := total_map val.
-
-Fixpoint eval (st : reg) (e: exp) : val :=
-  match e with
-  | ANum n => N n
-  | AId x => apply st x
-  | ABin b e1 e2 => eval_binop b (eval st e1) (eval st e2)
-  | <{b ? e1 : e2}> =>
-      match to_nat (eval st b) with (* Can't branch on function pointers *)
-      | Some n1 => if not_zero n1 then eval st e1 else eval st e2
-      | None => UV
-      end
-  | <{&l}> => FP l
   end.
 
 Inductive inst : Type :=
@@ -260,8 +243,6 @@ Definition cptr : Type := nat * nat. (* label(=(basic) block identifier) and off
 
 Definition mem := list val.
 
-Definition cfg : Type := ((cptr*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
-
 Inductive observation : Type :=
   | OBranch (b:bool)
   | OLoad (n:nat)
@@ -294,56 +275,11 @@ Definition inc (pc:cptr) : cptr :=
 
 Notation "pc '+' '1'" := (inc pc).
 
-Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
-  let '(pc, r, m, sk) := c in
-  i <- p[[pc]];;
-  match i with
-  | <{{skip}}> | <{{ctarget}}> =>
-      ret ((pc+1, r, m, sk), [])
-  | <{{x:=e}}> =>
-      ret ((pc+1, (x !-> eval r e; r), m, sk), [])
-  | <{{branch e to l}}> =>
-      n <- to_nat (eval r e);;
-      let b := not_zero n in
-      ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
-  | <{{jump l}}> =>
-      ret (((l,0), r, m, sk), [])
-  | <{{x<-load[e]}}> =>
-      n <- to_nat (eval r e);;
-      v' <- nth_error m n;;
-      ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])      
-  | <{{store[e]<-e'}}> =>
-      n <- to_nat (eval r e);;
-      ret ((pc+1, r, upd n m (eval r e'), sk), [OStore n])
-  | <{{call e}}> =>
-      l <- to_fp (eval r e);;
-      ret (((l,0), r, m, (pc+1)::sk), [OCall l])
-  | <{{ret}}> =>
-      pc' <- hd_error sk;;
-      ret ((pc', r, m, tl sk), [])
-  end.
-
-(* Morally state+output monad hidden in here: step p >> steps f' p  *)
-Fixpoint steps (f:nat) (p:prog) (c:cfg) : option (cfg * obs) :=
-  match f with
-  | S f' =>
-      co1 <- step p c;;
-      let '(c1,o1) := co1 in
-      co2 <- steps f' p c1;;
-      let '(c2,o2) := co2 in
-      ret (c2, o1++o2)
-  | 0 => ret (c,[])
-  end.
-
-(** Speculative semantics *)
-
 Inductive direction : Type :=
   | DBranch (b':bool)
   | DCall (lo:cptr).
 
 Definition dirs := list direction.
-
-Definition spec_cfg : Type := ((cfg * bool) * bool).
 
 Definition is_true (b:bool) : option unit :=
   if b then Some tt else None.
@@ -368,74 +304,6 @@ Definition if_some {a:Type} (o:option a) (f:a->bool) : bool :=
   | Some x => f x
   | None => true
   end.
-
-(* ret with empty stackframe *)
-Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
-  let '(c, ct, ms) := sc in
-  let '(pc, rs, m, stk) := c in
-  match fetch p pc with
-  | Some i => match i with
-             | IRet => if seq.nilp stk then true else false (* Normal Termination *)
-             | ICTarget => if ct
-                          then false (* Call target block: Unreachable *)
-                          else true (* TODO: Do we need to distinguish fault and normal termination? *)
-             | _ => false
-             end
-  | None => false
-  end.
-
-Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs * obs) :=
-  let '(c, ct, ms) := sc in
-  let '(pc, r, m, sk) := c in
-  i <- p[[pc]];;
-  match i with
-  | <{{branch e to l}}> =>
-      is_false ct;;
-      if seq.nilp ds then
-        trace "Branch: Directions are empty!" None
-      else
-      d <- hd_error ds;;
-      b' <- is_dbranch d;;
-      n <- to_nat (eval r e);;
-      let b := not_zero n in
-      let ms' := ms || negb (Bool.eqb b b') in 
-      let pc' := if b' then (l, 0) else (pc+1) in
-      ret ((((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
-  | <{{call e}}> =>
-      is_false ct;;
-      if seq.nilp ds then
-        trace "Call: Directions are empty!" None
-      else
-      d <- hd_error ds;;
-      pc' <- is_dcall d;;
-      l <- to_fp (eval r e);;
-      let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
-      ret ((((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
-  | <{{ctarget}}> =>
-      is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
-      ret (((pc+1, r, m, sk), false, ms), ds, [])
-  | _ =>
-      is_false ct;;
-      co <- step p c;;
-      let '(c',o) := co in
-      ret ((c',false,ms), ds, o)
-  end.
-
-Fixpoint spec_steps (f:nat) (p:prog) (c:spec_cfg) (ds:dirs)
-  : option (spec_cfg * dirs * obs) :=
-  match f with
-  | S f' =>
-      cdo1 <- spec_step p c ds;;
-      let '(c1,ds1,o1) := cdo1 in
-      cdo2 <- spec_steps f' p c1 ds1;;
-      let '(c2,ds2,o2) := cdo2 in
-      ret (c2,ds2,o1++o2)
-  | 0 =>
-      ret (c, ds, []) (* JB: executing for 0 steps should be just the identity... *)
-      (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
-  end.
-
-(* YH: What do you think about moving the writer monad-related code to Util.v *)
 
 (* Writer monad *)
 Definition M (A: Type) := nat -> A * prog.
@@ -685,3 +553,151 @@ Proof.
     + apply S_Term.
 Defined.
 
+Module MiniCETCommon (M: TMap).
+
+Notation "'_' '!->' v" := (M.init v)
+    (at level 100, right associativity).
+Notation "x '!->' v ';' m" := (M.t_update m x v)
+    (at level 100, v at next level, right associativity).
+Notation "m '!' x" := (M.t_apply m x)
+    (at level 20, left associativity).
+
+Definition reg := M.t val.
+
+Fixpoint eval (st : reg) (e: exp) : val :=
+  match e with
+  | ANum n => N n
+  | AId x => M.t_apply st x
+  | ABin b e1 e2 => eval_binop b (eval st e1) (eval st e2)
+  | <{b ? e1 : e2}> =>
+      match to_nat (eval st b) with (* Can't branch on function pointers *)
+      | Some n1 => if not_zero n1 then eval st e1 else eval st e2
+      | None => UV
+      end
+  | <{&l}> => FP l
+  end.
+
+
+Definition cfg : Type := ((cptr*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
+
+Definition spec_cfg : Type := ((cfg * bool) * bool).
+
+(* ret with empty stackframe *)
+Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
+  let '(c, ct, ms) := sc in
+  let '(pc, rs, m, stk) := c in
+  match fetch p pc with
+  | Some i => match i with
+             | IRet => if seq.nilp stk then true else false (* Normal Termination *)
+             | ICTarget => if ct
+                          then false (* Call target block: Unreachable *)
+                          else true (* TODO: Do we need to distinguish fault and normal termination? *)
+             | _ => false
+             end
+  | None => false
+  end.
+
+End MiniCETCommon.
+
+Module MiniCETTest1.
+
+Module MCC := MiniCETCommon(ListTotalMap).
+Import MCC.
+
+Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
+  let '(pc, r, m, sk) := c in
+  i <- p[[pc]];;
+  match i with
+  | <{{skip}}> | <{{ctarget}}> =>
+      ret ((pc+1, r, m, sk), [])
+  | <{{x:=e}}> =>
+      ret ((pc+1, (x !-> eval r e; r), m, sk), [])
+  | <{{branch e to l}}> =>
+      n <- to_nat (eval r e);;
+      let b := not_zero n in
+      ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
+  | <{{jump l}}> =>
+      ret (((l,0), r, m, sk), [])
+  | <{{x<-load[e]}}> =>
+      n <- to_nat (eval r e);;
+      v' <- nth_error m n;;
+      ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])
+  | <{{store[e]<-e'}}> =>
+      n <- to_nat (eval r e);;
+      ret ((pc+1, r, upd n m (eval r e'), sk), [OStore n])
+  | <{{call e}}> =>
+      l <- to_fp (eval r e);;
+      ret (((l,0), r, m, (pc+1)::sk), [OCall l])
+  | <{{ret}}> =>
+      pc' <- hd_error sk;;
+      ret ((pc', r, m, tl sk), [])
+  end.
+
+(* Morally state+output monad hidden in here: step p >> steps f' p  *)
+Fixpoint steps (f:nat) (p:prog) (c:cfg) : option (cfg * obs) :=
+  match f with
+  | S f' =>
+      co1 <- step p c;;
+      let '(c1,o1) := co1 in
+      co2 <- steps f' p c1;;
+      let '(c2,o2) := co2 in
+      ret (c2, o1++o2)
+  | 0 => ret (c,[])
+  end.
+
+(** Speculative semantics *)
+
+Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs * obs) :=
+  let '(c, ct, ms) := sc in
+  let '(pc, r, m, sk) := c in
+  i <- p[[pc]];;
+  match i with
+  | <{{branch e to l}}> =>
+      is_false ct;;
+      if seq.nilp ds then
+        trace "Branch: Directions are empty!" None
+      else
+      d <- hd_error ds;;
+      b' <- is_dbranch d;;
+      n <- to_nat (eval r e);;
+      let b := not_zero n in
+      let ms' := ms || negb (Bool.eqb b b') in
+      let pc' := if b' then (l, 0) else (pc+1) in
+      ret ((((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
+  | <{{call e}}> =>
+      is_false ct;;
+      if seq.nilp ds then
+        trace "Call: Directions are empty!" None
+      else
+      d <- hd_error ds;;
+      pc' <- is_dcall d;;
+      l <- to_fp (eval r e);;
+      let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+      ret ((((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
+  | <{{ctarget}}> =>
+      is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
+      ret (((pc+1, r, m, sk), false, ms), ds, [])
+  | _ =>
+      is_false ct;;
+      co <- step p c;;
+      let '(c',o) := co in
+      ret ((c',false,ms), ds, o)
+  end.
+
+Fixpoint spec_steps (f:nat) (p:prog) (c:spec_cfg) (ds:dirs)
+  : option (spec_cfg * dirs * obs) :=
+  match f with
+  | S f' =>
+      cdo1 <- spec_step p c ds;;
+      let '(c1,ds1,o1) := cdo1 in
+      cdo2 <- spec_steps f' p c1 ds1;;
+      let '(c2,ds2,o2) := cdo2 in
+      ret (c2,ds2,o1++o2)
+  | 0 =>
+      ret (c, ds, []) (* JB: executing for 0 steps should be just the identity... *)
+      (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
+  end.
+
+(* YH: What do you think about moving the writer monad-related code to Util.v *)
+
+End MiniCETTest1.

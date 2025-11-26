@@ -15,7 +15,7 @@ Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Data.List.
 Import MonadNotation.
 From Stdlib Require Import String.
-From SECF Require Import ListMaps.
+From SECF Require Import ListMaps MapsFunctor.
 Require Import Stdlib.Classes.EquivDec.
 
 (** ** Type system for cryptographic constant-time programming *)
@@ -28,10 +28,10 @@ Definition label := bool.
 Definition public : label := true.
 Definition secret : label := false.
 
-Definition pub_vars := total_map label.
-Definition pub_arrs := total_map label.
+Definition pub_vars := ListTotalMap.t label.
+Definition pub_arrs := ListTotalMap.t label.
 
-Notation apply := ListMaps.apply.
+Notation t_apply := ListTotalMap.t_apply.
 
 Definition fold_extra {A : Type} {B : Type} (f : A -> list B -> B -> list B -> A) (l : list B) (v : A) : A :=
   let fix aux (processed : list B) (incoming : list B) (acc : A) :=
@@ -43,7 +43,7 @@ Definition fold_extra {A : Type} {B : Type} (f : A -> list B -> B -> list B -> A
     end
   in aux [] l v.
 
-#[export] Instance shrinkTotalMap {X : Type} `{Shrink X}: Shrink (total_map X) :=
+#[export] Instance shrinkTotalMap {X : Type} `{Shrink X}: Shrink (ListTotalMap.t X) :=
   {shrink := fun '(d, m) =>
       (* Shrinking the default value *)
       (List.map (fun d' => (d', m)) (shrink d)) ++
@@ -67,19 +67,19 @@ Definition fold_extra {A : Type} {B : Type} (f : A -> list B -> B -> list B -> A
       )
   }.
 
-Definition pub_equiv (P : total_map label) {X:Type} (s1 s2 : total_map X) :=
-  forall x:string, apply P x = true -> apply s1 x = apply s2 x.
+Definition pub_equiv (P : ListTotalMap.t label) {X:Type} (s1 s2 : ListTotalMap.t X) :=
+  forall x:string, t_apply P x = true -> t_apply s1 x = t_apply s2 x.
 
-Definition pub_equivb (P : total_map label) {X:Type} `{EqDec X} (s1 s2 : total_map X) : bool :=
+Definition pub_equivb (P : ListTotalMap.t label) {X:Type} `{EqDec X} (s1 s2 : ListTotalMap.t X) : bool :=
   match P, s1, s2 with
   | (dP,mP), (d1,m1), (d2,m2) =>
       if dP
-      then forallb (fun x => if apply P x
-                             then (apply s1 x) ==b (apply s2 x) else true)
+      then forallb (fun x => if t_apply P x
+                             then (t_apply s1 x) ==b (t_apply s2 x) else true)
                    (union (map_dom mP) (union (map_dom m1) (map_dom m2)))
            && (d1 ==b d2)
-      else forallb (fun x => if apply P x
-                             then (apply s1 x) ==b (apply s2 x) else true)
+      else forallb (fun x => if t_apply P x
+                             then (t_apply s1 x) ==b (t_apply s2 x) else true)
                    (map_dom mP)
   end.
 
@@ -101,11 +101,11 @@ Fixpoint forallb3 {A B C} (P : A -> B -> C -> bool) (a: list A) (b: list B) (c: 
 Definition pub_equiv_listb (P: list label) {X:Type} `{EqDec X} (m1 m2: list X) :=
   forallb3 (fun (a:label) (b:X) (c:X) => if a then (b ==b c) else true) P m1 m2.
 
-Definition gen_pub_equiv (P : total_map label) {X: Type} `{Gen X} (s: total_map X) : G (total_map X) :=
+Definition gen_pub_equiv (P : ListTotalMap.t label) {X: Type} `{Gen X} (s: ListTotalMap.t X) : G (ListTotalMap.t X) :=
   let '(d, m) := s in
   new_m <- List.fold_left (fun (acc : G (Map X)) (c : string * X) => let '(k, v) := c in
     new_m <- acc;;
-    new_v <- (if apply P k then ret v else arbitrary);;
+    new_v <- (if t_apply P k then ret v else arbitrary);;
     ret ((k, new_v)::new_m)
   ) m (ret []);;
   ret (d, new_m).
@@ -189,7 +189,7 @@ Proof.
     inversion H. subst. eapply Heqb; auto.
 Defined.
 
-Definition gen_state : G (total_map val) :=
+Definition gen_state : G (ListTotalMap.t val) :=
   d <- arbitrary;;
   v0 <- arbitrary;;
   v1 <- arbitrary;;
@@ -247,7 +247,7 @@ QuickChick (forAll gen_pub_mem (fun P =>
       (checker (pub_equiv_listb P s1 s2))
     )))).
 
-(* Definition shrink_pub_equiv_reg (P : total_map label) (s : total_map val) : total_map val -> list (total_map val) := *)
+(* Definition shrink_pub_equiv_reg (P : ListTotalMap.t label) (s : ListTotalMap.t val) : ListTotalMap.t val -> list (ListTotalMap.t val) := *)
 (*   fun '(d, m) => *)
 (*     (* We can only shrink the default value iif nothing secret uses it. *)
 (*        If the default for P is "secret", then we can always find a variable not in m that is secret. *)

@@ -20,12 +20,15 @@ From SECF Require Import TestingLib.
 From Stdlib Require Import String.
 
 From SECF Require Import Utils.
-From SECF Require Import ListMaps.
+From SECF Require Import ListMaps MapsFunctor.
 Require Import Stdlib.Classes.EquivDec.
 From SECF Require Import MiniCET.
 From SECF Require Import TestingMiniCET.
 
 (*! Section testing_sync *)
+
+Module MCC := MiniCETCommon(ListTotalMap).
+Import MCC.
 
 Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
   match sc with
@@ -560,7 +563,7 @@ Definition spec_cfg_eqb_up_to_callee (st1 st2 : spec_cfg) :=
   && (sk1 ==b sk2)
   && (c1 ==b c2) && (ms1 ==b ms2)
   && (m1 ==b m2)
-  && pub_equivb (t_empty public) r1 (callee !-> (apply r1 callee) ; r2).
+  && pub_equivb (t_empty public) r1 (callee !-> (r1 ! callee) ; r2).
 
 Compute ideal_step ([ ([ <{{skip}}> ], true) ]) (S_Running (((0,0)), (t_empty UV), [UV; UV; UV], [], false)) [].
 

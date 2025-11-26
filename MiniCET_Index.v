@@ -3,9 +3,9 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
-From SECF Require Import Utils ListMaps.
-From SECF Require Import MiniCET.
 From SECF Require Import TestingLib.
+From SECF Require Import Utils.
+From SECF Require Import MiniCET.
 From Stdlib Require Import Bool.Bool.
 From Stdlib Require Import Arith.Arith.
 From Stdlib Require Import Arith.EqNat.
@@ -13,9 +13,12 @@ From Stdlib Require Import Arith.PeanoNat. Import Nat.
 From Stdlib Require Import Lia.
 From Stdlib Require Import List. Import ListNotations.
 Require Import ExtLib.Data.Monads.OptionMonad.
+From SECF Require Import Maps MapsFunctor.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
+Module MCC := MiniCETCommon(TotalMap).
+Import MCC.
 
 (* %s/\s\+$//e to strip trailing whitespace *)
 
@@ -240,22 +243,22 @@ Inductive multi_ideal_inst (p:prog) :
 Definition msf_lookup_sc (sc: spec_cfg) : val :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, stk) := c in
-  apply r msf.
+  r ! msf.
 
 Definition msf_lookup_ic (ic: ideal_cfg) : val :=
 let '(c, ms) := ic in
   let '(pc, r, m, stk) := c in
-  apply r msf.
+  r ! msf.
 
 Definition callee_lookup_sc (sc: spec_cfg) : val :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, stk) := c in
-  apply r callee.
+  r ! callee.
 
 Definition callee_lookup_ic (ic: ideal_cfg) : val :=
   let '(c, ms) := ic in
   let '(pc, r, m, stk) := c in
-  apply r callee.
+  r ! callee.
 
 Definition ms_true_sc (sc: spec_cfg) : bool :=
   let '(c, ct, ms) := sc in ms.
@@ -315,8 +318,8 @@ Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   end.
 
 Definition Rsync (sr tr: reg) (ms: bool) : Prop :=
-   (forall x, x <> msf /\ x <> callee -> apply sr x = apply tr x) /\ 
-   (apply tr msf = N (if ms then 1 else 0)).
+   (forall x, x <> msf /\ x <> callee -> sr ! x = tr ! x) /\ 
+   (tr ! msf = N (if ms then 1 else 0)).
 
 Variant match_cfgs (p: prog) : ideal_cfg -> spec_cfg -> Prop :=
 | match_cfgs_intro pc r m stk ms pc' r' stk'
@@ -629,7 +632,7 @@ Proof.
   intros.
   unfold uslh_prog.
   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn: Huslh.
-  enough (length p' = length p).
+  enough (Datatypes.length p' = Datatypes.length p).
   {
     rewrite tr_app_correct.
     rewrite length_app.
@@ -888,9 +891,7 @@ Proof.
                       (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0))) ) ). { lia. }
             rewrite H6. auto.
           }
-          { econs; eauto. intros. destruct H2. unfold apply. destruct r. cbn. 
-            destruct (map_get m0 x); clarify; destruct (string_dec x msf); clarify.
-          }
+          { econs; eauto. intros. destruct H2. unfold TotalMap.t_apply, r_sync. rewrite t_update_neq; auto. }
       }
       { (* x := e *) 
         assert (si = <{{ x := e }}>).
@@ -1141,7 +1142,7 @@ Proof.
    forall os1 os2 c1 c2, 
      p |- <(( S_Running (pc, r1, m1, stk) ))> -->*^ os1 <(( c1 ))> -> 
      p |- <(( S_Running (pc, r2, m2, stk) ))> -->*^ os2 <(( c2 ))> -> 
-     (prefix os1 os2) \/ (prefix os2 os1).  
+     (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).  
 
  Definition spec_same_obs p pc r1 r2 m1 m2 stk : Prop := 
    forall ds n os1 os2 c1 c2, 

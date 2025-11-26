@@ -24,10 +24,13 @@ Import MonadNotation. Open Scope monad_scope.
 
 From SECF Require Import TestingLib.
 From SECF Require Import Utils.
-From SECF Require Import ListMaps.
+From SECF Require Import Maps MapsFunctor.
 From SECF Require Import MiniCET.
 From SECF Require Import sflib.
 
+(* TODO: Machine.v is a common part. Need to change. *)
+Module MCC := MiniCETCommon(TotalMap).
+Import MCC.
 
 (* TODO: change reg to some better Map. *)
 (* cfg for sequential semantics: (pc, register set, memory, stack frame) *)
