@@ -129,7 +129,7 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds:dirs) : (state ideal_
         None => untrace "lookup fail" (S_Undef, ds, [])
       | Some i =>
           match i with
-            | <{{branch e to l}}> =>
+          | <{{branch e to l}}> =>
               if seq.nilp ds then
                 untrace "idealBranch: directions are empty!" (S_Undef, ds, [])
               else

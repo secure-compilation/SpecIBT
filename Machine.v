@@ -24,24 +24,18 @@ Import MonadNotation. Open Scope monad_scope.
 
 From SECF Require Import TestingLib.
 From SECF Require Import Utils.
-From SECF Require Import Maps MapsFunctor.
+From SECF Require Import MapsFunctor.
 From SECF Require Import MiniCET.
 From SECF Require Import sflib.
 
 (* TODO: Machine.v is a common part. Need to change. *)
-Module MCC := MiniCETCommon(TotalMap).
-Import MCC.
 
-(* TODO: change reg to some better Map. *)
-(* cfg for sequential semantics: (pc, register set, memory, stack frame) *)
-Definition cfg : Type := ((nat * reg) * mem) * list nat.
+(* memory injection *)
 
 (* mem only contains data. *)
 
-(* 0 ~ length m : data area *)
+(* 0 ~ length m - 1 : data area *)
 (* length m ~ length m + length p : code area *)
-
-(* memory injection *)
 
 (* Aux function : move to Utils.v *)
 Fixpoint coord_to_flat_idx {X} (ll: list (list X)) (c: nat * nat) : option nat :=
@@ -101,7 +95,6 @@ Proof.
   - eapply IHll in Heq0. clarify.
 Qed.
 
-(* lemma -> if pc is inbound -> pc_inj is a total function. *)
 Definition pc_inj (p: prog) (pc: cptr) : option nat :=
   let fstp := map fst p in
   coord_to_flat_idx fstp pc.
@@ -113,10 +106,11 @@ Definition pc_inj_inv (p: prog) (pc: nat) : option cptr :=
 Definition flat_fetch (p: prog) (pc: nat) : option inst :=
   match pc_inj_inv p pc with
   | Some pc' => fetch p pc'
-  | _ => None (* out-of-bound *)
+  | _ => None (* out-of-bound code access *)
   end.
 
 (* Sanity Check *)
+(* lemma -> if pc is inbound -> pc_inj is a total function. *)
 
 Lemma pc_inj_total p pc i
     (INBDD: fetch p pc = Some i) :
@@ -124,56 +118,69 @@ Lemma pc_inj_total p pc i
 Proof.
 Admitted.
 
-Variant initial_cfg_seq (p: prog) : cfg -> Prop :=
-| initial_cfg_seq_intro pc r m stk
-    (STK: stk = [])
-    (* length m ~ length m + length p : code area *)
-    (PC: pc = Datatypes.length m) :
-  initial_cfg_seq p (pc, r, m, stk)
-.
+Inductive direction : Type :=
+| DBranch (b':bool)
+| DCall (l:nat).
 
-Variant final_cfg_seq (p: prog) : cfg -> Prop :=
-| final_cfg_seq_intro pc r m stk
-    (STK: stk = [])
-    (FETCH: flat_fetch p pc = Some IRet) :
-  final_cfg_seq p (pc, r, m, stk)
-.
+Definition dirs := list direction.
 
-(* Executable Semantics for testing *)
-
-Definition step (p:prog) (c:cfg) : option (cfg * obs) :=
-  let '(pc, r, m, sk) := c in
-  match flat_fetch p pc with
-  | Some i =>
-      match i with
-      | <{{skip}}> | <{{ctarget}}> =>
-        ret ((add pc 1, r, m, sk), [])
-      | <{{x:=e}}> =>
-        ret ((add pc 1, (x !-> eval r e; r), m, sk), [])
-      | <{{branch e to l}}> => (* Now, l is pc *)
-        n <- to_nat (eval r e);;
-        let b := not_zero n in
-        if b
-        then ret ((l, r, m, sk), [OBranch b])
-        else ret ((add pc 1, r, m, sk), [OBranch b])
-      | <{{jump l}}> =>
-          ret ((l, r, m, sk), [])
-      | <{{x<-load[e]}}> =>
-        n <- to_nat (eval r e);;
-        v' <- nth_error m n;;
-        ret ((add pc 1, (x !-> v'; r), m, sk), [OLoad n])      
-      | <{{store[e]<-e'}}> =>
-        n <- to_nat (eval r e);;
-        ret ((add pc 1, r, (upd n m (eval r e')), sk), [OStore n])
-      | <{{call e}}> =>
-        l <- to_nat (eval r e);;
-        ret ((l, r, m, (add pc 1)::sk), [OCall l])
-      | <{{ret}}> =>
-        pc' <- hd_error sk;;
-        ret ((pc', r, m, tl sk), [])
-      end
+Definition is_dbranch (d:direction) : option bool :=
+  match d with
+  | DBranch b => Some b
   | _ => None
   end.
 
+Definition is_dcall (d:direction) : option nat :=
+  match d with
+  | DCall pc => Some pc
+  | _ => None
+  end.
 
+Module MachineCommon (M: TMap).
 
+Notation "'_' '!->' v" := (M.init v)
+    (at level 100, right associativity).
+Notation "x '!->' v ';' m" := (M.t_update m x v)
+    (at level 100, v at next level, right associativity).
+Notation "m '!' x" := (M.t_apply m x)
+    (at level 20, left associativity).
+
+Definition reg := M.t val.
+
+Fixpoint eval (st : reg) (e: exp) : val :=
+  match e with
+  | ANum n => N n
+  | AId x => M.t_apply st x
+  | ABin b e1 e2 => eval_binop b (eval st e1) (eval st e2)
+  | <{b ? e1 : e2}> =>
+      match to_nat (eval st b) with (* Can't branch on function pointers *)
+      | Some n1 => if not_zero n1 then eval st e1 else eval st e2
+      | None => UV
+      end
+  | <{&l}> => N l
+  end.
+
+Definition cfg : Type := ((nat*reg)*mem)*list nat. (* (pc, register set, memory, stack frame) *)
+
+Definition spec_cfg : Type := ((cfg * bool) * bool).
+
+(* ret with empty stackframe *)
+Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
+  let '(c, ct, ms) := sc in
+  let '(pc, rs, m, stk) := c in
+  match flat_fetch p pc with
+  | Some i => match i with
+             | IRet => if seq.nilp stk then true else false (* Normal Termination *)
+             | ICTarget => if ct
+                          then false (* Call target block: Unreachable *)
+                          else true (* TODO: Do we need to distinguish fault and normal termination? *)
+             | _ => false
+             end
+  | None => false
+  end.
+
+Definition ideal_cfg : Type := (cfg * bool)%type.
+
+End MachineCommon.
+
+(* transformation *)
