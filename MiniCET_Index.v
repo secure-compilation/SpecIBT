@@ -327,6 +327,35 @@ Variant match_cfgs (p: prog) : ideal_cfg -> spec_cfg -> Prop :=
   match_cfgs p ((pc, r, m, stk), ms) ((pc', r', m, stk'), false, ms)
 .
 
+(*
+
+Module Type MAP.
+  Parameter elt: Type.
+  Parameter elt_eq: forall (a b: elt), {a = b} + {a <> b}.
+  Parameter t: Type -> Type.
+  Parameter init: forall (A: Type), A -> t A.
+  Parameter get: forall (A: Type), elt -> t A -> A.
+  Parameter set: forall (A: Type), elt -> A -> t A -> t A.
+  Axiom gi:
+    forall (A: Type) (i: elt) (x: A), get i (init x) = x.
+  Axiom gss:
+    forall (A: Type) (i: elt) (x: A) (m: t A), get i (set i x m) = x.
+  Axiom gso:
+    forall (A: Type) (i j: elt) (x: A) (m: t A),
+    i <> j -> get i (set j x m) = get i m.
+  Axiom gsspec:
+    forall (A: Type) (i j: elt) (x: A) (m: t A),
+    get i (set j x m) = if elt_eq i j then x else get i m.
+  Axiom gsident:
+    forall (A: Type) (i j: elt) (m: t A), get j (set i (get i m) m) = get j m.
+  Parameter map: forall (A B: Type), (A -> B) -> t A -> t B.
+  Axiom gmap:
+    forall (A B: Type) (f: A -> B) (i: elt) (m: t A),
+    get i (map f m) = f(get i m).
+End MAP.
+
+*)
+
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
 Definition steps_to_sync_point (tp: prog) (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
@@ -953,7 +982,7 @@ Proof.
           rewrite H7; auto.
         }
         { econs.
-          - admit.
+          - intros. destruct H2. unfold r_sync. admit.
           - admit.
         }
       }
@@ -1082,7 +1111,14 @@ match_cfgs (b :: bs) ((sl, o) + 1, x !-> v; r, m, sk, ms)
            { econs; admit. } *)
         
       }
-      { (* call *) admit. }
+      { (* call *)  
+        assert (si = <{{ callee := (msf=1) ? &0 : fp }}>). { admit. }
+        rewrite H4 in *. cbn in n_steps.
+        destruct (nth_error (fst sblk) (add so 1)) eqn:Hsblk; clarify.
+        rewrite Forall_forall in wfds. 
+        Check fp. Print exp.
+        assert (Hds: ds = [DCall (if ms then (FPtr 0) else fp)]).
+      }
       { (* ctarget *) unfold no_ct_prog in nct. destruct (split (b :: bs)) as (b_insts & b_bools) eqn:Hbb.
         rewrite Forall_forall in nct. specialize (split_combine (b :: bs) Hbb); intros.
         rewrite <- H4 in Hfst. specialize (nth_error_In (combine b_insts b_bools) l Hfst); intros.
