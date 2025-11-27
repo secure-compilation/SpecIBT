@@ -1,6 +1,6 @@
 COQMFFLAGS := -Q . SECF
 
-EXCLUDE := MiniCET_Index.v TestingFlexSLH.v TestingSpecCT.v TestingStaticIFC.v # Machine.v MachineProof.v # they don't yet work for Julay
+EXCLUDE := # MiniCET_Index.v TestingFlexSLH.v TestingSpecCT.v TestingStaticIFC.v # Machine.v MachineProof.v # they don't yet work for Julay
 ALLVFILES := $(filter-out $(EXCLUDE), $(wildcard *.v))
 QC := quickChick # ../QuickChick/quickChickTool/quickChickTool.exe
 QCFLAGS := -nobase -color -top SECF -N 100 -s testing_sync -failfast -cmd "make -j >/dev/null 2>&1 && echo 'compilation done'" # -ntests 100,1000,10000

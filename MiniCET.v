@@ -397,6 +397,20 @@ Definition add_block (bl: list inst) (c: nat) := (c, [(bl, false)]).
 Definition add_block_M (bl: list inst) : M nat :=
   fun c => add_block bl c.
 
+Lemma mapM_perserve_len {A B} l (f: A -> M B) c res newp
+  (MM: mapM f l c = (res, newp)) :
+  Datatypes.length l = Datatypes.length res.
+Proof.
+  ginduction l; ss; ii.
+  - unfold mapM in MM. ss.
+    unfold uslh_ret in MM. clarify.
+  - rewrite unfold_mapM in MM.
+    unfold bind in MM. ss. unfold uslh_bind in MM.
+    destruct (f a c) eqn:X. ss.
+    destruct (mapM f l (c + Datatypes.length p)) eqn:X'; ss.
+    eapply IHl in X'. rewrite X'. clarify.
+Qed.
+
 (* SOONER: Try to use this to define our new uslh *)
 
 Definition uslh_inst (i: inst) : M (list inst) :=

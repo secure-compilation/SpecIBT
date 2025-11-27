@@ -709,41 +709,11 @@ Proof.
     rewrite length_app.
     lia.
   }
-  (* The remaining proof is surprisingly ugly, as it depends on the interplay of mapT, combine, and uslh_bind. *)
-  (* unfold mapM until we have the underlying List functions *)
-  (* unfold mapM in Huslh.  *)
-  (* unfold Traversable.sequence in Huslh. *)
-  (* unfold Traversable.mapT in Huslh. *)
-  (* cbn in Huslh. *)
-  revert Huslh.
-  generalize (Datatypes.length p) at 1 as len.
-  (* need generalized version for induction *)
-  unfold add_index. generalize 0 as n.
-  revert p' newp.
-  induction p.
-  - intros p' newp n len [= ->]. reflexivity.
-  - intros p' newp n len Huslh. simpl in Huslh. cbn in Huslh.
-    unfold uslh_bind, uslh_ret in Huslh. cbn in Huslh.
-    (* all these destructors don't simplify by themselves, unfortunately. *)
-    (* first, we need to destruct the outer layer to recover the arguments of the recursive call *)
-    match goal with 
-    | [H: (let '(r, p0) := ?e in _) = _ |- _] => destruct e eqn: He
-    end.
-    (* Now, we can use the induction hypothesis to get the length of this part *)
-    destruct (List.mapT_list id (map uslh_blk (combine (seq (S n) (Datatypes.length p)) p)) (len + Datatypes.length p0)) as [ p'' newp' ] eqn: Heq.
-    apply IHp in Heq.
-    inv Huslh.
-    (* We now need to destruct the expressions in He further, just enough to recover that the function applied here is cons. We don't care about the value, only the length. *)
-    match goal with 
-    | [H: (let '(_, _) := ?e in _) = _ |- _] => destruct e eqn: He'
-    end.
-    inv He.
-    match goal with 
-    | [H: (let '(_, _) := ?e in _) = _ |- _] => destruct e eqn: He''
-    end.
-    inv He'.
-    cbn.
-    now rewrite Heq.
+  eapply mapM_perserve_len in Huslh.
+  rewrite <- Huslh. clear.
+  ginduction p; ss.
+  rewrite length_combine.
+  rewrite length_seq, min_id. auto.
 Qed.
 
 Lemma block_always_terminator p b o i
