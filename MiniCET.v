@@ -327,6 +327,56 @@ Definition uslh_bind {A B: Type} (m: M A) (f: A -> M B) : M B :=
 Definition mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
   sequence (List.map f l).
 
+From SECF Require Import sflib.
+Require Import ExtLib.Structures.MonadLaws.
+
+Lemma monadUSLH_law: MonadLaws monadUSLH.
+Proof.
+  econs; ii.
+  - ss. unfold uslh_bind. ss. unfold M in *.
+    extensionalities x.
+    rewrite add_0_r.
+    destruct (f a x) eqn:X. ss.
+  - extensionalities x. ss.
+    unfold uslh_bind.
+    destruct (aM x) eqn:X; ss. admit. (* ez *)
+  - extensionalities x. ss.
+    unfold uslh_bind, uslh_ret; ss.
+    destruct (aM x) eqn:X; ss.
+    destruct (f a (x + Datatypes.length p)) eqn:X1; ss.
+    replace (x + Datatypes.length (app p p0)) with (x + Datatypes.length p + Datatypes.length p0).
+    2:{ admit. (* ez *) }
+    des_ifs. admit. (* ez *)
+Admitted.
+
+Lemma mapT_id_cons_to_bind :
+  forall {M : Type -> Type} {Monad_M : Monad M} {ML: MonadLaws Monad_M}
+         {A : Type} (hd : M A) (tl : list (M A)),
+  mapT id (hd :: tl) = x <- hd ;; xs <- mapT id tl ;; ret (x :: xs).
+Proof.
+  i. unfold mapT, Traversable_list. ss.
+  unfold apM, pure.
+  unfold liftM.
+  rewrite bind_of_return; auto.
+  rewrite bind_associativity; auto.
+  unfold id. ss.
+  rewrite <- bind_associativity; auto.
+  rewrite bind_associativity; auto.
+  f_equal. extensionalities a.
+  rewrite bind_of_return; auto.
+Qed.
+
+Lemma unfold_mapM A B (f: A -> M B) hd tl:
+  mapM f (hd :: tl) = x <- f hd ;; xs <- mapM f tl ;; ret (x :: xs).
+Proof.
+  unfold mapM.
+  assert (sequence (map f (hd :: tl)) = mapT id (f hd :: map f tl)) by ss.
+  rewrite H.
+  erewrite mapT_id_cons_to_bind; auto.
+Unshelve.
+apply monadUSLH_law.
+Qed.
+
 Fixpoint foldM {A B: Type} (f : B -> A -> M B) (acc : B) (l: list A) : M B :=
   match l with
   | nil => ret acc
@@ -674,7 +724,7 @@ Definition spec_step (p:prog) (sc:spec_cfg) (ds:dirs) : option (spec_cfg * dirs 
       d <- hd_error ds;;
       pc' <- is_dcall d;;
       l <- to_fp (eval r e);;
-      let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+      let ms' := ms || negb ((fst pc' =? l)%nat && (snd pc' =? 0)%nat) in
       ret ((((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
   | <{{ctarget}}> =>
       is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)

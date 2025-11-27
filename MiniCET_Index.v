@@ -706,16 +706,15 @@ Proof.
   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn: Huslh.
   enough (Datatypes.length p' = Datatypes.length p).
   {
-    rewrite tr_app_correct.
     rewrite length_app.
     lia.
   }
   (* The remaining proof is surprisingly ugly, as it depends on the interplay of mapT, combine, and uslh_bind. *)
   (* unfold mapM until we have the underlying List functions *)
-  unfold mapM in Huslh. 
-  unfold Traversable.sequence in Huslh.
-  unfold Traversable.mapT in Huslh.
-  cbn in Huslh.
+  (* unfold mapM in Huslh.  *)
+  (* unfold Traversable.sequence in Huslh. *)
+  (* unfold Traversable.mapT in Huslh. *)
+  (* cbn in Huslh. *)
   revert Huslh.
   generalize (Datatypes.length p) at 1 as len.
   (* need generalized version for induction *)
@@ -723,7 +722,7 @@ Proof.
   revert p' newp.
   induction p.
   - intros p' newp n len [= ->]. reflexivity.
-  - intros p' newp n len Huslh. cbn in Huslh.
+  - intros p' newp n len Huslh. simpl in Huslh. cbn in Huslh.
     unfold uslh_bind, uslh_ret in Huslh. cbn in Huslh.
     (* all these destructors don't simplify by themselves, unfortunately. *)
     (* first, we need to destruct the outer layer to recover the arguments of the recursive call *)
@@ -822,7 +821,7 @@ Proof.
   assert (Datatypes.length p <= Datatypes.length (uslh_prog p)). { apply p_le_tp. }
   unfold uslh_prog in *.
   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn: Huslh.
-  rewrite tr_app_correct in *. rewrite nth_error_app.
+  (* rewrite tr_app_correct in *.  *)rewrite nth_error_app.
   assert (nth_error (p' ++ newp) l <> None).
   { unfold not; intros. rewrite nth_error_None in H0.
     assert (nth_error p l <> None). { unfold not; intros; clarify. }
