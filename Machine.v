@@ -111,7 +111,6 @@ Definition flat_fetch (p: prog) (pc: nat) : option inst :=
 
 (* Sanity Check *)
 (* lemma -> if pc is inbound -> pc_inj is a total function. *)
-
 Lemma pc_inj_total p pc i
     (INBDD: fetch p pc = Some i) :
   exists pc', pc_inj p pc = Some pc'.
@@ -184,3 +183,37 @@ Definition ideal_cfg : Type := (cfg * bool)%type.
 End MachineCommon.
 
 (* transformation *)
+
+Definition machine_inst (p: prog) (i: inst) : option inst :=
+  match i with
+  | <{{branch e to l}}> =>
+      match pc_inj p (l, 0) with
+      | Some l' => Some <{{ branch e to l' }}>
+      | _ => None
+      end
+  | <{{jump l}}> =>
+      match pc_inj p (l, 0) with
+      | Some l' => Some <{{ jump l' }}>
+      | _ => None
+      end
+  | _ => Some i
+  end.
+
+Definition transpose {X : Type} (l : list (option X)) : option (list X) :=
+  fold_right (fun ox ol =>
+                match ox, ol with
+                | Some x, Some l => Some (x :: l)
+                | _, _ => None
+                end) (Some nil) l.
+
+Definition machine_blk (p: prog) (blk: (list inst * bool)) : option (list inst * bool) :=
+  let ob := map (machine_inst p) (fst blk) in
+  match transpose ob with
+  | Some ob' => Some (ob', snd blk)
+  | _ => None
+  end.
+
+Definition machine_prog (p: prog) : option prog :=
+  let op := map (machine_blk p) p in
+  transpose op.
+

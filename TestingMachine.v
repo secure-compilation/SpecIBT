@@ -24,6 +24,7 @@ From SECF Require Import TestingLib.
 From SECF Require Import Utils.
 From SECF Require Import ListMaps MapsFunctor.
 From SECF Require Import MiniCET Machine.
+From SECF Require Import TestingMiniCET.
 From SECF Require Import sflib.
 
 Import MonadNotation.
@@ -128,7 +129,7 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
                 n <- to_nat (eval r e);;
                 let b := not_zero n in
                 let ms' := ms || negb (Bool.eqb b b') in
-                let pc' := if b' then l else (add pc 1) in (* add check exists b, injection l = (b, 0) *)
+                let pc' := if b' then l else (add pc 1) in
                 ret ((S_Running ((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
             with
             | None => untrace "branch fail" (S_Undef, ds, [])
@@ -142,7 +143,7 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
               else
                 d <- hd_error ds;;
                 pc' <- is_dcall d;;
-                l <- to_nat (eval r e);; (* add check exists b, injection l = (b, 0). call target flag (snd block) also shold be checked? *)
+                l <- to_nat (eval r e);;
                 let ms' := ms || negb ((pc' =? l)%nat) in
                 ret ((S_Running ((pc', r, m, (add pc 1)::sk), true, ms'), tl ds), [OCall l])
             with
@@ -151,7 +152,7 @@ Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:dirs) : (state spec_cfg 
             end
           | <{{ctarget}}> =>
             match
-              is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
+              is_true ct;;
               (ret (S_Running ((add pc 1, r, m, sk), false, ms), ds, []))
             with
             | None => untrace "ctarget fail!" (S_Undef, ds, [])
@@ -186,3 +187,37 @@ Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds:dirs)
       (sc, ds, []) (* JB: executing for 0 steps should be just the identity... *)
       (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
   end.
+
+(* Find the condition that make machine_prog total function. I guess its wf. *)
+(* Port existing tests from TestingMiniCET and Define some sanity checks for machine langauge. *)
+(* Check every branches and jumps jump to the head of some block (If, machine program is generated from MiniCET program) *)
+
+Definition wf_jmp_label (p:prog) (l:nat) : bool :=
+  match pc_inj_inv p l with
+  | Some (b, 0) => match nth_error p b with
+                  | Some (_,is_proc) => negb is_proc
+                  | None => false
+                  end
+  | _ => false
+  end.
+
+Definition wf_jmp_inst (p:prog) (i : inst) : bool :=
+  match i with
+  | <{{branch e to l}}> => wf_jmp_label p l
+  | <{{jump l}}> => wf_jmp_label p l
+  | _ => true
+  end.
+
+Definition wf_jmp_blk (p:prog) (blb : list inst * bool) : bool :=
+  forallb (wf_jmp_inst p) (fst blb).
+
+Definition wf_jmp (p:prog) : bool :=
+  forallb (wf_jmp_blk p) p.
+
+Definition test_machine_prog_total_from_minicet :=
+  (forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  let p' := transform_load_store_prog c tm p in
+  let harden := uslh_prog p' in
+  is_some (machine_prog harden))).
+
+QuickChick test_machine_prog_total_from_minicet.
