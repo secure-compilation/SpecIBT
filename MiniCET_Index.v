@@ -373,35 +373,6 @@ Variant match_cfgs (p: prog) : ideal_cfg -> spec_cfg -> Prop :=
   match_cfgs p ((pc, r, m, stk), ms) ((pc', r', m, stk'), false, ms)
 .
 
-(*
-
-Module Type MAP.
-  Parameter elt: Type.
-  Parameter elt_eq: forall (a b: elt), {a = b} + {a <> b}.
-  Parameter t: Type -> Type.
-  Parameter init: forall (A: Type), A -> t A.
-  Parameter get: forall (A: Type), elt -> t A -> A.
-  Parameter set: forall (A: Type), elt -> A -> t A -> t A.
-  Axiom gi:
-    forall (A: Type) (i: elt) (x: A), get i (init x) = x.
-  Axiom gss:
-    forall (A: Type) (i: elt) (x: A) (m: t A), get i (set i x m) = x.
-  Axiom gso:
-    forall (A: Type) (i j: elt) (x: A) (m: t A),
-    i <> j -> get i (set j x m) = get i m.
-  Axiom gsspec:
-    forall (A: Type) (i j: elt) (x: A) (m: t A),
-    get i (set j x m) = if elt_eq i j then x else get i m.
-  Axiom gsident:
-    forall (A: Type) (i j: elt) (m: t A), get j (set i (get i m) m) = get j m.
-  Parameter map: forall (A B: Type), (A -> B) -> t A -> t B.
-  Axiom gmap:
-    forall (A B: Type) (f: A -> B) (i: elt) (m: t A),
-    get i (map f m) = f(get i m).
-End MAP.
-
-*)
-
 (* How many steps does it take for target program to reach the program point the source reaches in one step? *)
 Definition steps_to_sync_point (tp: prog) (tsc: spec_cfg) (ds: dirs) : option nat :=
   let '(tc, ct, ms) := tsc in
@@ -705,10 +676,7 @@ Proof.
   unfold uslh_prog.
   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn: Huslh.
   enough (Datatypes.length p' = Datatypes.length p).
-  {
-    rewrite length_app.
-    lia.
-  }
+  { rewrite length_app. lia. }
   eapply mapM_perserve_len in Huslh.
   rewrite <- Huslh. clear.
   ginduction p; ss.
@@ -773,37 +741,190 @@ Proof.
   rewrite nth_error_Some in H. lia.
 Qed.
 
+(* Lemma src_skip_inv p tp pc tpc *)
+(*   (WFP: wf_prog p) *)
+(*   (PS: pc_sync p (l, o) = Some (l', o')) *)
+
+Import MonadNotation. Open Scope monad_scope.
+
+Definition simple_inst (i: inst) : Prop :=
+  match i with
+  | ISkip | IJump _ | ILoad _ _ | IStore _ _ => True
+  | _ => False
+  end.
+
+Variant simple_inst_uslh : inst -> inst -> Prop :=
+| uslh_skip :
+  simple_inst_uslh ISkip ISkip
+| uslh_jump l:
+  simple_inst_uslh (IJump l) (IJump l)
+| uslh_load x e e'
+  (IDX: e' = <{{ (msf = 1) ? 0 : e }}>) :
+  simple_inst_uslh (ILoad x e) (ILoad x e')
+| uslh_store e e' e1
+  (IDX: e' = <{{ (msf = 1) ? 0 : e }}>) :
+  simple_inst_uslh (IStore e e1) (IStore e' e1)
+.
+
+Lemma uslh_inst_simple i c iss np
+    (SIMP: simple_inst i)
+    (USLH: uslh_inst i c = (iss, np)) :
+  exists i', iss = [i'] /\ simple_inst_uslh i i' /\ np = [].
+Proof.
+  ii. unfold uslh_inst in USLH.
+  des_ifs; ss; unfold uslh_ret in *; clarify; esplits; econs; auto.
+Qed.
+
+Lemma mapM_nth_error {A B} (f: A -> M B) l c l' np o blk
+  (MM: mapM f l c = (l', np))
+  (SRC: nth_error l o = Some blk) :
+  exists blk' c' np', nth_error l' o = Some blk' /\ f blk c' = (blk', np').
+Proof.
+  ginduction l; ss; ii.
+  { rewrite nth_error_nil in SRC. clarify. }
+  rewrite unfold_mapM in MM.
+  destruct o as [|o].
+  { ss; clarify. unfold uslh_bind in MM.
+    destruct (f blk c) eqn:F.
+    destruct (mapM f l (c + Datatypes.length p)) eqn:MF.
+    ss. clarify. esplits; eauto. }
+  ss. unfold uslh_bind in MM. 
+  destruct (f a c) eqn:F.
+  destruct (mapM f l (c + Datatypes.length p)) eqn:MF. ss. clarify.
+  exploit IHl; eauto.
+Qed.
+
+Lemma bind_inv {A B} m (f: A -> M B) c res np
+  (BIND: bind m f c = (res, np)) :
+  exists a pm rf pf,
+    m c = (a, pm) /\ f a (c + Datatypes.length pm) = (rf, pf) /\ res = rf /\ np = pm ++ pf.
+Proof.
+  unfold bind, monadUSLH, uslh_bind in BIND.
+  destruct (m c) eqn:MC.
+  destruct (f a (c + Datatypes.length p)) eqn:FAC. clarify. esplits; eauto.
+  eapply tr_app_correct.
+Qed.
+
+Definition blk_offset (blk: list inst * bool) (o: nat) :=
+  fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o (fst blk))
+    (if Bool.eqb (snd blk) true then 2 else 0).
+
+Definition prefix_offset {A} (ll: list (list A)) (i: nat) (base: nat) :=
+  fold_left (fun acc l => acc + (Datatypes.length l)) (firstn i ll) base.
+
+Definition fold_left_add_init {A} (f: A -> nat) (l: list A) (n k: nat) :
+  fold_left (fun acc x => acc + f x) l (n + k) = (fold_left (fun acc x => acc + f x) l n) + k.
+Proof.
+  ginduction l; ss; ii.
+  replace (n + k + f a) with ((n + f a) + k) by lia. eauto.
+Qed.
+
+Lemma concat_nth_error {A} (ll: list (list A)) l i j ii
+  (LL: nth_error ll i = Some l)
+  (L: nth_error l j = Some ii) :
+  nth_error (List.concat ll) ((prefix_offset ll i 0) + j)%nat = Some ii.
+Proof.
+  ginduction ll; ss; ii.
+  { rewrite nth_error_nil in LL. clarify. }
+  destruct i; ss.
+  { clarify. admit. (* ez *) }
+
+  exploit IHll; eauto. i.
+  replace (prefix_offset (a :: ll) (S i) 0) with ((Datatypes.length a) + (prefix_offset ll i 0)).
+  2:{ unfold prefix_offset. ss. rewrite add_comm. rewrite <- fold_left_add_init.
+      rewrite add_0_l. auto. }
+  rewrite nth_error_app2.
+  2:{ lia. }
+  replace (Datatypes.length a + prefix_offset ll i 0 + j - Datatypes.length a) with
+    (prefix_offset ll i 0 + j) by lia.
+  auto.
+Admitted.
+
+Lemma offset_eq_aux blk c' l0 p1 n o
+  (BLK: mapM uslh_inst blk c' = (l0, p1))
+  (BDD: o <= Datatypes.length blk) :
+  prefix_offset l0 o n =
+  o + fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk) n.
+Proof.
+  ginduction o; ii.
+  { ss. }
+  unfold prefix_offset.
+
+  exploit mapM_perserve_len; eauto. intros LEN.
+  destruct blk.
+  { ss. des_ifs. lia. }
+  destruct l0.
+  { ss. }
+  do 2 rewrite firstn_cons.
+  rewrite unfold_mapM in BLK.
+  exploit bind_inv; eauto. i. des. subst. ss.
+  unfold uslh_bind in x1.
+  destruct (mapM uslh_inst blk (c' + Datatypes.length pm)) eqn:X. ss. clarify.
+  exploit IHo.
+  { eauto. }
+  { lia. }
+  i. rewrite <- x1.
+
+  unfold prefix_offset.
+  replace (n + Datatypes.length l) with
+    (add (if is_br_or_call i then add n 1 else n) 1); auto.
+  2:{ destruct i; ss; unfold uslh_ret in *; ss; clarify; ss.
+      - unfold uslh_bind in x0. ss. clarify. ss. lia.
+      - lia. }
+  rewrite fold_left_add_init. lia.
+Qed.
+
 Lemma src_safe_inv p tp pc tpc
-  (WFP: wf_prog p)
-  (WFTP: wf_uslh p)
-  (TRP: uslh_prog p = tp)
-  (PS: pc_sync p pc = Some tpc)
-  (INST: p[[pc]] = Some <{{ skip }}>) :
+    (WFP: wf_prog p)
+    (* (WFTP: wf_uslh p) *)
+    (TRP: uslh_prog p = tp)
+    (PS: pc_sync p pc = Some tpc)
+    (INST: p[[pc]] = Some <{{ skip }}>) :
   tp[[tpc]] = Some <{{ skip }}>.
 Proof.
-  unfold wf_uslh in WFTP.
-  specialize (WFTP WFP).
-  unfold pc_sync in PS. ss.
-  des_ifs_safe.
-  rename p0 into iblk.
-  destruct pc as [l o]; ss.
-  des_ifs_safe.
-  assert (Datatypes.length p <= Datatypes.length (uslh_prog p)). { apply p_le_tp. }
-  unfold uslh_prog in *.
-  destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn: Huslh.
-  (* rewrite tr_app_correct in *.  *)rewrite nth_error_app.
-  assert (nth_error (p' ++ newp) l <> None).
-  { unfold not; intros. rewrite nth_error_None in H0.
-    assert (nth_error p l <> None). { unfold not; intros; clarify. }
-    rewrite nth_error_Some in H1.
-    eapply le_trans in H; eauto. rewrite le_succ_l in H.
-    assert (~ (l >= Datatypes.length (p' ++ newp))). { lia. }
-    contradiction.
-  }
-  rewrite <- nth_error_app. destruct (nth_error (p' ++ newp) l) as [sblk|] eqn:Happ; clarify.
-  unfold wf_prog in WFTP. destruct WFTP. rewrite Forall_forall in H2.
-  unfold wf_block in H2. specialize (nth_error_In (p' ++ newp) l Happ); intros. 
-  apply H2 in H3. destruct H3, H4. rewrite Forall_forall in H5.
+  destruct pc as [l o].
+  destruct tpc as [l' o'].
+  assert (l' = l).
+  { clear -PS. unfold pc_sync in *. des_ifs. }
+  subst. ss. des_ifs_safe.
+  destruct p0 as [blk is_proc]. ss.
+  unfold uslh_prog.
+  destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn:Huslh.
+  exploit mapM_perserve_len; eauto. intros LEN.
+  replace (nth_error (p' ++ newp) l) with (nth_error p' l); cycle 1.
+  { symmetry. eapply nth_error_app1. rewrite <- LEN.
+    unfold add_index. rewrite length_combine, length_seq, min_id.
+    erewrite <- nth_error_Some. ii. clarify. }
+  exploit mapM_nth_error; eauto.
+  { instantiate (2:= l). instantiate (1:= (l, (blk, is_proc))).
+    admit. (* ez *) }
+  i. des. rewrite x0. destruct blk' as [blk' is_proc'].
+  simpl.
+  ss. unfold uslh_bind in x1. ss.
+  destruct (concatM (mapM uslh_inst blk) c') eqn:X.
+  unfold pc_sync in *. ss. des_ifs_safe.
+  replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk)
+             (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
+  des_ifs; cycle 1.
+  - unfold uslh_ret in Heq0. clarify.
+    unfold concatM in X. ss.
+    unfold uslh_bind in X.
+    destruct (mapM uslh_inst blk c') eqn:XX. simpl in X. clarify.
+
+    exploit mapM_nth_error; try eapply XX.
+    { eauto. }
+    i. des. simpl in x2. unfold uslh_ret in x2. clarify.
+
+    exploit concat_nth_error; eauto.
+    { instantiate (2:= 0). ss. }
+    i.
+    replace (o + blk_offset (blk, false) o) with (prefix_offset l0 o 0 + 0); auto.
+    rewrite add_0_r.
+    unfold blk_offset. ss. eapply offset_eq_aux; eauto.
+    exploit mapM_perserve_len; eauto. i. rewrite x3.
+    eapply lt_le_incl.
+    rewrite <- nth_error_Some. ii. clarify.
+  - admit. (* almost same *)
 Admitted.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
