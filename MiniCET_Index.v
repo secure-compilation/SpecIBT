@@ -724,7 +724,7 @@ Proof.
     assert (rev (i0 :: l) = rev l ++ [i0]). { simpl. auto. }
     assert (rev (rev (fst b)) = rev (i0 :: l)). { rewrite Heq. simpl. auto. }
     rewrite rev_involutive in H4. simpl in H4. rewrite H4 in INST, l0, n. rewrite H4.
-    assert (   o <= Datatypes.length (rev l ++ [i0]) - 1
+    assert (o <= Datatypes.length (rev l ++ [i0]) - 1
             -> o <> Datatypes.length (rev l ++ [i0]) - 1
             -> o < Datatypes.length (rev l ++ [i0]) - 1 ).
     { lia. }
@@ -776,8 +776,8 @@ Proof.
 Qed.
 
 Lemma mapM_nth_error {A B} (f: A -> M B) l c l' np o blk
-  (MM: mapM f l c = (l', np))
-  (SRC: nth_error l o = Some blk) :
+    (MM: mapM f l c = (l', np))
+    (SRC: nth_error l o = Some blk) :
   exists blk' c' np', nth_error l' o = Some blk' /\ f blk c' = (blk', np').
 Proof.
   ginduction l; ss; ii.
@@ -795,9 +795,12 @@ Proof.
 Qed.
 
 Lemma bind_inv {A B} m (f: A -> M B) c res np
-  (BIND: bind m f c = (res, np)) :
+    (BIND: bind m f c = (res, np)) :
   exists a pm rf pf,
-    m c = (a, pm) /\ f a (c + Datatypes.length pm) = (rf, pf) /\ res = rf /\ np = pm ++ pf.
+    m c = (a, pm)
+  /\ f a (c + Datatypes.length pm) = (rf, pf)
+  /\ res = rf
+  /\ np = pm ++ pf.
 Proof.
   unfold bind, monadUSLH, uslh_bind in BIND.
   destruct (m c) eqn:MC.
@@ -820,14 +823,15 @@ Proof.
 Qed.
 
 Lemma concat_nth_error {A} (ll: list (list A)) l i j ii
-  (LL: nth_error ll i = Some l)
-  (L: nth_error l j = Some ii) :
+    (LL: nth_error ll i = Some l)
+    (L: nth_error l j = Some ii) :
   nth_error (List.concat ll) ((prefix_offset ll i 0) + j)%nat = Some ii.
 Proof.
   ginduction ll; ss; ii.
   { rewrite nth_error_nil in LL. clarify. }
   destruct i; ss.
-  { clarify. admit. (* ez *) }
+  { clarify. rewrite nth_error_app1; auto.
+    rewrite <- nth_error_Some. ii; clarify. }
 
   exploit IHll; eauto. i.
   replace (prefix_offset (a :: ll) (S i) 0) with ((Datatypes.length a) + (prefix_offset ll i 0)).
@@ -838,7 +842,7 @@ Proof.
   replace (Datatypes.length a + prefix_offset ll i 0 + j - Datatypes.length a) with
     (prefix_offset ll i 0 + j) by lia.
   auto.
-Admitted.
+Qed.
 
 Lemma offset_eq_aux blk c' l0 p1 n o
   (BLK: mapM uslh_inst blk c' = (l0, p1))
@@ -874,9 +878,29 @@ Proof.
   rewrite fold_left_add_init. lia.
 Qed.
 
+Lemma length_add_index {A} (p: list A) :
+  Datatypes.length (add_index p) = Datatypes.length p.
+Proof.
+  unfold add_index.
+  rewrite length_combine, length_seq, min_id. auto.
+Qed.
+
+Lemma nth_error_add_index {A} (p: list A) l i
+    (NTH: nth_error p l = Some i) :
+  nth_error (add_index p) l = Some (l, i).
+Proof.
+  erewrite nth_error_nth'.
+  2:{ rewrite length_add_index. rewrite <- nth_error_Some. ii. clarify. }
+  instantiate (1:=(l, i)).
+  f_equal. unfold add_index.
+  rewrite combine_nth.
+  2:{ eapply length_seq. }
+  rewrite seq_nth.
+  2:{ rewrite <- nth_error_Some. ii. clarify. }
+  ss. f_equal. eapply nth_error_nth. auto.
+Qed.
+
 Lemma src_safe_inv p tp pc tpc
-    (WFP: wf_prog p)
-    (* (WFTP: wf_uslh p) *)
     (TRP: uslh_prog p = tp)
     (PS: pc_sync p pc = Some tpc)
     (INST: p[[pc]] = Some <{{ skip }}>) :
@@ -897,7 +921,7 @@ Proof.
     erewrite <- nth_error_Some. ii. clarify. }
   exploit mapM_nth_error; eauto.
   { instantiate (2:= l). instantiate (1:= (l, (blk, is_proc))).
-    admit. (* ez *) }
+    eapply nth_error_add_index. auto. }
   i. des. rewrite x0. destruct blk' as [blk' is_proc'].
   simpl.
   ss. unfold uslh_bind in x1. ss.
@@ -905,27 +929,30 @@ Proof.
   unfold pc_sync in *. ss. des_ifs_safe.
   replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk)
              (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
-  des_ifs; cycle 1.
-  - unfold uslh_ret in Heq0. clarify.
-    unfold concatM in X. ss.
-    unfold uslh_bind in X.
-    destruct (mapM uslh_inst blk c') eqn:XX. simpl in X. clarify.
 
-    exploit mapM_nth_error; try eapply XX.
-    { eauto. }
-    i. des. simpl in x2. unfold uslh_ret in x2. clarify.
+  unfold concatM in X. exploit bind_inv; eauto. i. des; subst.
+  exploit mapM_nth_error; try eapply x1; eauto. i. des.
+  ss. unfold uslh_ret in *. ss. clarify.
 
-    exploit concat_nth_error; eauto.
-    { instantiate (2:= 0). ss. }
-    i.
-    replace (o + blk_offset (blk, false) o) with (prefix_offset l0 o 0 + 0); auto.
-    rewrite add_0_r.
-    unfold blk_offset. ss. eapply offset_eq_aux; eauto.
-    exploit mapM_perserve_len; eauto. i. rewrite x3.
-    eapply lt_le_incl.
-    rewrite <- nth_error_Some. ii. clarify.
-  - admit. (* almost same *)
-Admitted.
+  replace (o + blk_offset (blk, is_proc) o) with (prefix_offset a o 0 + (if Bool.eqb is_proc true then 2 else 0)); auto.
+  2:{ destruct is_proc; ss.
+      - unfold blk_offset. ss. unfold prefix_offset.
+        erewrite <- fold_left_add_init. rewrite add_0_l.
+        eapply offset_eq_aux; eauto.
+        exploit mapM_perserve_len; eauto. i. rewrite x2.
+        eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify.
+      - rewrite add_0_r.
+        unfold blk_offset. ss. eapply offset_eq_aux; eauto.
+        exploit mapM_perserve_len; eauto. i. rewrite x2.
+        eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
+  des_ifs.
+  - rewrite add_comm.
+    replace (2 + prefix_offset a o 0) with (S (S (prefix_offset a o 0))) by lia.
+    do 2 rewrite nth_error_cons_succ.
+    replace (prefix_offset a o 0) with (prefix_offset a o 0 + 0) by lia.
+    exploit concat_nth_error; eauto. ss.
+  - exploit concat_nth_error; eauto. ss.
+Qed.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
