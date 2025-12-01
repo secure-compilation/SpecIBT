@@ -741,11 +741,8 @@ Proof.
   rewrite nth_error_Some in H. lia.
 Qed.
 
-(* Lemma src_skip_inv p tp pc tpc *)
-(*   (WFP: wf_prog p) *)
-(*   (PS: pc_sync p (l, o) = Some (l', o')) *)
-
-Import MonadNotation. Open Scope monad_scope.
+Import MonadNotation.
+Open Scope monad_scope.
 
 Definition simple_inst (i: inst) : Prop :=
   match i with
@@ -845,8 +842,8 @@ Proof.
 Qed.
 
 Lemma offset_eq_aux blk c' l0 p1 n o
-  (BLK: mapM uslh_inst blk c' = (l0, p1))
-  (BDD: o <= Datatypes.length blk) :
+    (BLK: mapM uslh_inst blk c' = (l0, p1))
+    (BDD: o <= Datatypes.length blk) :
   prefix_offset l0 o n =
   o + fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk) n.
 Proof.
@@ -900,7 +897,7 @@ Proof.
   ss. f_equal. eapply nth_error_nth. auto.
 Qed.
 
-Lemma src_safe_inv p tp pc tpc
+Lemma src_skip_inv p tp pc tpc
     (TRP: uslh_prog p = tp)
     (PS: pc_sync p pc = Some tpc)
     (INST: p[[pc]] = Some <{{ skip }}>) :
@@ -952,6 +949,73 @@ Proof.
     replace (prefix_offset a o 0) with (prefix_offset a o 0 + 0) by lia.
     exploit concat_nth_error; eauto. ss.
   - exploit concat_nth_error; eauto. ss.
+Qed.
+
+Lemma src_simple_inv p tp pc tpc i
+    (SIMP: simple_inst i)
+    (TRP: uslh_prog p = tp)
+    (PS: pc_sync p pc = Some tpc)
+    (INST: p[[pc]] = Some <{{ i }}>) :
+  exists i', tp[[tpc]] = Some <{{ i' }}> /\ simple_inst_uslh i i'.
+Proof.
+  destruct pc as [l o].
+  destruct tpc as [l' o'].
+  assert (l' = l).
+  { clear -PS. unfold pc_sync in *. des_ifs. }
+  subst. ss. des_ifs_safe.
+  destruct p0 as [blk is_proc]. ss.
+  unfold uslh_prog.
+  destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn:Huslh.
+  exploit mapM_perserve_len; eauto. intros LEN.
+  replace (nth_error (p' ++ newp) l) with (nth_error p' l); cycle 1.
+  { symmetry. eapply nth_error_app1. rewrite <- LEN.
+    unfold add_index. rewrite length_combine, length_seq, min_id.
+    erewrite <- nth_error_Some. ii. clarify. }
+  exploit mapM_nth_error; eauto.
+  { instantiate (2:= l). instantiate (1:= (l, (blk, is_proc))).
+    eapply nth_error_add_index. auto. }
+  i. des. rewrite x0. destruct blk' as [blk' is_proc'].
+  simpl.
+  ss. unfold uslh_bind in x1. ss.
+  destruct (concatM (mapM uslh_inst blk) c') eqn:X.
+  unfold pc_sync in *. ss. des_ifs_safe.
+  replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk)
+             (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
+
+  unfold concatM in X. exploit bind_inv; eauto. i. des; subst.
+  exploit mapM_nth_error; try eapply x1; eauto. i. des.
+  ss. unfold uslh_ret in *. ss. clarify.
+
+  replace (o + blk_offset (blk, is_proc) o) with (prefix_offset a o 0 + (if Bool.eqb is_proc true then 2 else 0)); auto.
+  2:{ destruct is_proc; ss.
+      - unfold blk_offset. ss. unfold prefix_offset.
+        erewrite <- fold_left_add_init. rewrite add_0_l.
+        eapply offset_eq_aux; eauto.
+        exploit mapM_perserve_len; eauto. i. rewrite x2.
+        eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify.
+      - rewrite add_0_r.
+        unfold blk_offset. ss. eapply offset_eq_aux; eauto.
+        exploit mapM_perserve_len; eauto. i. rewrite x2.
+        eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
+  des_ifs.
+  - rewrite add_comm.
+    replace (2 + prefix_offset a o 0) with (S (S (prefix_offset a o 0))) by lia.
+    do 2 rewrite nth_error_cons_succ.
+    replace (prefix_offset a o 0) with (prefix_offset a o 0 + 0) by lia.
+    destruct i0; ss; unfold uslh_ret in *; clarify.
+    + exists ISkip; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+    + exists (IJump l0); split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+    + esplits; [|econs]; eauto.
+      exploit concat_nth_error; ss; eauto. ss.
+    + esplits; [|econs]; eauto.
+      exploit concat_nth_error; ss; eauto. ss.
+  - destruct i0; ss; unfold uslh_ret in *; clarify.
+    + exists ISkip; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+    + exists (IJump l0); split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+    + esplits; [|econs]; eauto.
+      exploit concat_nth_error; ss; eauto. ss.
+    + esplits; [|econs]; eauto.
+      exploit concat_nth_error; ss; eauto. ss.
 Qed.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
