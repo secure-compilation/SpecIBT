@@ -220,4 +220,15 @@ Definition test_machine_prog_total_from_minicet :=
   let harden := uslh_prog p' in
   is_some (machine_prog harden))).
 
-QuickChick test_machine_prog_total_from_minicet.
+Definition test_machine_branch_from_wf_minicet :=
+  (forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  let p' := transform_load_store_prog c tm p in
+  let harden := uslh_prog p' in
+  match machine_prog harden with
+  | Some p => wf_jmp p
+  | None => false
+  end)).
+
+(*! QuickChick test_machine_prog_total_from_minicet. *)
+
+(*! QuickChick test_machine_branch_from_wf_minicet. *)
