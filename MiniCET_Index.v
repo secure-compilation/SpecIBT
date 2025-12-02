@@ -746,30 +746,47 @@ Open Scope monad_scope.
 
 Definition simple_inst (i: inst) : Prop :=
   match i with
-  | ISkip | IJump _ | ILoad _ _ | IStore _ _ => True
+  | ISkip | IJump _ | ILoad _ _ | IStore _ _ | IAsgn _ _ | IRet => True
   | _ => False
   end.
 
-Variant simple_inst_uslh : inst -> inst -> Prop :=
+Variant match_simple_inst_uslh : inst -> inst -> Prop :=
 | uslh_skip :
-  simple_inst_uslh ISkip ISkip
+  match_simple_inst_uslh ISkip ISkip
 | uslh_jump l:
-  simple_inst_uslh (IJump l) (IJump l)
+  match_simple_inst_uslh (IJump l) (IJump l)
 | uslh_load x e e'
   (IDX: e' = <{{ (msf = 1) ? 0 : e }}>) :
-  simple_inst_uslh (ILoad x e) (ILoad x e')
+  match_simple_inst_uslh (ILoad x e) (ILoad x e')
 | uslh_store e e' e1
   (IDX: e' = <{{ (msf = 1) ? 0 : e }}>) :
-  simple_inst_uslh (IStore e e1) (IStore e' e1)
+  match_simple_inst_uslh (IStore e e1) (IStore e' e1)
+| uslh_asgn x e:
+  match_simple_inst_uslh (IAsgn x e) (IAsgn x e)
+| uslh_ret :
+  match_simple_inst_uslh IRet IRet
+.
+
+Variant match_inst_uslh : inst -> inst -> Prop :=
+| uslh_simple i i'
+  (SIMPL: simple_inst i)
+  (MATCH: match_simple_inst_uslh i i') :
+  match_inst_uslh i i'
+| uslh_branch e e' l l'
+  (COND: e' = <{{ (msf = 1) ? 0 : e }}>) : (* l ~ l' is needed. *)
+  match_inst_uslh (IBranch e l) (IBranch e' l')
+| uslh_call e e'
+  (CALL: e' = <{{ (msf = 1) ? & 0 : e }}>) :
+  match_inst_uslh (ICall e) (IAsgn callee e')
 .
 
 Lemma uslh_inst_simple i c iss np
     (SIMP: simple_inst i)
     (USLH: uslh_inst i c = (iss, np)) :
-  exists i', iss = [i'] /\ simple_inst_uslh i i' /\ np = [].
+  exists i', iss = [i'] /\ match_simple_inst_uslh i i' /\ np = [].
 Proof.
-  ii. unfold uslh_inst in USLH.
-  des_ifs; ss; unfold uslh_ret in *; clarify; esplits; econs; auto.
+  ii. unfold uslh_inst in USLH. ss.
+  des_ifs; ss; unfold MiniCET.uslh_ret in *;  clarify; esplits; econs; eauto.
 Qed.
 
 Lemma mapM_nth_error {A B} (f: A -> M B) l c l' np o blk
@@ -869,7 +886,7 @@ Proof.
   unfold prefix_offset.
   replace (n + Datatypes.length l) with
     (add (if is_br_or_call i then add n 1 else n) 1); auto.
-  2:{ destruct i; ss; unfold uslh_ret in *; ss; clarify; ss.
+  2:{ destruct i; ss; unfold MiniCET.uslh_ret in *; ss; clarify; ss.
       - unfold uslh_bind in x0. ss. clarify. ss. lia.
       - lia. }
   rewrite fold_left_add_init. lia.
@@ -929,7 +946,7 @@ Proof.
 
   unfold concatM in X. exploit bind_inv; eauto. i. des; subst.
   exploit mapM_nth_error; try eapply x1; eauto. i. des.
-  ss. unfold uslh_ret in *. ss. clarify.
+  ss. unfold MiniCET.uslh_ret in *. ss. clarify.
 
   replace (o + blk_offset (blk, is_proc) o) with (prefix_offset a o 0 + (if Bool.eqb is_proc true then 2 else 0)); auto.
   2:{ destruct is_proc; ss.
@@ -956,7 +973,7 @@ Lemma src_simple_inv p tp pc tpc i
     (TRP: uslh_prog p = tp)
     (PS: pc_sync p pc = Some tpc)
     (INST: p[[pc]] = Some <{{ i }}>) :
-  exists i', tp[[tpc]] = Some <{{ i' }}> /\ simple_inst_uslh i i'.
+  exists i', tp[[tpc]] = Some <{{ i' }}> /\ match_simple_inst_uslh i i'.
 Proof.
   destruct pc as [l o].
   destruct tpc as [l' o'].
@@ -984,7 +1001,7 @@ Proof.
 
   unfold concatM in X. exploit bind_inv; eauto. i. des; subst.
   exploit mapM_nth_error; try eapply x1; eauto. i. des.
-  ss. unfold uslh_ret in *. ss. clarify.
+  ss. unfold MiniCET.uslh_ret in *. ss. clarify.
 
   replace (o + blk_offset (blk, is_proc) o) with (prefix_offset a o 0 + (if Bool.eqb is_proc true then 2 else 0)); auto.
   2:{ destruct is_proc; ss.
@@ -1002,21 +1019,46 @@ Proof.
     replace (2 + prefix_offset a o 0) with (S (S (prefix_offset a o 0))) by lia.
     do 2 rewrite nth_error_cons_succ.
     replace (prefix_offset a o 0) with (prefix_offset a o 0 + 0) by lia.
-    destruct i0; ss; unfold uslh_ret in *; clarify.
+    destruct i0; ss; unfold MiniCET.uslh_ret in *; clarify.
     + exists ISkip; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+    + exists (IAsgn x e); split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
     + exists (IJump l0); split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
     + esplits; [|econs]; eauto.
       exploit concat_nth_error; ss; eauto. ss.
     + esplits; [|econs]; eauto.
       exploit concat_nth_error; ss; eauto. ss.
-  - destruct i0; ss; unfold uslh_ret in *; clarify.
+    + exists IRet; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+  - destruct i0; ss; unfold MiniCET.uslh_ret in *; clarify.
     + exists ISkip; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+    + exists (IAsgn x e); split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
     + exists (IJump l0); split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
     + esplits; [|econs]; eauto.
       exploit concat_nth_error; ss; eauto. ss.
     + esplits; [|econs]; eauto.
       exploit concat_nth_error; ss; eauto. ss.
+    + exists IRet; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
 Qed.
+
+Lemma src_inv p tp pc tpc i
+    (NCT: no_ct_prog p)
+    (TRP: uslh_prog p = tp)
+    (PS: pc_sync p pc = Some tpc)
+    (INST: p[[pc]] = Some <{{ i }}>) :
+  exists i', tp[[tpc]] = Some <{{ i' }}> /\ match_inst_uslh i i'.
+Proof.
+  assert (SDEC: simple_inst i \/ ~ (simple_inst i)).
+  { destruct i; ss; auto. }
+  destruct SDEC as [SIMP | SIMP].
+  { exploit src_simple_inv; eauto. i. des. esplits; eauto.
+    econs; eauto. }
+  destruct i; ss.
+  (* branch *)
+  - admit.
+  (* call *)
+  - admit.
+  (* ctarget *)
+  - admit. (* Assigned to Julay: use no_ct_prog *)
+Admitted.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
