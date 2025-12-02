@@ -1482,12 +1482,12 @@ Definition gen_prog_and_unused_var : G (rctx * tmem * list nat * prog * string) 
     x <- elems_ "X0"%string unused_vars;;
     ret (c, tm, pst, p, x).
 
-Definition unused_var_no_leak := (
+Definition unused_var_no_leak (transform : rctx -> tmem -> prog -> prog) := (
   forAll gen_prog_and_unused_var (fun '(c, tm, pst, p, unused_var) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
-  let p' := transform_load_store_prog c tm p in
+  let p' := transform c tm p in
   match stuck_free 100 p' icfg with
   | TaintTracking.ETerm (_, _, tobs) os =>
       let (ids, mems) := split_sum_list tobs in
@@ -1496,7 +1496,10 @@ Definition unused_var_no_leak := (
   | TaintTracking.EOutOfFuel st os => checker tt
   | TaintTracking.EError st os => checker false
   end)))).
-(*! QuickChick unused_var_no_leak. *)
+
+Definition unused_var_no_leak_transform_load_store := 
+  unused_var_no_leak (fun c tm p => transform_load_store_prog c tm p).
+(*! QuickChick unused_var_no_leak_transform_load_store. *)
 
 (* check 5: gen_pub_equiv_same_ty works *)
 
@@ -1547,12 +1550,12 @@ Definition gen_mem_wt_is_wt := (
 
 (* check 8: non-interference *)
 
-Definition test_ni := (
+Definition test_ni (transform : rctx -> tmem -> prog -> prog) := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
-  let p' := transform_load_store_prog c tm p in
+  let p' := transform c tm p in
   let r1 := taint_tracking 100 p' icfg in
   match r1 with
   | Some (os1', tvars, tms) =>
@@ -1568,7 +1571,10 @@ Definition test_ni := (
       end))
    | None => checker tt (* discard *)
   end)))).
-(*! QuickChick test_ni. *)
+
+Definition test_ni_transform_load_store := 
+  test_ni (fun c tm p => transform_load_store_prog c tm p).
+(*! QuickChick test_ni_transform_load_store. *)
 
 (* +++ Passed 1000000 tests (639813 discards) *)
 (* Time Elapsed: 152.683837s *)
@@ -1696,13 +1702,13 @@ Definition spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (ds: dirs) : spec_exe
 
 (* Extract Constant defNumTests => "1000000". *)
 
-Definition test_safety_preservation := (
+Definition test_safety_preservation (harden : prog -> prog) := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
   let p' := transform_load_store_prog c tm p in
-  let harden := uslh_prog p' in
+  let harden := harden p' in
   let rs' := spec_rs rs in
   let icfg' := (ipc, rs', m, istk) in
   let iscfg := (icfg', true, false) in
@@ -1714,7 +1720,9 @@ Definition test_safety_preservation := (
    | SEOutOfFuel _ _ ds => checker tt
    end))
   )))).
-(*! QuickChick test_safety_preservation. *)
+
+Definition test_safety_preservation_uslh := test_safety_preservation uslh_prog.
+(*! QuickChick test_safety_preservation_uslh. *)
 
 (* +++ Passed 1000000 tests (431506 discards) *)
 (* Time Elapsed: 137.819446s *)
@@ -1723,7 +1731,7 @@ Definition test_safety_preservation := (
 
 (* Extract Constant defNumTests => "1000000". *)
 
-Definition test_relative_security := (
+Definition test_relative_security (harden : prog -> prog) := (
   (* TODO: should make sure shrink indeed satisfies invariants of generator;
            or define a better shrinker *)
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
@@ -1743,7 +1751,7 @@ Definition test_relative_security := (
       match r2 with
       | Some (os2', _, _) =>
           if (obs_eqb os1' os2') (* The source program produces the same leakage for a pair of inputs. *)
-          then (let harden := uslh_prog p' in
+          then (let harden := harden p' in
                 let rs1' := spec_rs rs1 in
                 let icfg1' := (ipc, rs1', m1, istk) in
                 let iscfg1' := (icfg1', true, false) in
@@ -1779,7 +1787,9 @@ Definition test_relative_security := (
       end))
    | None => collect "tt1 failed"%string (checker tt) (* discard *)
   end)))).
-(*! QuickChick test_relative_security. *)
+
+Definition test_relative_security_uslh := test_relative_security uslh_prog.
+(*! QuickChick test_relative_security_uslh. *)
 
 (* Outdated. available commit: 58fa2d5c090d764b548c967ff4c40a6d6f2fb679*)
 (* +++ Passed 1000000 tests (0 discards) *)
