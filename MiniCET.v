@@ -627,6 +627,14 @@ Notation "m '!' x" := (M.t_apply m x)
     (at level 20, left associativity).
 
 Definition reg := M.t val.
+Definition reg_init := M.init UV.
+
+(* before uslh *)
+Definition no_callee_msf (r: reg) : Prop :=
+  match (r ! msf), (r ! callee) with
+  | UV, UV => True
+  | _, _ => False
+  end.
 
 Fixpoint eval (st : reg) (e: exp) : val :=
   match e with
