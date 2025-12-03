@@ -99,6 +99,32 @@ Definition pc_inj (p: prog) (pc: cptr) : option nat :=
   let fstp := map fst p in
   coord_to_flat_idx fstp pc.
 
+Lemma coord_to_flat_idx_inject {X} (p: list (list X)) pc1 pc2 pc1' pc2'
+    (DIFF: pc1 <> pc2)
+    (INJ1: coord_to_flat_idx p pc1 = Some pc1')
+    (INJ2: coord_to_flat_idx p pc2 = Some pc2') :
+  pc1' <> pc2'.
+Proof.
+  ginduction p; ss; ii.
+  { destruct pc1; ss. }
+  des_ifs_safe. des_ifs.
+  { rewrite ltb_lt in Heq. lia. }
+  { rewrite ltb_lt in Heq0. lia. }
+  assert ((n4, n2) <> (n3, n0)).
+  { ii. eapply DIFF. inv H. auto. }
+  exploit IHp; eauto. lia.
+Qed.
+
+Lemma pc_inj_inject p pc1 pc2 pc1' pc2'
+    (DIFF: pc1 <> pc2)
+    (INJ1: pc_inj p pc1 = Some pc1')
+    (INJ2: pc_inj p pc2 = Some pc2') :
+  pc1' <> pc2'.
+Proof.
+  unfold pc_inj in *.
+  eapply coord_to_flat_idx_inject; eauto.
+Qed.
+
 Definition pc_inj_inv (p: prog) (pc: nat) : option cptr :=
   let fstp := map fst p in
   flat_idx_to_coord fstp pc.
@@ -303,7 +329,13 @@ Lemma eval_binop_inject p o v1 v1' v2 v2'
   val_inject p (eval_binop o v1 v2) (eval_binop o v1' v2').
 Proof.
   red in INJ1, INJ2. des_ifs. destruct o; ss.
-Admitted.
+  f_equal.
+  destruct (Nat.eq_dec l0 l); clarify.
+  { do 2 rewrite Nat.eqb_refl. auto. }
+  hexploit pc_inj_inject; [| eapply Heq0| eapply Heq|].
+  { ii. eapply n. inv H. auto. }
+  ii. rewrite <- Nat.eqb_neq in n, H. rewrite n, H. auto.
+Qed.
 
 Lemma eval_inject p r1 r2 e1 e2
   (INJ: reg_inject p r1 r2)
