@@ -767,17 +767,44 @@ Variant match_simple_inst_uslh : inst -> inst -> Prop :=
   match_simple_inst_uslh IRet IRet
 .
 
-Variant match_inst_uslh : inst -> inst -> Prop :=
+Definition _branch_in_block (blk: list inst) : nat :=
+  fold_left (fun acc i => match i with
+                       | IBranch _ _ => add acc 1
+                       | _ => acc
+                       end) blk 0.
+
+Definition branch_in_block (bb: list inst * bool) : nat :=
+  _branch_in_block (fst bb).
+
+Definition branch_in_prog_before (p: prog) (l: nat) : nat :=
+  fold_left (fun acc b => add acc (branch_in_block b)) (firstn l p) 0.
+
+Definition _offset_branch_before (blk: list inst) (ofs: nat) : nat :=
+  _branch_in_block (firstn ofs blk).
+
+Definition offset_branch_before (blk: list inst * bool) (ofs: nat) : nat :=
+  _offset_branch_before (fst blk) ofs.
+
+(* pc: branch's pc *)
+Definition match_branch_target (p: prog) (pc: nat * nat) : option nat :=
+  let '(l, o) := pc in
+  match nth_error p l with
+  | Some blk => Some (Datatypes.length p + branch_in_prog_before p l + offset_branch_before blk o)
+  | _ => None
+  end.
+
+Variant match_inst_uslh (p: prog) (pc: cptr) : inst -> inst -> Prop :=
 | uslh_simple i i'
   (SIMPL: simple_inst i)
   (MATCH: match_simple_inst_uslh i i') :
-  match_inst_uslh i i'
+  match_inst_uslh p pc i i'
 | uslh_branch e e' l l'
-  (COND: e' = <{{ (msf = 1) ? 0 : e }}>) : (* l ~ l' is needed. *)
-  match_inst_uslh (IBranch e l) (IBranch e' l')
+  (COND: e' = <{{ (msf = 1) ? 0 : e }}>)
+  (LB: match_branch_target p pc = Some l') :
+  match_inst_uslh p pc (IBranch e l) (IBranch e' l')
 | uslh_call e e'
   (CALL: e' = <{{ (msf = 1) ? & 0 : e }}>) :
-  match_inst_uslh (ICall e) (IAsgn callee e')
+  match_inst_uslh p pc (ICall e) (IAsgn callee e')
 .
 
 Lemma uslh_inst_simple i c iss np
@@ -1039,21 +1066,99 @@ Proof.
     + exists IRet; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
 Qed.
 
+Lemma uslh_blk_branch_counter
+    b blk is_proc o e l c blk' is_proc' np_blk' e' l'
+    (SRC: nth_error blk o = Some (IBranch e l))
+    (TRB: uslh_blk (b, (blk, is_proc)) c = (blk', is_proc', np_blk'))
+    (TGT: nth_error blk' (o + blk_offset (blk, is_proc) o) = Some (IBranch e' l')) :
+  l' = c + offset_branch_before (blk, is_proc) o.
+Proof.
+Admitted.
+
+Lemma branch_target_matches p tp pc tpc e e' l l'
+    (TRP: uslh_prog p = tp)
+    (PS: pc_sync p pc = Some tpc)
+    (SRC: p[[pc]] = Some <{{ branch e to l }}>)
+    (TGT: tp[[tpc]] = Some <{{ branch e' to l' }}>) :
+  match_branch_target p pc = Some l'.
+Proof.
+  unfold uslh_prog in TRP.
+  destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn:Huslh.
+  exploit mapM_perserve_len; eauto. intros LEN.
+
+  destruct pc as [b o]. ss.
+  unfold pc_sync in PS. ss. des_ifs_safe.
+  destruct p0 as [blk is_proc]. ss.
+  replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk)
+             (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
+  des_ifs_safe.  destruct p0 as [blk' is_proc']. ss.
+  replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk)
+             (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) in TGT by ss.
+
+  exploit mapM_nth_error; eauto.
+  { instantiate (2:= b). instantiate (1:= (b, (blk, is_proc))).
+    eapply nth_error_add_index. auto. }
+  intros (blk'' & c' & np_blk' & TNTH & TBLK).
+
+  assert (is_proc = is_proc').
+  { admit. }
+
+  assert (blk'' = (blk', is_proc')).
+  { admit. }
+
+  assert (c' = Datatypes.length p + branch_in_prog_before p b).
+  { admit. }
+
+Admitted.
+
 Lemma src_inv p tp pc tpc i
     (NCT: no_ct_prog p)
     (TRP: uslh_prog p = tp)
     (PS: pc_sync p pc = Some tpc)
     (INST: p[[pc]] = Some <{{ i }}>) :
-  exists i', tp[[tpc]] = Some <{{ i' }}> /\ match_inst_uslh i i'.
+  exists i', tp[[tpc]] = Some <{{ i' }}> /\ match_inst_uslh p pc i i'.
 Proof.
   assert (SDEC: simple_inst i \/ ~ (simple_inst i)).
   { destruct i; ss; auto. }
   destruct SDEC as [SIMP | SIMP].
   { exploit src_simple_inv; eauto. i. des. esplits; eauto.
     econs; eauto. }
+
+  unfold uslh_prog in TRP.
+  destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn:Huslh.
+  exploit mapM_perserve_len; eauto. intros LEN.
+
+  (* destruct pc_sync *)
+  destruct pc as [l o].
+  unfold pc_sync in *. ss. des_ifs_safe.
+  destruct p0 as [blk is_proc]. ss.
+  replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk)
+             (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
+
+  (* find corresponding target block *)
+  exploit mapM_nth_error; eauto.
+  { instantiate (2:= l). instantiate (1:= (l, (blk, is_proc))).
+    eapply nth_error_add_index. auto. }
+  i. des.
+  rewrite nth_error_app1.
+  2:{ rewrite <- nth_error_Some. ii. clarify. }
+  rewrite x0. ss. unfold uslh_bind in x1. ss.
+  destruct (concatM (mapM uslh_inst blk) c') eqn: CONCAT.
+  unfold concatM in CONCAT. ss. exploit bind_inv; eauto. i. des; subst.
+  exploit mapM_nth_error; try eapply x2; eauto. i. des.
+  unfold MiniCET.uslh_ret in x3. clarify.
+
   destruct i; ss.
   (* branch *)
-  - admit.
+  - unfold uslh_bind in x5. ss. clarify.
+    exists <{{ branch (msf = 1) ? 0 : e to c'0 }}>.
+    split.
+    + des_ifs; ss.
+      * unfold MiniCET.uslh_ret in *. clarify. ss.
+        admit.
+      * admit.
+    + econs 2; ss. des_ifs_safe. f_equal.
+      admit.
   (* call *)
   - admit.
   (* ctarget *)
