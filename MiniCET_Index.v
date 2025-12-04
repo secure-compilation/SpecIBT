@@ -1101,30 +1101,54 @@ Proof.
     + exists IRet; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
 Qed.
 
-Lemma uslh_blk_branch_counter
-    b blk is_proc o e l c blk' is_proc' np_blk' e' l'
-    (SRC: nth_error blk o = Some (IBranch e l))
-    (TRB: uslh_blk (b, (blk, is_proc)) c = (blk', is_proc', np_blk'))
-    (TGT: nth_error blk' (o + blk_offset (blk, is_proc) o) = Some (IBranch e' l')) :
-  l' = c + offset_branch_before (blk, is_proc) o.
-Proof.
-  unfold uslh_blk in TRB.
-  exploit bind_inv; eauto. intros (blk'' & np_blk'' & rf & pf & TRIS & DECO).
-  des. subst.
-  unfold concatM in TRIS.
-  exploit bind_inv; eauto. intros (blk''' & np_blk''' & flat_blk''' & pf' & TRIS' & DECO').
-  des; subst. simpl in DECO'. unfold MiniCET.uslh_ret in DECO'. clarify.
+(* Lemma uslh_blk_branch_counter *)
+(*     b blk is_proc o e l c blk' is_proc' np_blk' e' l' *)
+(*     (SRC: nth_error blk o = Some (IBranch e l)) *)
+(*     (TRB: uslh_blk (b, (blk, is_proc)) c = (blk', is_proc', np_blk')) *)
+(*     (EE': e' = <{{ (msf = 1) ? 0 : e }}>) *)
+(*     (TGT: nth_error blk' (o + blk_offset (blk, is_proc) o) = Some (IBranch e' l')) : *)
+(*   l' = c + offset_branch_before (blk, is_proc) o. *)
+(* Proof. *)
+(*   unfold uslh_blk in TRB. *)
+(*   exploit bind_inv; eauto. intros (blk'' & np_blk'' & rf & pf & TRIS & DECO). *)
+(*   des. subst. *)
+(*   unfold concatM in TRIS. *)
+(*   exploit bind_inv; eauto. intros (blk''' & np_blk''' & flat_blk''' & pf' & TRIS' & DECO'). *)
+(*   des; subst. simpl in DECO'. unfold MiniCET.uslh_ret in DECO'. clarify. *)
 
-  exploit mapM_nth_error; try eapply SRC; eauto. intros (brs & c' & np' & TGT' & TRIS'').
-  unfold uslh_inst in TRIS''. exploit bind_inv; eauto. i. des; subst.
-  simpl in x1. unfold MiniCET.uslh_ret in x1. clarify.
+(*   exploit mapM_nth_error_strong; try eapply SRC; eauto. *)
+(*   intros (brs & c' & np' & TGT' & TRIS'' & CNT'). *)
+
+(*   rename l' into ll'. *)
+(*   assert (TGT'': nth_error blk' (o + blk_offset (blk, is_proc) o) = Some <{{ branch ((msf = 1) ? 0 : e) to c'}}>). *)
+(*   { eapply bind_inv in TRIS''. des. subst. *)
+(*     simpl in TRIS''0. unfold MiniCET.uslh_ret in TRIS''0. clarify. *)
+(*     clear - TGT TRIS' TGT'. *)
+(*     exploit mapM_nth_error_strong; try eapply TRIS'; eauto. i. des. *)
+(*     ss. unfold MiniCET.uslh_ret in *. ss. clarify. *)
+
+(*   replace (o + blk_offset (blk, is_proc) o) with (prefix_offset a o 0 + (if Bool.eqb is_proc true then 2 else 0)); auto. *)
+(*   2:{ destruct is_proc; ss. *)
+(*       - unfold blk_offset. ss. unfold prefix_offset. *)
+(*         erewrite <- fold_left_add_init. rewrite add_0_l. *)
+(*         eapply offset_eq_aux; eauto. *)
+(*         exploit mapM_perserve_len; eauto. i. rewrite x2. *)
+(*         eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. *)
+(*       - rewrite add_0_r. *)
+(*         unfold blk_offset. ss. eapply offset_eq_aux; eauto. *)
+(*         exploit mapM_perserve_len; eauto. i. rewrite x2. *)
+(*         eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. } *)
+
+(*   unfold uslh_inst in TRIS''. exploit bind_inv; eauto. i. des; subst. *)
+(*   simpl in x1. unfold MiniCET.uslh_ret in x1. clarify. *)
+(*   eapp *)
   
-  exploit bind_inv.
-  { eapply TRIS''. }
-  i. des. subst. simpl in x2. unfold MiniCET.uslh_ret in x2. clarify.
-  ss.
-  simpl in TRIS''.
-Admitted.
+(*   exploit bind_inv. *)
+(*   { eapply TRIS''. } *)
+(*   i. des. subst. simpl in x2. unfold MiniCET.uslh_ret in x2. clarify. *)
+(*   ss. *)
+(*   simpl in TRIS''. *)
+(* Admitted. *)
 
 Lemma branch_target_matches p tp pc tpc e e' l l'
     (TRP: uslh_prog p = tp)
@@ -1146,10 +1170,10 @@ Proof.
   replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk)
              (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) in TGT by ss.
 
-  exploit mapM_nth_error; eauto.
+  exploit mapM_nth_error_strong; eauto.
   { instantiate (2:= b). instantiate (1:= (b, (blk, is_proc))).
     eapply nth_error_add_index. auto. }
-  intros (blk'' & c' & np_blk' & TNTH & TBLK).
+  intros (blk'' & c' & np_blk' & TNTH & TBLK & C').
 
   assert (is_proc = is_proc').
   { admit. }
@@ -1158,7 +1182,8 @@ Proof.
   { admit. }
 
   assert (c' = Datatypes.length p + branch_in_prog_before p b).
-  { admit. }
+  { subst. f_equal. unfold len_before, branch_in_prog_before. admit. }
+  subst.
 
 Admitted.
 
@@ -1196,18 +1221,28 @@ Proof.
   rewrite x0. ss. unfold uslh_bind in x1. ss.
   destruct (concatM (mapM uslh_inst blk) c') eqn: CONCAT.
   unfold concatM in CONCAT. ss. exploit bind_inv; eauto. i. des; subst.
-  exploit mapM_nth_error; try eapply x2; eauto. i. des.
+  exploit mapM_nth_error_strong; try eapply x2; eauto. i. des.
   unfold MiniCET.uslh_ret in x3. clarify.
 
   destruct i; ss.
   (* branch *)
   - unfold uslh_bind in x5. ss. clarify.
-    exists <{{ branch (msf = 1) ? 0 : e to c'0 }}>.
+    exists <{{ branch (msf = 1) ? 0 : e to (c' + len_before uslh_inst blk o c') }}>.
     split.
-    + des_ifs; ss.
-      * unfold MiniCET.uslh_ret in *. clarify. ss.
-        admit.
-      * admit.
+    + destruct blk' as [blk' is_proc']. ss.
+      exploit concat_nth_error; i.
+      { eapply x4. }
+      { instantiate (2:= 0). ss. }
+      des_ifs.
+      { unfold MiniCET.uslh_ret in Heq1. clarify.
+        admit. }
+      { unfold MiniCET.uslh_ret in Heq1. clarify.
+        assert (prefix_offset a o 0 + 0 = o + blk_offset (blk, false) o).
+        { rewrite add_0_r.
+          unfold blk_offset. ss. eapply offset_eq_aux; eauto.
+          exploit mapM_perserve_len; eauto. i. rewrite x1.
+          eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
+        rewrite <- H. auto. }
     + econs 2; ss. des_ifs_safe. f_equal.
       admit.
   (* call *)
