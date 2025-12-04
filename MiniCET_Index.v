@@ -849,6 +849,41 @@ Proof.
   eapply tr_app_correct.
 Qed.
 
+Definition len_before {A B} (f: A -> M B) (l: list A) (o c: nat) : nat :=
+  let '(_, np) := mapM f (firstn o l) c in
+  Datatypes.length np.
+
+Lemma mapM_nth_error_strong {A B} (f: A -> M B) l c l' np o blk
+    (MM: mapM f l c = (l', np))
+    (SRC: nth_error l o = Some blk) :
+  exists blk' c' np',
+    nth_error l' o = Some blk'
+ /\ f blk c' = (blk', np')
+ /\ c' = c + len_before f l o c.
+Proof.
+  ginduction l; ss; ii.
+  { rewrite nth_error_nil in SRC. clarify. }
+  rewrite unfold_mapM in MM.
+  destruct o as [|o].
+  { ss; clarify. unfold uslh_bind in MM.
+    destruct (f blk c) eqn:F.
+    destruct (mapM f l (c + Datatypes.length p)) eqn:MF.
+    ss. clarify. esplits; eauto.
+    unfold len_before, mapM. des_ifs. ss.
+    unfold MiniCET.uslh_ret in Heq. clarify. ss. lia. }
+  ss. unfold uslh_bind in MM. 
+  destruct (f a c) eqn:F.
+  destruct (mapM f l (c + Datatypes.length p)) eqn:MF. ss. clarify.
+  exploit IHl; eauto. i. des.
+  esplits; eauto.
+  unfold len_before. ss. des_ifs.
+  rewrite unfold_mapM in Heq. eapply bind_inv in Heq. des. subst.
+  eapply bind_inv in Heq0. des. subst.
+  unfold len_before. rewrite Heq in F. clarify. rewrite Heq0.
+  ss. unfold MiniCET.uslh_ret in Heq1. clarify.
+  do 2 rewrite length_app. ss. lia.
+Qed.
+
 Definition blk_offset (blk: list inst * bool) (o: nat) :=
   fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o (fst blk))
     (if Bool.eqb (snd blk) true then 2 else 0).
@@ -1073,6 +1108,22 @@ Lemma uslh_blk_branch_counter
     (TGT: nth_error blk' (o + blk_offset (blk, is_proc) o) = Some (IBranch e' l')) :
   l' = c + offset_branch_before (blk, is_proc) o.
 Proof.
+  unfold uslh_blk in TRB.
+  exploit bind_inv; eauto. intros (blk'' & np_blk'' & rf & pf & TRIS & DECO).
+  des. subst.
+  unfold concatM in TRIS.
+  exploit bind_inv; eauto. intros (blk''' & np_blk''' & flat_blk''' & pf' & TRIS' & DECO').
+  des; subst. simpl in DECO'. unfold MiniCET.uslh_ret in DECO'. clarify.
+
+  exploit mapM_nth_error; try eapply SRC; eauto. intros (brs & c' & np' & TGT' & TRIS'').
+  unfold uslh_inst in TRIS''. exploit bind_inv; eauto. i. des; subst.
+  simpl in x1. unfold MiniCET.uslh_ret in x1. clarify.
+  
+  exploit bind_inv.
+  { eapply TRIS''. }
+  i. des. subst. simpl in x2. unfold MiniCET.uslh_ret in x2. clarify.
+  ss.
+  simpl in TRIS''.
 Admitted.
 
 Lemma branch_target_matches p tp pc tpc e e' l l'
