@@ -1262,7 +1262,15 @@ Proof.
   (* call *)
   - admit.
   (* ctarget *)
-  - admit. (* Assigned to Julay: use no_ct_prog *)
+  - exists <{{ ctarget }}>. split;
+    destruct blk' as [blk' prc_bool]; unfold no_ct_prog in NCT;
+      destruct (split p) as (bs & bools) eqn:Hsplitp;
+      rewrite Forall_forall in NCT; unfold blk_offset; simpl;
+      specialize (nth_error_In p l Heq); intros;
+      eapply in_split_l in H; rewrite Hsplitp in H; simpl in H;
+      apply NCT in H; unfold no_ct_blk in H; rewrite Forall_forall in H;
+      specialize (nth_error_In blk o Heq0); intros; apply H in H0;
+      destruct H0.
 Admitted.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
