@@ -672,8 +672,7 @@ Qed.
 Lemma p_le_tp : forall (p: prog),
   Datatypes.length p <= Datatypes.length (uslh_prog p).
 Proof.
-  intros.
-  unfold uslh_prog.
+  intros. unfold uslh_prog.
   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn: Huslh.
   enough (Datatypes.length p' = Datatypes.length p).
   { rewrite length_app. lia. }
@@ -1212,26 +1211,29 @@ Proof.
              (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
 
   (* find corresponding target block *)
-  exploit mapM_nth_error; eauto.
+  exploit mapM_nth_error_strong; eauto.
   { instantiate (2:= l). instantiate (1:= (l, (blk, is_proc))).
     eapply nth_error_add_index. auto. }
   i. des.
+
   rewrite nth_error_app1.
   2:{ rewrite <- nth_error_Some. ii. clarify. }
   rewrite x0. ss. unfold uslh_bind in x1. ss.
   destruct (concatM (mapM uslh_inst blk) c') eqn: CONCAT.
   unfold concatM in CONCAT. ss. exploit bind_inv; eauto. i. des; subst.
-  exploit mapM_nth_error_strong; try eapply x2; eauto. i. des.
-  unfold MiniCET.uslh_ret in x3. clarify.
+  exploit mapM_nth_error_strong; try eapply x3; eauto. i. des.
+  unfold MiniCET.uslh_ret in x4. clarify.
 
   destruct i; ss.
   (* branch *)
   - unfold uslh_bind in x5. ss. clarify.
-    exists <{{ branch (msf = 1) ? 0 : e to (c' + len_before uslh_inst blk o c') }}>.
+    remember (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p) +
+                len_before uslh_inst blk o (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p))) as c'.
+    exists <{{ branch (msf = 1) ? 0 : e to c' }}>.
     split.
     + destruct blk' as [blk' is_proc']. ss.
       exploit concat_nth_error; i.
-      { eapply x4. }
+      { eapply x2. }
       { instantiate (2:= 0). ss. }
       des_ifs.
       { unfold MiniCET.uslh_ret in Heq1. clarify.
@@ -1242,7 +1244,7 @@ Proof.
           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
         rewrite <- H. rewrite add_comm.
         replace (2 + prefix_offset a o 0) with (S (S (prefix_offset a o 0))) by lia.
-        rewrite add_0_r in x3. auto. }
+        rewrite add_0_r in x4. auto. }
       { unfold MiniCET.uslh_ret in Heq1. clarify.
         assert (prefix_offset a o 0 + 0 = o + blk_offset (blk, false) o).
         { rewrite add_0_r.
@@ -1251,11 +1253,12 @@ Proof.
           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
         rewrite <- H. auto. }
     + econs 2; ss. des_ifs_safe. f_equal.
-      assert (c' = Datatypes.length p + branch_in_prog_before p l).
+      do 2 rewrite <- add_assoc. rewrite add_cancel_l.
+
+      assert (branch_in_prog_before p l = len_before uslh_blk (add_index p) l (Datatypes.length p)).
       { admit. }
-      assert (offset_branch_before (blk, is_proc) o = len_before uslh_inst blk o c').
-      { admit. }
-      lia.
+      admit.
+
   (* call *)
   - admit.
   (* ctarget *)

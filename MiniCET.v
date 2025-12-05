@@ -423,7 +423,7 @@ Definition uslh_inst (i: inst) : M (list inst) :=
       let e' := <{ (msf=1) ? 0 : e }> in
       ret [<{{store[e'] <- e1}}>]
   | <{{branch e to l}}> =>
-  let e' := <{ (msf=1) ? 0 : e }> in (* if misspeculating always leak False *)
+      let e' := <{ (msf=1) ? 0 : e }> in (* if misspeculating always leak False *)
       l' <- add_block_M <{{ i[(msf := ((~e') ? 1 : msf)); jump l] }}>;;
       ret <{{ i[branch e' to l'; (msf := (e' ? 1 : msf))] }}>
   | <{{call e}}> =>
