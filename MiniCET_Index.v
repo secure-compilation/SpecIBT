@@ -55,7 +55,7 @@ p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running ((l,0), r, m, sk) ))>
       to_nat (eval r e) = Some n ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
   | SSMI_Call : forall pc r m sk e l,
-      p[[pc]] = Some <{{ call e }}> ->
+  p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
 | SSMI_Ret : forall pc r m sk pc',
@@ -1380,67 +1380,67 @@ Proof.
           }
       }
       { (* x := e *) 
-        assert (si = <{{ x := e }}>).
-        { admit. }
-        rewrite H4 in *. 
-        assert (x <> callee).
-        { unfold unused_prog in unused_p_callee. destruct (split (b :: bs)) eqn:Hsplit; clarify.
-          rename l0 into insts. rename l1 into bools. rewrite Forall_forall in unused_p_callee.
-          specialize unused_p_callee with (x:=(fst iblk)). specialize (nth_error_In (b :: bs) sl Hfst); intros.
-          specialize (split_combine (b :: bs) Hsplit); intros. rewrite <- H4 in H2.
-          assert (iblk = ((fst iblk), (snd iblk))). { destruct iblk. simpl. auto. }
-          rewrite H5 in H2. specialize (in_combine_l insts bools (fst iblk) (snd iblk) H2); intros.
-          specialize (unused_p_callee H6). unfold b_unused in unused_p_callee. rewrite Forall_forall in unused_p_callee.
-          specialize (nth_error_In (fst iblk) o Hsnd); intros. specialize unused_p_callee with (x:=<{{ x := e }}>).
-          specialize (unused_p_callee H7).  cbn in unused_p_callee. destruct unused_p_callee. assumption.
-        }
-        rewrite <- String.eqb_neq in H5. rewrite H5 in n_steps.
-        assert (x <> msf).
-        { unfold unused_prog in unused_p_msf. destruct (split (b :: bs)) eqn:Hsplit; clarify.
-          rename l0 into insts. rename l1 into bools. rewrite Forall_forall in unused_p_msf.
-          specialize unused_p_msf with (x:=(fst iblk)). specialize (nth_error_In (b :: bs) sl Hfst); intros.
-          specialize (split_combine (b :: bs) Hsplit); intros. rewrite <- H4 in H2.
-          assert (iblk = ((fst iblk), (snd iblk))). { destruct iblk. simpl. auto. }
-          rewrite H6 in H2. specialize (in_combine_l insts bools (fst iblk) (snd iblk) H2); intros.
-          specialize (unused_p_msf H7). unfold b_unused in unused_p_msf. rewrite Forall_forall in unused_p_msf.
-          specialize (nth_error_In (fst iblk) o Hsnd); intros. specialize unused_p_msf with (x:=<{{ x := e }}>).
-          specialize (unused_p_msf H8).  cbn in unused_p_msf. destruct unused_p_msf. assumption.
-        }
-        rewrite <- String.eqb_neq in H6. rewrite H6 in n_steps. 
-        injection n_steps; intros. rewrite <- H5 in *.
-        rewrite <- H2 in *. clear cfg_sync.
+        apply src_simple_inv with (tp:=(uslh_prog p)) (tpc:=spc) in H1; clarify.
+        clear cfg_sync.
+        destruct si;
+        try (destruct H1 as (i' & H1); destruct H1 as (Hsome & Hmatch);
+        rewrite H3 in Hsome; injection Hsome; intros; rewrite <- H1 in *; inv Hmatch).
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
-        rewrite <- app_nil_r with (l:=os) in tgt_steps. rewrite H5 in tgt_steps.
-        inv tgt_steps; try discriminate. (* assert (n0 = 0). { lia. } rewrite H2 in H13. *)
-        exists (l, (add o 1), x !-> (eval r e); r, m, sk, ms). 
-        (*unfold wf_dir in wfds. rewrite Forall_forall in wfds. simpl in wfds.*)
+        rewrite <- app_nil_r with (l:=os) in tgt_steps.
+
+        unfold unused_prog in unused_p_callee. destruct (split (b :: bs)) as (blks, bools) eqn:Hsplit.
+        rewrite Forall_forall in unused_p_callee. replace (fst (l, o)) with l in Hfst by auto. 
+        specialize (nth_error_In (b :: bs) l Hfst); intros. 
+        apply in_split_l in H1. rewrite Hsplit in H1. simpl in H1. apply unused_p_callee in H1.
+        unfold b_unused in H1. rewrite Forall_forall in H1.
+        replace (snd (l, o)) with o in Hsnd by auto.
+        specialize (nth_error_In (fst iblk) o Hsnd); intros.
+        apply H1 in H2. simpl in H2. destruct H2.
+        rewrite <- String.eqb_neq in H2. 
+        assert (callee = "callee"). { auto. }
+        rewrite <- H5 in H2. rewrite H2 in n_steps.
+        
+        unfold unused_prog in unused_p_msf. rewrite Hsplit in unused_p_msf. 
+        rewrite Forall_forall in unused_p_msf. 
+        specialize (nth_error_In (b :: bs) l Hfst); intros.
+        apply in_split_l in H6. rewrite Hsplit in H6. simpl in H6. apply unused_p_msf in H6.
+        unfold b_unused in H6. rewrite Forall_forall in H6.
+        specialize (nth_error_In (fst iblk) o Hsnd); intros.
+        apply H6 in H7. simpl in H7. destruct H7. 
+        rewrite <- String.eqb_neq in H7.
+        assert (msf = "msf"). { auto. }
+        rewrite <- H9 in H7. rewrite H7 in n_steps. 
+        
+        injection n_steps; intros. rewrite <- H10 in *.
+        inv tgt_steps. exists (l, (add o 1), x0 !-> (eval r e0); r, m, sk, ms).
         assert (ds = [] /\ os = []).
-        { inv H13; clarify. inv H12; clarify. ss. 
-          rewrite app_nil_r in H8, H9. auto. 
-        }
-        des; subst. simpl in H8, H9. eapply app_eq_nil in H8, H9. des; subst.
-        split; [econs; auto|].
-        inv H13; clarify. inv H12; clarify.
-        simpl. econs; eauto.
-        { unfold pc_sync. cbn. rewrite Hfst. 
-          assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
-          { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ x := e }}>); clarify.
-            rewrite Forall_forall in H0. specialize (H0 iblk). 
-            specialize (nth_error_In (b :: bs) sl Hfst); intros.
-            apply (H0 H2).
+        { inv H17. inv H16; clarify. ss. rewrite app_nil_r in H11, H12. auto. }
+        des; subst. simpl in H11, H12. eapply app_eq_nil in H11, H12. des; subst.
+        split.
+        - econs. unfold fetch. cbn. rewrite Hfst. assumption.
+        - inv H17. inv H16; clarify. 
+          econs; eauto.
+          + { unfold pc_sync. cbn. replace (fst (l, o)) with l in Hfst by auto. rewrite Hfst. 
+            assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
+            { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ x0 := e0 }}>); clarify.
+              rewrite Forall_forall in H0. specialize (nth_error_In (b :: bs) l Hfst); intros.
+              apply H0 in H3. assumption.
+            }
+            destruct H3 as (i' & H3). rewrite H3.
+            assert (forall n, (add n 1) = S n). { lia. }
+            specialize (H10 o). rewrite H10. replace (snd (l, o)) with o in Hsnd by auto.
+            specialize (firstnth_error (fst iblk) o <{{ x0 := e0 }}> Hsnd) as ->.
+            rewrite fold_left_app. cbn. 
+            unfold pc_sync in Hpcsync. replace (fst (l, o)) with l in Hpcsync by auto. rewrite Hfst in Hpcsync.
+            replace (snd (l, o)) with o in Hpcsync by auto. rewrite Hsnd in Hpcsync. injection Hpcsync; intros.
+            rewrite H13. unfold cptr. repeat f_equal. rewrite H12. 
+            lia.
           }
-          destruct H2 as (i' & H2). rewrite H2.
-          assert (forall n, (add n 1) = S n). { lia. }
-          specialize (H3 o). rewrite H3.
-          specialize (firstnth_error (fst iblk) o <{{ x := e }}> Hsnd) as ->.
-          rewrite fold_left_app. cbn.
-          assert ((add (o + fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc)
-                    (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) 1) = 
-                  (S ((o + fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc)
-                    (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0))) ) ). { lia. }
-          rewrite H7; auto.
-        }
-        { econs.
+          + econs; admit.
+            
+
+
+            (*     { econs.
           - rewrite String.eqb_neq in H5, H6. assert (x <> msf /\ x <> callee). { split; auto. }
             intros. unfold TotalMap.t_update. unfold t_update. unfold r_sync. unfold TotalMap.t_apply.
             unfold TotalMap.t_update. unfold t_update. destruct H3. rewrite <- String.eqb_neq in H3.
@@ -1450,8 +1450,8 @@ Proof.
             destruct (msf =? x1) eqn:Hmsf; clarify. rewrite String.eqb_eq in Hmsf.
             rewrite <- Hmsf. simpl in ms_msf. admit.
           - unfold TotalMap.t_apply, TotalMap.t_update, t_update. rewrite H6. 
-            unfold r_sync, TotalMap.t_update, t_update. auto.
-        }
+               unfold r_sync, TotalMap.t_update, t_update. auto.
+               }*)
       }
       { (* branch *) admit. }
       { (* jump *) 
