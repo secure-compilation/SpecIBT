@@ -1337,48 +1337,47 @@ Proof.
 
       (* relate the two pcs (we know labels are the same in all cases except branch; 
          will also depend on proc block and whether offset is 0) *)
-      unfold pc_sync in Hpcsync. simpl in Hpcsync.
-      rewrite Hipc in Hfst, Hsnd. simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in *.
+      (*unfold pc_sync in Hpcsync. simpl in Hpcsync.
+         rewrite Hipc in Hfst, Hsnd. simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in *.*)
 
       (* put program in form where we can access block 0 and rest *)
       destruct p as [|b bs] eqn:Hp. { simpl in *. inv H. } (*simpl in *.*) 
       destruct i.
       { (* skip *) 
-        assert (si = <{{ skip }}>).
-        { admit. }
-        rewrite H4 in *. injection n_steps; intros. rewrite <- H5 in *.
-        rewrite <- H2 in *. clear cfg_sync.
+        apply src_skip_inv with (tp:=(uslh_prog p)) (tpc:=spc) in H1; clarify.
+        clear cfg_sync.
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
         rewrite <- app_nil_r with (l:=os) in tgt_steps.
         inv tgt_steps. exists (l, (add o 1), r, m, sk, ms). 
-        (*unfold wf_dir in wfds. rewrite Forall_forall in wfds. simpl in wfds.*)
         assert (ds = [] /\ os = []).
-        { inv H12. inv H11; clarify. ss. rewrite app_nil_r in H6, H7. auto. }
-        des; subst. simpl in H6, H7. eapply app_eq_nil in H6, H7. des; subst.
+        { inv H8. inv H7; clarify. ss. rewrite app_nil_r in H1, H2. auto. }
+        des; subst. simpl in H1, H2. eapply app_eq_nil in H1, H2. des; subst.
         split.
-        - econs. auto.
-        - inv H12. inv H11; clarify.
+        - econs. unfold fetch. cbn. replace (fst (l, o)) with l in Hfst by auto.
+          rewrite Hfst. assumption.
+        - inv H8. inv H7; clarify.
           econs; eauto.
-          { unfold pc_sync. cbn. rewrite Hfst. 
+          { unfold pc_sync. cbn. replace (fst (l, o)) with l in Hfst by auto. rewrite Hfst. 
             assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
             { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ skip }}>); clarify.
               rewrite Forall_forall in H0. specialize (H0 iblk). 
-              specialize (nth_error_In (b :: bs) sl Hfst); intros.
-              apply (H0 H2).
+              specialize (nth_error_In (b :: bs) l Hfst); intros.
+              apply H0 in H1. assumption.
             }
-            destruct H2 as (i' & H2). rewrite H2.
+            destruct H1 as (i' & H1). rewrite H1.
             assert (forall n, (add n 1) = S n). { lia. }
-            specialize (H5 o). rewrite H5.
+            specialize (H4 o). rewrite H4. replace (snd (l, o)) with o in Hsnd by auto.
             specialize (firstnth_error (fst iblk) o <{{ skip }}> Hsnd) as ->.
-            rewrite fold_left_app. cbn.
-            repeat f_equal.  
-            assert ((add (o + fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc)
-                      (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) 1) = 
-                    (S ((o + fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc)
-                      (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0))) ) ). { lia. }
-            rewrite H6. auto.
+            rewrite fold_left_app. cbn. 
+            unfold pc_sync in Hpcsync. replace (fst (l, o)) with l in Hpcsync by auto. rewrite Hfst in Hpcsync.
+            replace (snd (l, o)) with o in Hpcsync by auto. rewrite Hsnd in Hpcsync. injection Hpcsync; intros.
+            rewrite H6. unfold cptr. repeat f_equal. rewrite H5. 
+            lia.
           }
-          { econs; eauto. intros. destruct H2. unfold TotalMap.t_apply, r_sync. rewrite t_update_neq; auto. }
+          { econs; eauto. intros. destruct H2. unfold TotalMap.t_apply, r_sync. rewrite t_update_neq; auto.
+            destruct H1. rewrite <- String.eqb_neq in H1. rewrite String.eqb_sym in H1. rewrite String.eqb_neq in H1.
+            assumption.
+          }
       }
       { (* x := e *) 
         assert (si = <{{ x := e }}>).
