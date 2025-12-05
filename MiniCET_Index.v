@@ -1235,7 +1235,14 @@ Proof.
       { instantiate (2:= 0). ss. }
       des_ifs.
       { unfold MiniCET.uslh_ret in Heq1. clarify.
-        admit. }
+        assert (prefix_offset a o 0 + 2 = o + blk_offset (blk, true) o).
+        { unfold blk_offset. ss. unfold prefix_offset.
+          rewrite <- fold_left_add_init. eapply offset_eq_aux; eauto.
+          exploit mapM_perserve_len; eauto. i. rewrite x1.
+          eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
+        rewrite <- H. rewrite add_comm.
+        replace (2 + prefix_offset a o 0) with (S (S (prefix_offset a o 0))) by lia.
+        rewrite add_0_r in x3. auto. }
       { unfold MiniCET.uslh_ret in Heq1. clarify.
         assert (prefix_offset a o 0 + 0 = o + blk_offset (blk, false) o).
         { rewrite add_0_r.
@@ -1244,7 +1251,11 @@ Proof.
           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
         rewrite <- H. auto. }
     + econs 2; ss. des_ifs_safe. f_equal.
-      admit.
+      assert (c' = Datatypes.length p + branch_in_prog_before p l).
+      { admit. }
+      assert (offset_branch_before (blk, is_proc) o = len_before uslh_inst blk o c').
+      { admit. }
+      lia.
   (* call *)
   - admit.
   (* ctarget *)
