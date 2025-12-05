@@ -339,15 +339,23 @@ Proof.
     destruct (f a x) eqn:X. ss.
   - extensionalities x. ss.
     unfold uslh_bind.
-    destruct (aM x) eqn:X; ss. admit. (* ez *)
+    destruct (aM x) eqn:X; ss. 
+    unfold app. rewrite rev_append_correct. 
+    rewrite app_nil_r. unfold rev. rewrite rev_append_correct.
+    rewrite app_nil_r. rewrite rev_involutive. reflexivity.
   - extensionalities x. ss.
     unfold uslh_bind, uslh_ret; ss.
     destruct (aM x) eqn:X; ss.
     destruct (f a (x + Datatypes.length p)) eqn:X1; ss.
     replace (x + Datatypes.length (app p p0)) with (x + Datatypes.length p + Datatypes.length p0).
-    2:{ admit. (* ez *) }
-    des_ifs. admit. (* ez *)
-Admitted.
+    2:{ unfold app. rewrite rev_append_correct.
+        unfold rev. rewrite rev_append_correct. rewrite app_nil_r.
+        rewrite rev_involutive. rewrite length_app. rewrite add_assoc. reflexivity.
+      }
+    des_ifs. unfold app, rev. do 7 rewrite rev_append_correct. 
+    do 3 rewrite app_nil_r. do 3 rewrite rev_involutive. rewrite app_assoc. 
+    reflexivity.
+Qed.
 
 Lemma mapT_id_cons_to_bind :
   forall {M : Type -> Type} {Monad_M : Monad M} {ML: MonadLaws Monad_M}
