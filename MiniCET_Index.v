@@ -1436,22 +1436,14 @@ Proof.
             rewrite H13. unfold cptr. repeat f_equal. rewrite H12. 
             lia.
           }
-          + econs; admit.
-            
-
-
-            (*     { econs.
-          - rewrite String.eqb_neq in H5, H6. assert (x <> msf /\ x <> callee). { split; auto. }
-            intros. unfold TotalMap.t_update. unfold t_update. unfold r_sync. unfold TotalMap.t_apply.
-            unfold TotalMap.t_update. unfold t_update. destruct H3. rewrite <- String.eqb_neq in H3.
-            rewrite String.eqb_sym in H3. rewrite H3. 
-            destruct (x =? x0) eqn:Hxx0; clarify. rewrite String.eqb_eq in Hxx0. 
-            f_equal. apply functional_extensionality. intros.
-            destruct (msf =? x1) eqn:Hmsf; clarify. rewrite String.eqb_eq in Hmsf.
-            rewrite <- Hmsf. simpl in ms_msf. admit.
-          - unfold TotalMap.t_apply, TotalMap.t_update, t_update. rewrite H6. 
-               unfold r_sync, TotalMap.t_update, t_update. auto.
-               }*)
+          + econs.
+            { intros. destruct H3. unfold TotalMap.t_apply, TotalMap.t_update, t_update, r_sync.
+              rewrite <- H9 in H8. apply eval_unused_update with (r:=r) (v:=(N (if ms then 1 else 0))) in H8.
+              rewrite H8. des_ifs; rewrite t_update_neq; auto.
+            }
+            { unfold TotalMap.t_apply, TotalMap.t_update, t_update. rewrite H7. 
+              unfold r_sync, TotalMap.t_update, t_update. auto.
+            }
       }
       { (* branch *) admit. }
       { (* jump *) 
