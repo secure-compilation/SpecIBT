@@ -1420,7 +1420,7 @@ Proof.
         - econs. unfold fetch. cbn. rewrite Hfst. assumption.
         - inv H17. inv H16; clarify. 
           econs; eauto.
-          + { unfold pc_sync. cbn. replace (fst (l, o)) with l in Hfst by auto. rewrite Hfst. 
+          + unfold pc_sync. cbn. replace (fst (l, o)) with l in Hfst by auto. rewrite Hfst. 
             assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
             { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ x0 := e0 }}>); clarify.
               rewrite Forall_forall in H0. specialize (nth_error_In (b :: bs) l Hfst); intros.
@@ -1435,7 +1435,6 @@ Proof.
             replace (snd (l, o)) with o in Hpcsync by auto. rewrite Hsnd in Hpcsync. injection Hpcsync; intros.
             rewrite H13. unfold cptr. repeat f_equal. rewrite H12. 
             lia.
-          }
           + econs.
             { intros. destruct H3. unfold TotalMap.t_apply, TotalMap.t_update, t_update, r_sync.
               rewrite <- H9 in H8. apply eval_unused_update with (r:=r) (v:=(N (if ms then 1 else 0))) in H8.
@@ -1447,33 +1446,42 @@ Proof.
       }
       { (* branch *) admit. }
       { (* jump *) 
-        assert (si = <{{ jump l0 }}>). { admit. }
-        rewrite H4 in *. injection n_steps; intros. rewrite <- H5 in tgt_steps.
-        rewrite <- H2 in *. clear cfg_sync.
+        apply src_simple_inv with (tp:=(uslh_prog p)) (tpc:=spc) in H1; clarify.
+        clear cfg_sync.
+        destruct si;
+        try (destruct H1 as (i' & H1); destruct H1 as (Hsome & Hmatch);
+        rewrite H3 in Hsome; injection Hsome; intros; rewrite <- H1 in *; inv Hmatch).
+        injection n_steps; intros. rewrite <- H1 in *.
+        clear Hsome. clear n_steps.
+        
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
         rewrite <- app_nil_r with (l:=os) in tgt_steps.
-        inv tgt_steps. exists (l0, 0, r, m, sk, ms).
+        inv tgt_steps. exists (l1, 0, r, m, sk, ms).
         assert (ds = [] /\ os = []).
-        { inv H12. inv H11; clarify. ss. rewrite app_nil_r in H6, H7. auto. } 
-        des; subst. simpl in H6, H7. eapply app_eq_nil in H6, H7. des; subst.
+        { inv H9. inv H8; clarify. ss. rewrite app_nil_r in H2, H4. auto. } 
+        des; subst. simpl in H2, H4. eapply app_eq_nil in H2, H4. des; subst.
         split.
-        - econs. auto.
-        - inv H12. inv H11; clarify.
+        - econs. unfold fetch. cbn. replace (fst (l, o)) with l in Hfst by auto.
+          rewrite Hfst. replace (snd (l, o)) with o in Hsnd by auto. assumption.
+        - inv H9. inv H8; clarify.
           simpl. econs; clarify. 
           { unfold pc_sync. cbn. unfold wf_block in H0. rewrite Forall_forall in H0.
-            specialize (nth_error_In (b :: bs) sl Hfst); intros. 
-            apply H0 in H2. destruct H2, H3. rewrite Forall_forall in H5. 
-            specialize (H5 <{{ jump l0 }}>). specialize (nth_error_In (fst iblk) o Hsnd); intros. 
-            apply H5 in H6. unfold wf_instr in H6. unfold wf_lbl in H6. 
-            destruct (nth_error (b :: bs) l0) eqn:Hlbl; clarify. rename p into jblk. 
-            destruct jblk as (jinsts & jbool) eqn:Hjblk. cbn. rewrite <- H6 in *. cbn. 
-            specialize (nth_error_In (b :: bs) l0 Hlbl); intros. apply H0 in H7. destruct H7, H8.
-            specialize (blk_not_empty_list (jinsts, false) H7); intros. 
-            simpl in H10. destruct jinsts; clarify.
+            replace (fst (l, o)) with l in Hfst by auto.
+            specialize (nth_error_In (b :: bs) l Hfst); intros. 
+            apply H0 in H1. destruct H1, H3. rewrite Forall_forall in H4. 
+            specialize (H4 <{{ jump l1 }}>). replace (snd (l, o)) with o in Hsnd by auto.
+            specialize (nth_error_In (fst iblk) o Hsnd); intros. 
+            apply H4 in H5. unfold wf_instr in H5. unfold wf_lbl in H5. 
+            destruct (nth_error (b :: bs) l1) eqn:Hlbl; clarify. rename p into jblk. 
+            destruct jblk as (jinsts & jbool) eqn:Hjblk. cbn. rewrite <- H5 in *. cbn. 
+            specialize (nth_error_In (b :: bs) l1 Hlbl); intros. apply H0 in H6. destruct H6, H7.
+            specialize (blk_not_empty_list (jinsts, false) H6); intros. 
+            simpl in H9. destruct jinsts; clarify.
           }
           { econs; clarify. intros. unfold r_sync, TotalMap.t_apply.
             destruct H2. rewrite t_update_neq; clarify. rewrite <- String.eqb_neq in *.
-            rewrite String.eqb_sym in H2. auto.
+            destruct H1.
+            rewrite String.eqb_sym in H1. auto.
           }
       }
       { (* load *) 
