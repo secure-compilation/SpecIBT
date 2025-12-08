@@ -1516,9 +1516,7 @@ Proof.
           destruct ms eqn:Hms.
           { (* ms = true *)
             rewrite Nat.eqb_refl in *. simpl. simpl in H12. injection H12; intros. 
-            rewrite <- H2 in *. clear H12. clear H2. 
-            
-            admit. 
+            rewrite <- H2 in *. clear H12. clear H2. reflexivity.
           }
           { cbn. unfold r_sync. f_equal. unfold unused_prog in unused_p_msf. 
             destruct (split (b :: bs)) as (blks, bools) eqn:Hsplit. rewrite Forall_forall in unused_p_msf.
@@ -1531,9 +1529,6 @@ Proof.
             symmetry. assumption.
           }
         }
-        (* { destruct ms; auto. rewrite Nat.eqb_refl in H12. cbn in H12. injection H12; intros.  *)
-        (*   symmetry. assumption. *)
-        (* } *)
         { unfold pc_sync. cbn. rewrite Hfst. rewrite Forall_forall in H0. 
           specialize (nth_error_In (b :: bs) sl Hfst); intros.
           apply H0 in H2. 
@@ -1579,8 +1574,17 @@ Proof.
         exists (((sl, o) + 1), r, (upd n0 m (eval r e)), sk, ms).
         specialize (rev_fetch (b :: bs) (sl, o) iblk <{{ store[a] <- e }}> Hfst Hsnd); intros.
         split.
-        { econs; eauto.
-          { admit. }
+        { econs; eauto. rewrite <- H12. f_equal. 
+          destruct ms eqn:Hms; clarify. cbn.
+          unfold r_sync. unfold unused_prog in unused_p_msf. 
+          destruct (split (b :: bs)) as (blks, bools) eqn:Hsplit. rewrite Forall_forall in unused_p_msf.
+          specialize (nth_error_In (b :: bs) sl Hfst); intros.
+          apply in_split_l in H2. rewrite Hsplit in H2. simpl in H2. apply unused_p_msf in H2.
+          unfold b_unused in H2. rewrite Forall_forall in H2.
+          specialize (nth_error_In (fst iblk) o Hsnd); intros.
+          apply H2 in H3. inv H3. assert (msf = "msf"). { auto. }
+          rewrite <- H3 in H4. apply eval_unused_update with (r:=r) (v:=(N 0)) in H4.
+          rewrite H4. reflexivity.
         }
         { assert (eval (r_sync r ms) e = eval r e).
           { unfold TotalMap.t_apply, r_sync in ms_msf.  
