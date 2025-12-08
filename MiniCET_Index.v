@@ -112,7 +112,7 @@ Inductive spec_eval_small_step (p:prog):
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
-      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n] <(( S_Running ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
+  p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n] <(( S_Running ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
   | SpecSMI_Store : forall pc r m sk e e' n ms,
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
@@ -129,7 +129,7 @@ Inductive spec_eval_small_step (p:prog):
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))>
   | SpecSMI_Ret : forall pc r m sk pc' ms,
-      p[[pc]] = Some <{{ ret }}> ->
+  p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
   | SpecSMI_Term : forall pc r m ms,
       p[[pc]] = Some <{{ ret }}> -> 
@@ -1287,18 +1287,12 @@ Proof.
     rewrite IHl. simpl. rewrite firstn_nil. simpl. rewrite sub_0_r. auto.
 Qed.
 
-(* Yonghyun's lemma, prove this *)
-(*
-   fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then acc + 1 else acc)
-    (l0 ++ [<{{ skip }}>]) (if Bool.eqb (snd iblk) true then 2 else 0) =
-  fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then acc + 1 else acc) l0
-    (if Bool.eqb (snd iblk) true then 2 else 0) *)
-
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle (p: prog) : forall ic1 sc1 sc2 n ds os,
   no_ct_prog p ->
   wf_prog p ->
-  wf_ds p (get_pc_sc sc1) ds ->
+  (* wf_ds p (get_pc_sc sc1) ds -> *)
+  wf_ds p (get_pc_ic ic1) ds ->
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
@@ -1444,18 +1438,45 @@ Proof.
               unfold r_sync, TotalMap.t_update, t_update. auto.
             }
       }
-      { (* branch *)  
+      { (* branch *)
         unfold pc_sync in Hpcsync. simpl in Hpcsync. rewrite Hipc in *.
         simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in Hpcsync. injection Hpcsync; intros. clear Hpcsync.
+        rewrite <- H5, <- H4 in *. 
         injection cfg_sync; intros. rewrite <- H6 in *. clear H6. clear cfg_sync. clear H2.
-        apply src_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; clarify; cycle 1.
-        { unfold pc_sync. simpl. rewrite Hfst, Hsnd. auto. }
+        apply src_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; auto; cycle 1.
+        { rewrite Hspc. unfold pc_sync. simpl. rewrite Hfst, Hsnd. auto. }
         destruct H1 as (i' & H1). destruct H1 as (Hsome & Hmatch). 
         rewrite H3 in Hsome. injection Hsome; intros. rewrite H1 in *. clear H1. clear Hsome.
+        unfold wf_dir in wfds. simpl in wfds. rewrite Hfst, Hsnd in wfds.
         inv Hmatch; clarify. unfold match_branch_target in LB. rewrite Hfst in LB. injection LB; intros.
         rewrite <- H1 in *. clear H1. clear LB. 
-        simpl in wfds. rewrite Forall_forall in wfds. admit.
-                
+        specialize (rev_fetch (b :: bs) (sl, o) iblk <{{ branch e to l0 }}> Hfst Hsnd); intros.
+        remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+        remember (o + fold_left f (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) as so.
+        unfold wf_dir in wfds.
+        simpl in ms_msf, Hsfst, Hssnd, Hfst, Hsnd.
+        rename H3 into tgt_fetch. rename H1 into src_fetch. 
+        inv tgt_steps; clarify. 
+        unfold wf_block in H0. rewrite Forall_forall in H0.
+        specialize (nth_error_In (b :: bs) sl Hfst); intros. 
+        apply H0 in H3. destruct H3, H4. rewrite Forall_forall in H5. 
+        specialize (H5 <{{ branch e to l0 }}>). 
+        specialize (nth_error_In (fst iblk) o Hsnd); intros. 
+        apply H5 in H6. unfold wf_instr in H6. unfold wf_lbl in H6. 
+        destruct H6. 
+        destruct (nth_error (b :: bs) l0) eqn:Hlbl; clarify. rename p into br_blk. 
+        destruct br_blk as (br_insts & br_bool) eqn:Hbr_blk. 
+        simpl in wfds. specialize (nth_error_In (b :: bs) l0 Hlbl); intros.
+        apply H0 in H8. destruct H8, H9. apply blk_not_empty_list in H8. simpl in H8.
+        destruct br_insts eqn:Hbri; clarify. simpl in wfds. rewrite Forall_forall in wfds.
+        rename l into rest.
+        destruct ms.
+        { (* speculating *) 
+          admit.
+        }
+        { (* not speculating *)
+          admit.
+        }
       }
       { (* jump *) 
         apply src_simple_inv with (tp:=(uslh_prog p)) (tpc:=spc) in H1; clarify.
