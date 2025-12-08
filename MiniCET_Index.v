@@ -44,21 +44,21 @@ Inductive seq_eval_small_step_inst (p:prog) :
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OBranch (not_zero n)] <(( S_Running (pc', r, m, sk) ))>
   | SSMI_Jump : forall l pc r m sk,
       p[[pc]] = Some <{{ jump l }}> ->
-p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running ((l,0), r, m, sk) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running ((l,0), r, m, sk) ))>
   | SSMI_Load : forall pc r m sk x e n v',
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OLoad n] <(( S_Running (pc+1, (x !-> v'; r), m, sk) ))>
   | SSMI_Store : forall pc r m sk e e' n,
-    p[[pc]] = Some <{{ store[e] <- e' }}> ->
+      p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
   | SSMI_Call : forall pc r m sk e l,
-  p[[pc]] = Some <{{ call e }}> ->
+      p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
-| SSMI_Ret : forall pc r m sk pc',
+  | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
   | SSMI_Term : forall pc r m,
@@ -181,17 +181,17 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( S_Running (((l,0), r, m, sk), ms) ))>
-  | ISMI_Load : forall pc r m sk x e n n' v' (ms : bool),
+  | ISMI_Load : forall pc r m sk x e n me v' (ms : bool),
       p[[pc]] = Some <{{ x <- load[e] }}> ->
-      to_nat (eval r e) = Some n ->
+      me = (if ms then (ANum 0) else e) ->
+      to_nat (eval r me) = Some n ->
       nth_error m n = Some v' ->
-      n' = (if ms then 0 else n) ->
-      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OLoad n'] <(( S_Running ((pc+1, (x !-> v'; r), m, sk), ms) ))>
-  | ISMI_Store : forall pc r m sk e e' e'' n (ms : bool),
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OLoad n] <(( S_Running ((pc+1, (x !-> v'; r), m, sk), ms) ))>
+  | ISMI_Store : forall pc r m sk e e' me n (ms : bool),
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
-      to_nat (eval r e) = Some n ->
-      e'' = (if ms then 0 else n) ->
-      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore e''] <(( S_Running ((pc+1, r, upd n m (eval r e'), sk), ms) ))>
+      me = (if ms then (ANum 0) else e) ->
+      to_nat (eval r me) = Some n ->
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore n] <(( S_Running ((pc+1, r, upd n m (eval r e'), sk), ms) ))>
   (* no fault if program goes to the beginning of some procedure block, whether or not it's the intended one *)
   | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool) blk,
       p[[pc]] = Some <{{ call e }}> ->
@@ -1531,9 +1531,9 @@ Proof.
             symmetry. assumption.
           }
         }
-        { destruct ms; auto. rewrite Nat.eqb_refl in H12. cbn in H12. injection H12; intros. 
-          symmetry. assumption.
-        }
+        (* { destruct ms; auto. rewrite Nat.eqb_refl in H12. cbn in H12. injection H12; intros.  *)
+        (*   symmetry. assumption. *)
+        (* } *)
         { unfold pc_sync. cbn. rewrite Hfst. rewrite Forall_forall in H0. 
           specialize (nth_error_In (b :: bs) sl Hfst); intros.
           apply H0 in H2. 
@@ -1581,9 +1581,6 @@ Proof.
         split.
         { econs; eauto.
           { admit. }
-          { destruct ms; auto. rewrite Nat.eqb_refl in H12. cbn in H12.
-            injection H12; intros. symmetry. assumption.
-          }
         }
         { assert (eval (r_sync r ms) e = eval r e).
           { unfold TotalMap.t_apply, r_sync in ms_msf.  
