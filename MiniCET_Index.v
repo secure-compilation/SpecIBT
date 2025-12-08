@@ -124,7 +124,7 @@ Inductive spec_eval_small_step (p:prog):
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
-      p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
+  p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   | SpecSMI_CTarget_F : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))>
@@ -1444,7 +1444,19 @@ Proof.
               unfold r_sync, TotalMap.t_update, t_update. auto.
             }
       }
-      { (* branch *) admit. }
+      { (* branch *)  
+        unfold pc_sync in Hpcsync. simpl in Hpcsync. rewrite Hipc in *.
+        simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in Hpcsync. injection Hpcsync; intros. clear Hpcsync.
+        injection cfg_sync; intros. rewrite <- H6 in *. clear H6. clear cfg_sync. clear H2.
+        apply src_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; clarify; cycle 1.
+        { unfold pc_sync. simpl. rewrite Hfst, Hsnd. auto. }
+        destruct H1 as (i' & H1). destruct H1 as (Hsome & Hmatch). 
+        rewrite H3 in Hsome. injection Hsome; intros. rewrite H1 in *. clear H1. clear Hsome.
+        inv Hmatch; clarify. unfold match_branch_target in LB. rewrite Hfst in LB. injection LB; intros.
+        rewrite <- H1 in *. clear H1. clear LB. 
+        simpl in wfds. rewrite Forall_forall in wfds. admit.
+                
+      }
       { (* jump *) 
         apply src_simple_inv with (tp:=(uslh_prog p)) (tpc:=spc) in H1; clarify.
         clear cfg_sync.
@@ -1498,10 +1510,14 @@ Proof.
         simpl in H12.
         exists (((sl, o) + 1), x !-> v'; r, m, sk, ms). 
         specialize (rev_fetch (b :: bs) (sl, o) iblk <{{ x <- load[a] }}> Hfst Hsnd); intros.
+        simpl in H12.
         split; econs; try econs; eauto.
-        { rewrite <- H12. destruct ms eqn:Hms.
-          { rewrite Nat.eqb_refl in *. simpl. simpl in H12. injection H12; intros. 
+        { rewrite <- H12. 
+          destruct ms eqn:Hms.
+          { (* ms = true *)
+            rewrite Nat.eqb_refl in *. simpl. simpl in H12. injection H12; intros. 
             rewrite <- H2 in *. clear H12. clear H2. 
+            
             admit. 
           }
           { cbn. unfold r_sync. f_equal. unfold unused_prog in unused_p_msf. 
