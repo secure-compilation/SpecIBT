@@ -1500,7 +1500,10 @@ Proof.
         specialize (rev_fetch (b :: bs) (sl, o) iblk <{{ x <- load[a] }}> Hfst Hsnd); intros.
         split; econs; try econs; eauto.
         { rewrite <- H12. destruct ms eqn:Hms.
-          { rewrite Nat.eqb_refl. cbn. admit. }
+          { rewrite Nat.eqb_refl in *. simpl. simpl in H12. injection H12; intros. 
+            rewrite <- H2 in *. clear H12. clear H2. 
+            admit. 
+          }
           { cbn. unfold r_sync. f_equal. unfold unused_prog in unused_p_msf. 
             destruct (split (b :: bs)) as (blks, bools) eqn:Hsplit. rewrite Forall_forall in unused_p_msf.
             specialize (nth_error_In (b :: bs) sl Hfst); intros.
@@ -1566,56 +1569,40 @@ Proof.
             injection H12; intros. symmetry. assumption.
           }
         }
-        { Fail econs. } 
-        (* I did the stuff below to get around this but I'd like to understand why it's failing. *)
-
-        (* eapply ISMI_Store with (r:=r) (m:=m) (sk:=sk) (n:=n0) (ms:=ms) in H1; eauto.
-        { split.
-          { specialize (rev_fetch (b :: bs) (sl, o) iblk <{{ store[a] <- e }}> Hfst Hsnd); intros.
-            econs; eauto.
-            { admit. }
-            { destruct ms; auto. rewrite Nat.eqb_refl in H12. cbn in H12.
-              injection H12; intros. symmetry. assumption.
+        { assert (eval (r_sync r ms) e = eval r e).
+          { unfold TotalMap.t_apply, r_sync in ms_msf.  
+            unfold r_sync. unfold unused_prog in unused_p_msf. 
+            destruct (split (b :: bs)) as (blks, bools) eqn:Hsplit. rewrite Forall_forall in unused_p_msf.
+            specialize (nth_error_In (b :: bs) sl Hfst); intros.
+            apply in_split_l in H2. rewrite Hsplit in H2. simpl in H2. apply unused_p_msf in H2.
+            unfold b_unused in H2. rewrite Forall_forall in H2.
+            specialize (nth_error_In (fst iblk) o Hsnd); intros.
+            apply H2 in H3. inv H3. assert (msf = "msf"). { auto. }
+            rewrite <- H3 in H5. apply eval_unused_update with (r:=r) (v:=(N (if ms then 1 else 0))) in H5. 
+            assumption.
+          }
+          rewrite H2. econs; eauto.
+          { unfold pc_sync. cbn. rewrite Hfst. rewrite Forall_forall in H0. 
+          specialize (nth_error_In (b :: bs) sl Hfst); intros.
+          apply H0 in H3. 
+          assert (~ (is_terminator <{{ store[a] <- e }}>)).
+          { unfold not; intros. inv H4. }
+          specialize (block_always_terminator (b :: bs) iblk o <{{ store[a] <- e }}> H3 Hsnd H4); intros.
+          destruct H5 as (i' & H5). destruct (nth_error (fst iblk) (add o 1)); clarify.
+          assert (forall n, (add n 1) = (S n)). { lia. }
+          unfold cptr. remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+          remember (if Bool.eqb (snd iblk) true then 2 else 0) as prc.
+          rewrite H5. specialize (firstnth_error (fst iblk) o <{{ store[a] <- e }}> Hsnd); intros.
+          rewrite H6. rewrite fold_left_app. simpl. do 2 f_equal. rewrite <- H5.
+          do 2 f_equal. rewrite Heqf. cbn. reflexivity.
+          }
+          { econs; eauto.
+            { intros. unfold TotalMap.t_apply, r_sync, TotalMap.t_update, t_update.
+              destruct H3. rewrite <- String.eqb_neq in H3. rewrite String.eqb_sym in H3. rewrite H3.
+              reflexivity.
             }
           }
-          { assert (eval (r_sync r ms) e = eval r e).
-            { unfold r_sync. apply eval_unused_update. 
-              unfold unused_prog in unused_p_msf. 
-              destruct (split (b :: bs)) as (blks, bools) eqn:Hsplit. rewrite Forall_forall in unused_p_msf.
-              specialize (nth_error_In (b :: bs) sl Hfst); intros.
-              apply in_split_l in H2. rewrite Hsplit in H2. simpl in H2. apply unused_p_msf in H2.
-              unfold b_unused in H2. rewrite Forall_forall in H2.
-              specialize (nth_error_In (fst iblk) o Hsnd); intros.
-              apply H2 in H3. inv H3. assert (msf = "msf"). { auto. }
-              rewrite <- H3 in H5. assumption.
-            }
-            rewrite H2. econs; eauto.
-            { unfold pc_sync. cbn. rewrite Hfst. rewrite Forall_forall in H0. 
-              specialize (nth_error_In (b :: bs) sl Hfst); intros.
-              apply H0 in H3. 
-              assert (~ (is_terminator <{{ store[a] <- e }}>)).
-              { unfold not; intros. inv H4. }
-              specialize (block_always_terminator (b :: bs) iblk o <{{ store[a] <- e }}> H3 Hsnd H4); intros.
-              destruct H5 as (i' & H5). destruct (nth_error (fst iblk) (add o 1)); clarify.
-              assert (forall n, (add n 1) = (S n)). { lia. }
-              unfold cptr. remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
-              remember (if Bool.eqb (snd iblk) true then 2 else 0) as prc.
-              rewrite H5. specialize (firstnth_error (fst iblk) o <{{ store[a] <- e }}> Hsnd); intros.
-              rewrite H6. rewrite fold_left_app. simpl. do 2 f_equal. rewrite <- H5.
-              do 2 f_equal. rewrite Heqf. cbn. reflexivity. 
-            }
-            { econs.
-              { intros. unfold TotalMap.t_apply, r_sync, TotalMap.t_update, t_update.
-                destruct H3. rewrite <- String.eqb_neq in H3. rewrite String.eqb_sym in H3. rewrite H3.
-                reflexivity.
-              }
-              { unfold TotalMap.t_apply, r_sync, TotalMap.t_update, t_update. rewrite String.eqb_refl.
-                reflexivity.
-              }
-            }
-          }
-        }
-           { admit. } *)
+        } 
       }
       { (* call *)  
         unfold pc_sync in Hpcsync. simpl in Hpcsync.
