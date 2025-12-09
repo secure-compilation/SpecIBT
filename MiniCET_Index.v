@@ -1714,11 +1714,223 @@ Proof.
    p |- <(( S_Running (pc, r2, m2, stk, false, false) ))> -->*_ds^^ os2^^n <(( c2 ))> ->
      os1 = os2.  
 
+ Definition ideal_same_obs p pc r1 r2 m1 m2 stk : Prop := 
+   forall ds os1 os2 c1 c2, 
+   p |- <(( S_Running (pc, r1, m1, stk, false) ))> -->i*_ds^^os1 <(( c1 ))> -> 
+     p |- <(( S_Running (pc, r2, m2, stk, false) ))> -->i*_ds^^ os2 <(( c2 ))> -> 
+     os1 = os2.  
+
  Definition relative_secure (p:prog) (trans1 : prog -> prog)
    (r1 r2 : reg) (m1 m2 : mem): Prop := 
    seq_same_obs p (0,0) r1 r2 m1 m2 [] ->
    spec_same_obs (trans1 p) (0,0) r1 r2 m1 m2 []. 
 
  (** * Ultimate Speculative Load Hardening *) 
+
+ Require Import Stdlib.Program.Equality.
+
+Lemma ideal_step_one_or_no_directive p pc r m stk b ds os c:
+  p |- <(( S_Running (pc, r, m, stk, b) ))> -->i_ ds ^^ os <(( c ))> ->
+      ds = [] \/ exists d, ds = [d].
+Proof.
+  inversion 1; subst; try now left.
+  all: right; eexists; reflexivity.
+Qed.
+
+Lemma ideal_pc_determines_dir_obs_count p pc r1 r2 m1 m2 stk b ds1 ds2 os1 os2 c1 c2:
+  p |- <(( S_Running (pc, r1, m1, stk, b) ))> -->i_ ds1 ^^ os1 <(( c1 ))> ->
+  p |- <(( S_Running (pc, r2, m2, stk, b) ))> -->i_ ds2 ^^ os2 <(( c2 ))> ->
+      Datatypes.length ds1 = Datatypes.length ds2 /\ Datatypes.length os1 = Datatypes.length os2.
+Proof.
+  inversion 1; inversion 1; subst; split; try reflexivity.
+  all: try congruence.
+Qed.
+
+
+Lemma ideal_eval_multi_exec_split: forall p pc r1 r2 m1 m2 stk ds os1 os2 c1 c2,
+  seq_same_obs p pc r1 r2 m1 m2 stk ->
+  p |- <(( S_Running (pc, r1, m1, stk, false) ))> -->i*_ ds ^^ os1 <(( c1 ))> ->
+      p |- <(( S_Running (pc, r2, m2, stk, false) ))> -->i*_ ds ^^ os2 <(( c2 ))> ->
+          exists pc' r1' r2' m1' m2' stk' ds' os1' os2',
+          p |- <(( S_Running (pc, r1, m1, stk, false) ))> -->i*_ ds' ^^ os1' <(( S_Running (pc', r1', m1', stk', false) ))> /\
+              p |- <(( S_Running (pc, r2, m2, stk, false) ))> -->i*_ ds' ^^ os2' <(( S_Running (pc', r2', m2', stk', false) ))> /\
+                (ds' = ds /\ os1' = os1 /\ os2' = os2
+                /\ (c1 = S_Running (pc', r1', m1', stk', false) \/ c1 = S_Term /\ p |- <(( S_Running (pc', r1', m1', stk', false) ))> -->i_ [] ^^ [] <(( S_Term ))>)
+                /\ (c2 = S_Running (pc', r2', m2', stk', false) \/ c2 = S_Term /\ p |- <(( S_Running (pc', r2', m2', stk', false) ))> -->i_ [] ^^ [] <(( S_Term))>)
+                \/ exists ds'' os1'' os2'', 
+                ds = ds' ++ ds'' /\ os1 = os1' ++ os1'' /\ os2 = os2' ++ os2'' /\
+                  (
+                  c1 = S_Fault /\ c2 = S_Fault /\ p |- <(( S_Running (pc', r1', m1', stk', false) ))> -->i_ ds'' ^^ os1'' <(( S_Fault ))> /\ p |- <(( S_Running (pc', r2', m2', stk', false) ))> -->i_ ds'' ^^os2'' <(( S_Fault))> 
+                      \/
+                  exists pc'' r1'' r2'' m1'' m2'' stk'' d ds''' o1 os1''' o2 os2''',
+                  ds'' = d :: ds''' /\ os1'' = o1 :: os1''' /\ os2'' = o2 :: os2''' /\
+                  p |- <(( S_Running (pc', r1', m1', stk', false) ))> -->i_ [d] ^^ [o1] <(( S_Running (pc'', r1'', m1'', stk'', true) ))> /\ p |- <(( S_Running (pc'', r1'', m1'', stk'', true) ))> -->i*_ ds''' ^^ os1''' <(( c1 ))> /\
+                  p |- <(( S_Running (pc', r2', m2', stk', false) ))> -->i_ [d] ^^ [o2] <(( S_Running (pc'', r2'', m2'', stk'', true) ))> /\ p |- <(( S_Running (pc'', r2'', m2'', stk'', true) ))> -->i*_ ds''' ^^ os2''' <(( c2 ))>
+                  )
+                ).
+Proof.
+  intros until c2. intros Hseq_same Hexec1 Hexec2.
+  dependent induction Hexec1 generalizing pc r1 r2 m1 m2 stk os2 Hseq_same; dependent destruction Hexec2.
+  - repeat eexists. 1, 2: eapply multi_ideal_inst_refl.
+    left. repeat split; try left; reflexivity.
+  - apply app_eq_nil in x as [-> ->].
+    repeat eexists.
+    1: eapply multi_ideal_inst_refl.
+    2: left; repeat split.
+    2: now left.
+    all: admit. (* should be handled in its own lemma *)
+  - symmetry in x. apply app_eq_nil in x as [-> ->].
+    repeat eexists.
+    2: eapply multi_ideal_inst_refl.
+    2: left; repeat split.
+    3: now left.
+    all: admit. (* see above *)
+  - inversion H; inversion H0; try congruence; subst; cbn in *; subst.
+    (* 
+       Decided that (at least for now) it would likely be easier to handle all cases directly, instead of performing a case distinction on the type of directive consumed.
+    *)
+    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
+      destruct H3 as [H3 | H3].
+    * repeat destruct H3 as [-> H3].
+      repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
+      all: change ds2 with ([] ++ ds2). 
+      1: change os0 with ([] ++ os0).
+      2: change os3 with ([] ++ os3).
+      all: econstructor; eassumption.
+    * repeat eexists. 3: right; eassumption.
+      all: change x5 with ([] ++ x5).  (* TODO: this is very fragile. it would be much better to have a consistent name for these *)
+      1: change x6 with ([] ++ x6).
+      2: change x7 with ([] ++ x7).
+      all: econstructor; eassumption.
+    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
+      destruct H3 as [H3 | H3].
+    * repeat destruct H3 as [-> H3].
+      repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
+      all: change ds2 with ([] ++ ds2). 
+      1: change os0 with ([] ++ os0).
+      2: change os3 with ([] ++ os3).
+      all: econstructor; eassumption.
+    * repeat eexists. 3: right; eassumption.
+      all: change x7 with ([] ++ x7). 
+      1: change x8 with ([] ++ x8).
+      2: change x9 with ([] ++ x9).
+      all: econstructor; eassumption.
+    + rewrite H6 in H20. inv H20. inv x.
+      assert (not_zero n = not_zero n0).
+      {
+        clear Hexec1 IHHexec1 Hexec2.
+        unfold seq_same_obs in Hseq_same.
+        specialize (Hseq_same ([OBranch (not_zero n)]) ([OBranch (not_zero n0)])).
+        edestruct Hseq_same.
+        - rewrite <- app_nil_r. econstructor. 2: constructor.
+          eapply SSMI_Branch. 1: eassumption. reflexivity.
+        - rewrite <- app_nil_r. econstructor. 2: constructor.
+          eapply SSMI_Branch. 1: eassumption. reflexivity.
+        - destruct H1 as [? H1]. now inv H1.
+        - destruct H1 as [? H1]. now inv H1.
+      }
+      rewrite H1 in *. clear H1.
+      destruct (Bool.eqb (not_zero n0) b').
+    * cbn in *. 
+      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit.
+      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
+      repeat eexists.
+      1,2: change (DBranch b' :: ds2) with ([DBranch b'] ++ ds2). 
+      1: change (OBranch (not_zero n0) :: os0) with ([OBranch (not_zero n0)] ++ os0).
+      2: change (OBranch (not_zero n0) :: os3) with ([OBranch (not_zero n0)] ++ os3).
+      1,2: econstructor 2; eassumption.
+      destruct H3 as [H3 | H3].
+      -- repeat destruct H3 as [-> H3]. left. repeat split; try reflexivity; apply H3.
+      -- right. repeat destruct H3 as [? H3]. subst.
+         repeat eexists. exact H3.
+    * repeat eexists. 1, 2: econstructor.
+      right. repeat eexists.
+      right.
+      repeat eexists. all: eassumption.
+    + rewrite H9 in H18. inv H18.
+      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
+      destruct H3 as [H3 | H3].
+    * repeat destruct H3 as [-> H3].
+      repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
+      all: change ds2 with ([] ++ ds2). 
+      1: change os0 with ([] ++ os0).
+      2: change os3 with ([] ++ os3).
+      all: econstructor; eassumption.
+    * repeat eexists. 3: right; eassumption.
+      all: change x5 with ([] ++ x5). 
+      1: change x6 with ([] ++ x6).
+      2: change x7 with ([] ++ x7).
+      all: econstructor; eassumption.
+    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
+      destruct H3 as [H3 | H3].
+    * repeat destruct H3 as [-> H3].
+      repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
+      all: change ds2 with ([] ++ ds2). 
+      1: change (OLoad n :: os0) with ([OLoad n] ++ os0).
+      2: change (OLoad n0 :: os3) with ([OLoad n0] ++ os3).
+      all: econstructor; eassumption.
+    * repeat eexists. 3: {
+      right. repeat destruct H3 as [? H3]. subst. repeat eexists. 3: eassumption. 1, 2: rewrite app_comm_cons; reflexivity.
+    }
+      all: change x7 with ([] ++ x7). 
+      1: change (OLoad n :: x8) with ([OLoad n] ++ x8).
+      2: change (OLoad n0 :: x9) with ([OLoad n0] ++ x9).
+      all: econstructor; eassumption.
+    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
+      destruct H3 as [H3 | H3].
+    * repeat destruct H3 as [-> H3].
+      repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
+      all: change ds2 with ([] ++ ds2). 
+      1: change (OStore n :: os0) with ([OStore n] ++ os0).
+      2: change (OStore n0 :: os3) with ([OStore n0] ++ os3).
+      all: econstructor; eassumption.
+    * repeat eexists. 3: {
+      right. repeat destruct H3 as [? H3]. subst. repeat eexists. 3: eassumption. 1, 2: rewrite app_comm_cons; reflexivity.
+    }
+      all: change x5 with ([] ++ x5). 
+      1: change (OStore n :: x6) with ([OStore n] ++ x6).
+      2: change (OStore n0 :: x7) with ([OStore n0] ++ x7).
+      all: econstructor; eassumption.
+    + admit. (* Call case *)
+    + admit. (* Call case *)
+    + admit. (* Call case *)
+    + admit. (* Call case *)
+    + (* ret case (non-term) *)
+      inv H14.
+      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
+      destruct H3 as [H3 | H3].
+    * repeat destruct H3 as [-> H3].
+      repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
+      all: change ds2 with ([] ++ ds2). 
+      1: change os0 with ([] ++ os0).
+      2: change os3 with ([] ++ os3).
+      all: econstructor; eassumption.
+    * repeat eexists. 3: right; eassumption.
+      all: change x5 with ([] ++ x5).  (* TODO: this is very fragile. it would be much better to have a consistent name for these *)
+      1: change x6 with ([] ++ x6).
+      2: change x7 with ([] ++ x7).
+      all: econstructor; eassumption.
+    + (* ret case (term) *)
+      repeat eexists.
+      1, 2: econstructor.
+      left. inv Hexec1. 2: inv H1. (* S_Term can't step *)
+      inv Hexec2. 2: inv H2.
+      repeat split; try reflexivity. all: right; split; [reflexivity |].
+      all: assumption.
+Admitted.
+
+
+Lemma ideal_eval_relative_secure: forall p pc r1 r2 m1 m2 stk,
+    seq_same_obs p pc r1 r2 m1 m2 stk ->
+    ideal_same_obs p pc r1 r2 m1 m2 stk.
+Proof.
+    unfold ideal_same_obs. intros p pc r1 r2 m1 m2 stk Hsso ds os1 os2 c1 c2 Hexec1 Hexec2.
+Admitted.
 
 
