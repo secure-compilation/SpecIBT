@@ -39,6 +39,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
       p[[pc]] = Some <{{ x := e }}> ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running (pc+1, (x !-> (eval r e); r), m, sk) ))>
   | SSMI_Branch : forall pc pc' r m sk e n l,
+      p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
       pc' = (if (not_zero n) then (l,0) else pc+1) ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OBranch (not_zero n)] <(( S_Running (pc', r, m, sk) ))>
@@ -1745,7 +1746,75 @@ Proof.
   inversion 1; inversion 1; subst; split; try reflexivity.
   all: try congruence.
 Qed.
+Lemma seq_pc_determines_obs_count p pc r1 r2 m1 m2 stk os1 os2 c1 c2:
+  p |- <(( S_Running (pc, r1, m1, stk) ))> -->^ os1 <(( c1 ))> ->
+  p |- <(( S_Running (pc, r2, m2, stk) ))> -->^ os2 <(( c2 ))> ->
+      Datatypes.length os1 = Datatypes.length os2.
+Proof.
+  inversion 1 ; inversion 1; try congruence. all: reflexivity.
+Qed.
 
+Lemma app_eq_len_tail_eq A (l1a l1b  l2a l2b: list A):
+    l1a ++ l1b = l2a ++ l2b ->
+    Datatypes.length l1a = Datatypes.length l2a ->
+    l1b = l2b.
+Proof.
+    intros Heq Hlen.
+    induction l1a in l2a, Heq, Hlen |- *; destruct l2a.
+    - assumption.
+    - cbn in *. congruence.
+    - cbn in *. congruence.
+    - cbn in Heq. inv Heq.
+      eapply IHl1a. 1: eassumption.
+      cbn in Hlen. now inv Hlen.
+Qed.
+      
+
+Lemma seq_steps_preserves_seq_same_obs p pc r1 r2 m1 m2 stk os1 os2 pc' r1' r2' m1' m2' stk':
+    seq_same_obs p pc r1 r2 m1 m2 stk ->
+    p |- <(( S_Running (pc, r1, m1, stk) ))> -->^ os1 <(( S_Running (pc', r1', m1', stk') ))> ->
+    p |- <(( S_Running (pc, r2, m2, stk) ))> -->^ os2 <(( S_Running (pc', r2', m2', stk') ))> ->
+    seq_same_obs p pc' r1' r2' m1' m2' stk'.
+Proof.
+    intros Hseq_same_obs Hstep1 Hstep2.
+    unfold seq_same_obs.
+    intros os1' os2' c1 c2 Hmulti1 Hmulti2.
+    eapply multi_seq_inst_trans in Hmulti1, Hmulti2. 2,3: eassumption.
+    specialize (Hseq_same_obs _ _ _ _ Hmulti1 Hmulti2).
+    destruct Hseq_same_obs as [ [or1 H] | [or2 H] ].
+    - left. exists or1. rewrite <- app_assoc in H.
+      eapply app_eq_len_tail_eq. 1: eassumption.
+      eapply seq_pc_determines_obs_count; eassumption.
+    - right. exists or2. rewrite <- app_assoc in H.
+      eapply app_eq_len_tail_eq. 1: eassumption.
+      eapply seq_pc_determines_obs_count; eassumption.
+Qed.
+
+Lemma ideal_nonspec_seq p pc r m stk ds os pc' r' m' stk':
+    p |- <(( S_Running (pc, r, m, stk, false) ))> -->i_ ds ^^ os <(( S_Running (pc', r', m', stk', false) ))> ->
+    p |- <(( S_Running (pc, r, m, stk) ))> -->^ os <(( S_Running (pc', r', m', stk') ))>.
+Proof.
+    inversion 1; subst; try (econstructor; eassumption).
+    - eapply SSMI_Branch. 1,2: eassumption.
+      cbn in H17. apply (f_equal negb) in H17. cbn in H17.
+      rewrite negb_involutive in H17.
+      symmetry in H17. apply eqb_prop in H17 as ->. reflexivity.
+    - cbn in H15. apply (f_equal negb) in H15. cbn in H15. rewrite negb_involutive in H15.
+      symmetry in H15. rewrite Nat.eqb_eq in H15.
+      destruct pc'; cbn in *; subst.
+      econstructor; eassumption.
+Qed.
+
+Lemma ideal_nonspec_step_preserves_seq_same_obs p pc r1 r2 m1 m2 stk ds os1 os2 pc' r1' r2' m1' m2' stk':
+    seq_same_obs p pc r1 r2 m1 m2 stk ->
+    p |- <(( S_Running (pc, r1, m1, stk, false ) ))> -->i_ ds ^^ os1 <(( S_Running (pc', r1', m1', stk', false) ))> ->
+            p |- <(( S_Running (pc, r2, m2, stk, false ) ))> -->i_ ds ^^ os2 <(( S_Running (pc', r2', m2', stk', false) ))> ->
+    seq_same_obs p pc' r1' r2' m1' m2' stk'.
+Proof.
+    intros Hsso Hst1 Hst2.
+    eapply seq_steps_preserves_seq_same_obs. 1: eassumption.
+    all: eapply ideal_nonspec_seq; eassumption.
+Qed.
 
 Lemma ideal_eval_multi_exec_split: forall p pc r1 r2 m1 m2 stk ds os1 os2 c1 c2,
   seq_same_obs p pc r1 r2 m1 m2 stk ->
@@ -1789,7 +1858,7 @@ Proof.
     (* 
        Decided that (at least for now) it would likely be easier to handle all cases directly, instead of performing a case distinction on the type of directive consumed.
     *)
-    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
@@ -1803,7 +1872,7 @@ Proof.
       1: change x6 with ([] ++ x6).
       2: change x7 with ([] ++ x7).
       all: econstructor; eassumption.
-    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
@@ -1825,16 +1894,16 @@ Proof.
         specialize (Hseq_same ([OBranch (not_zero n)]) ([OBranch (not_zero n0)])).
         edestruct Hseq_same.
         - rewrite <- app_nil_r. econstructor. 2: constructor.
-          eapply SSMI_Branch. 1: eassumption. reflexivity.
+          eapply SSMI_Branch. 1,2: eassumption. reflexivity.
         - rewrite <- app_nil_r. econstructor. 2: constructor.
-          eapply SSMI_Branch. 1: eassumption. reflexivity.
+          eapply SSMI_Branch. 1,2: eassumption. reflexivity.
         - destruct H1 as [? H1]. now inv H1.
         - destruct H1 as [? H1]. now inv H1.
       }
       rewrite H1 in *. clear H1.
       destruct (Bool.eqb (not_zero n0) b').
     * cbn in *. 
-      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit.
+      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
       repeat eexists.
       1,2: change (DBranch b' :: ds2) with ([DBranch b'] ++ ds2). 
@@ -1850,7 +1919,7 @@ Proof.
       right.
       repeat eexists. all: eassumption.
     + rewrite H9 in H18. inv H18.
-      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
@@ -1864,7 +1933,7 @@ Proof.
       1: change x6 with ([] ++ x6).
       2: change x7 with ([] ++ x7).
       all: econstructor; eassumption.
-    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
@@ -1880,7 +1949,7 @@ Proof.
       1: change (OLoad n :: x8) with ([OLoad n] ++ x8).
       2: change (OLoad n0 :: x9) with ([OLoad n0] ++ x9).
       all: econstructor; eassumption.
-    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
@@ -1902,7 +1971,7 @@ Proof.
     + admit. (* Call case *)
     + (* ret case (non-term) *)
       inv H14.
-      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: admit. (* lemma needed *)
+      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
