@@ -1455,7 +1455,7 @@ Proof.
         remember (o + fold_left f (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) as so.
         unfold wf_dir in wfds.
         simpl in ms_msf, Hsfst, Hssnd, Hfst, Hsnd.
-        rename H3 into tgt_fetch. rename H1 into src_fetch. 
+        rename H3 into tgt_fetch. rename H1 into src_fetch.
         inv tgt_steps; clarify. 
         unfold wf_block in H0. rewrite Forall_forall in H0.
         specialize (nth_error_In (b :: bs) sl Hfst); intros. 
@@ -1469,14 +1469,10 @@ Proof.
         simpl in wfds. specialize (nth_error_In (b :: bs) l0 Hlbl); intros.
         apply H0 in H8. destruct H8, H9. apply blk_not_empty_list in H8. simpl in H8.
         destruct br_insts eqn:Hbri; clarify. simpl in wfds. rewrite Forall_forall in wfds.
-        rename l into rest.
-        destruct ms.
-        { (* speculating *) 
-          admit.
-        }
-        { (* not speculating *)
-          admit.
-        }
+        rename l into rest. simpl in H10.
+        unfold branch_in_prog_before in *. unfold offset_branch_before in *. 
+        unfold _offset_branch_before in *. unfold _branch_in_block in *.
+        simpl in Hssnd, tgt_fetch. admit.
       }
       { (* jump *) 
         apply src_simple_inv with (tp:=(uslh_prog p)) (tpc:=spc) in H1; clarify.
