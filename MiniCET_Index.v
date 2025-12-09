@@ -1965,10 +1965,52 @@ Proof.
       1: change (OStore n :: x6) with ([OStore n] ++ x6).
       2: change (OStore n0 :: x7) with ([OStore n0] ++ x7).
       all: econstructor; eassumption.
-    + admit. (* Call case *)
-    + admit. (* Call case *)
-    + admit. (* Call case *)
-    + admit. (* Call case *)
+    + (* Call case *)
+      inv x. rewrite H21 in H6. inv H6.
+      assert (l = l0).
+      {
+        clear Hexec1 IHHexec1 Hexec2.
+        unfold seq_same_obs in Hseq_same.
+        specialize (Hseq_same ([OCall l]) ([OCall l0])).
+        edestruct Hseq_same.
+        - rewrite <- app_nil_r. econstructor. 2: constructor.
+          eapply SSMI_Call. all: eassumption.
+        - rewrite <- app_nil_r. econstructor. 2: constructor.
+          eapply SSMI_Call. all: eassumption.
+        - destruct H1 as [? H1]. now inv H1.
+        - destruct H1 as [? H1]. now inv H1.
+      }
+      rewrite <- H1 in *.
+      destruct (fst pc' =? l)%nat.
+    * cbn in *.
+      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
+      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?).
+      repeat eexists.
+      1,2: change (DCall pc' :: ds2) with ([DCall pc'] ++ ds2). 
+      1: change (OCall l :: os0) with ([OCall l] ++ os0).
+      2: change (OCall l :: os3) with ([OCall l] ++ os3).
+      1,2: econstructor 2. 2: exact H2. 1: exact H. 2: exact H3. 1: exact H0.
+      destruct H4 as [H4 | H4].
+      -- repeat destruct H4 as [-> H4]. left. repeat split ; try reflexivity;  apply H4.
+      -- right. repeat destruct H4 as [? H4]. subst.
+         repeat eexists. exact H4.
+    * repeat eexists. 1, 2: econstructor.
+      right. repeat eexists. right.
+      repeat eexists. all: eassumption.
+    + (* Call case, only one fault *)
+      inv x. apply H27 in H13 as [H13 | H13].
+      all: congruence.
+    + (* Call case, only one fault *)
+      inv x. apply H12 in H25 as [H25 | H25].
+      all: congruence.
+    + (* Call case - both fault *)
+      repeat eexists. 1, 2: constructor.
+      right. repeat eexists.
+      left.
+      inv Hexec1. 2: inv H1.
+      inv Hexec2. 2: inv H1.
+      repeat split; try reflexivity. 1: assumption.
+      inv x. assumption.
     + (* ret case (non-term) *)
       inv H14.
       eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
