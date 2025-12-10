@@ -801,7 +801,9 @@ Variant match_inst_uslh (p: prog) (pc: cptr) : inst -> inst -> Prop :=
   match_inst_uslh p pc i i'
 | uslh_branch e e' l l'
   (COND: e' = <{{ (msf = 1) ? 0 : e }}>)
-  (LB: match_branch_target p pc = Some l') :
+  (LB: match_branch_target p pc = Some l')
+  (IN: nth_error (uslh_prog p) l' = Some ([<{{ msf := (~ e') ? 1 : msf }}>; <{{ jump l }}>], false))
+  :
   match_inst_uslh p pc (IBranch e l) (IBranch e' l')
 | uslh_call e e'
   (CALL: e' = <{{ (msf = 1) ? & 0 : e }}>) :
@@ -1236,7 +1238,9 @@ Proof.
           exploit mapM_perserve_len; eauto. i. rewrite x1.
           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
         rewrite <- H. auto. }
-    + econs 2; ss. des_ifs_safe. f_equal.
+    + econs 2; ss.
+      2:{ admit. }
+      des_ifs_safe. f_equal.
       do 2 rewrite <- add_assoc. rewrite add_cancel_l.
 
       (* The number of branches in previous blocks and
@@ -1290,7 +1294,7 @@ Proof.
     apply NCT in H. unfold no_ct_blk in H. rewrite Forall_forall in H.
     specialize (nth_error_In blk o Heq0). intros.
     apply H in H0. destruct H0.
-Qed.
+Admitted.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
@@ -1460,8 +1464,9 @@ Proof.
       { (* branch *)
         unfold pc_sync in Hpcsync. simpl in Hpcsync. rewrite Hipc in *.
         simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in Hpcsync. injection Hpcsync; intros. clear Hpcsync.
-        rewrite <- H5, <- H4 in *. 
+        rewrite <- H5, <- H4 in *.
         injection cfg_sync; intros. rewrite <- H6 in *. clear H6. clear cfg_sync. clear H2.
+
         apply src_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; auto; cycle 1.
         { rewrite Hspc. unfold pc_sync. simpl. rewrite Hfst, Hsnd. auto. }
         destruct H1 as (i' & H1). destruct H1 as (Hsome & Hmatch). 
@@ -1476,7 +1481,7 @@ Proof.
         unfold wf_dir in wfds.
         simpl in ms_msf, Hsfst, Hssnd, Hfst, Hsnd.
         rename H3 into tgt_fetch. rename H1 into src_fetch.
-        inv tgt_steps; clarify. 
+        inv tgt_steps; clarify.
 
         unfold wf_block in H0. rewrite Forall_forall in H0.
         specialize (nth_error_In (b :: bs) sl Hfst); intros. 
