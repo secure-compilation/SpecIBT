@@ -1327,6 +1327,10 @@ Lemma ultimate_slh_bcc_single_cycle (p: prog) : forall ic1 sc1 sc2 n ds os,
 Proof.
   intros until os. intros nct wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
   destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r).
+  (* Print wf_uslh.
+  Definition wf_uslh (p: prog) : Prop :=
+     wf_prog p -> wf_prog (uslh_prog p). *)
+  assert (wf_prog (uslh_prog p)). { apply wf_uslh. }
   unfold wf_prog in wfp. destruct wfp. unfold nonempty_program in H.
   unfold wf_ds in wfds. simpl in ms_msf.
   destruct ipc as (l & o) eqn:Hipc.
@@ -1682,8 +1686,39 @@ Proof.
         } 
       }
       { (* call *)  
+        
+        (* get corresponding target instruction, unfold relation to get more information *)
         unfold pc_sync in Hpcsync. simpl in Hpcsync.
         rewrite Hipc in Hfst, Hsnd. simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in *.
+        injection Hpcsync; intros. rewrite <- H5, <- H4 in *. clear Hpcsync.
+        injection cfg_sync; intros. rewrite <- H6 in *. clear cfg_sync. clear H6.
+        apply src_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; clarify; cycle 1.
+        { unfold pc_sync. simpl. rewrite Hfst, Hsnd. auto. }
+        destruct H1 as (i' & H1). destruct H1 as (Hsome & Hmatch).
+        rewrite H3 in Hsome. injection Hsome; intros. rewrite H1 in *. clear H1. clear Hsome. 
+        inv Hmatch; clarify. rewrite String.eqb_refl in n_steps. simpl in ms_msf.
+        rewrite Forall_forall in H0. simpl in Hsfst, Hssnd.
+        specialize (nth_error_In (uslh_prog (b :: bs)) sl Hsfst); intros.
+        apply H0 in H1.
+
+        remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+        remember (firstn o (fst iblk)) as slice.
+        assert (Hadd1: forall n, (add n 1) = S n). { lia. }
+        rewrite Hadd1 in n_steps.
+        (* call can't be last instruction in block *)
+        unfold wf_block in H0. specialize (nth_error_In (b :: bs) sl Hfst); intros.
+          apply H0 in H4. destruct H4, H5.
+          assert (~ (is_terminator <{{ call fp }}>)).
+          { unfold not; intros. inv H7. }
+          specialize (block_always_terminator (b :: bs) iblk o <{{ call fp }}> H1 Hsnd H7); intros.
+          destruct H8 as (i' & H8). destruct (nth_error (fst iblk) (add o 1)); clarify.
+
+        inv tgt_steps; clarify.
+        { 
+
+        }
+
+
         assert (si = <{{ callee := (msf=1) ? &0 : fp }}>). { admit. }
         rewrite H4 in *. cbn in n_steps.
         destruct (nth_error (fst sblk) (add so 1)) eqn:Hsblk; clarify.
