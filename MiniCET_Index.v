@@ -1469,6 +1469,7 @@ Proof.
         unfold wf_dir in wfds. simpl in wfds. rewrite Hfst, Hsnd in wfds.
         inv Hmatch; clarify. unfold match_branch_target in LB. rewrite Hfst in LB. injection LB; intros.
         rewrite <- H1 in *. clear H1. clear LB. 
+
         specialize (rev_fetch (b :: bs) (sl, o) iblk <{{ branch e to l0 }}> Hfst Hsnd); intros.
         remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
         remember (o + fold_left f (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) as so.
@@ -1476,6 +1477,7 @@ Proof.
         simpl in ms_msf, Hsfst, Hssnd, Hfst, Hsnd.
         rename H3 into tgt_fetch. rename H1 into src_fetch.
         inv tgt_steps; clarify. 
+
         unfold wf_block in H0. rewrite Forall_forall in H0.
         specialize (nth_error_In (b :: bs) sl Hfst); intros. 
         apply H0 in H3. destruct H3, H4. rewrite Forall_forall in H5. 
@@ -1491,7 +1493,24 @@ Proof.
         rename l into rest. simpl in H10.
         unfold branch_in_prog_before in *. unfold offset_branch_before in *. 
         unfold _offset_branch_before in *. unfold _branch_in_block in *.
-        simpl in Hssnd, tgt_fetch. admit.
+        simpl in Hssnd, tgt_fetch. 
+
+        destruct ms eqn:Hms.
+        { (* speculating *) 
+          ss. inv H1; try (simpl in H18; rewrite tgt_fetch in H18; discriminate).
+          simpl in n_steps. destruct ds2 eqn:Hds2; clarify. destruct b' eqn:Hb'.
+          { (* DBranch true *)
+            injection H7; intros. rewrite <- H1 in *. inv H2. admit.
+
+          }
+          { (* DBranch false *)
+            admit.
+
+          }
+        }
+        { (* not speculating *)
+          admit.
+        }
       }
       { (* jump *) 
         apply src_simple_inv with (tp:=(uslh_prog p)) (tpc:=spc) in H1; clarify.
