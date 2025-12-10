@@ -835,20 +835,6 @@ Proof.
   exploit IHl; eauto.
 Qed.
 
-Lemma bind_inv {A B} m (f: A -> M B) c res np
-    (BIND: bind m f c = (res, np)) :
-  exists a pm rf pf,
-    m c = (a, pm)
-  /\ f a (c + Datatypes.length pm) = (rf, pf)
-  /\ res = rf
-  /\ np = pm ++ pf.
-Proof.
-  unfold bind, monadUSLH, uslh_bind in BIND.
-  destruct (m c) eqn:MC.
-  destruct (f a (c + Datatypes.length p)) eqn:FAC. clarify. esplits; eauto.
-  eapply tr_app_correct.
-Qed.
-
 Definition len_before {A B} (f: A -> M B) (l: list A) (o c: nat) : nat :=
   let '(_, np) := mapM f (firstn o l) c in
   Datatypes.length np.
@@ -896,6 +882,13 @@ Definition fold_left_add_init {A} (f: A -> nat) (l: list A) (n k: nat) :
 Proof.
   ginduction l; ss; ii.
   replace (n + k + f a) with ((n + f a) + k) by lia. eauto.
+Qed.
+
+Definition fold_left_init_0 {A} (f: A -> nat) (l: list A) (n: nat) :
+  fold_left (fun acc x => acc + f x) l n = (fold_left (fun acc x => acc + f x) l 0) + n.
+Proof.
+  replace n with (0 + n) by lia.
+  rewrite fold_left_add_init. lia.
 Qed.
 
 Lemma concat_nth_error {A} (ll: list (list A)) l i j ii
@@ -1256,12 +1249,114 @@ Proof.
     + econs 2; ss. des_ifs_safe. f_equal.
       do 2 rewrite <- add_assoc. rewrite add_cancel_l.
 
+      (* TODO: divide this things to several lemmas *)
       assert (branch_in_prog_before p l = len_before uslh_blk (add_index p) l (Datatypes.length p)).
-      { admit. }
-      admit.
+      { clear. unfold len_before.
+        remember (Datatypes.length p). clear Heqn.
+        unfold add_index. remember 0. clear Heqn0.
+        ginduction p; ss; ii.
+        - destruct l; ss.
+        - destruct l; ss.
+          unfold branch_in_prog_before in *.
+          rewrite firstn_cons. ss.
+          replace (branch_in_block a) with (0 + branch_in_block a) by lia.
+          rewrite fold_left_add_init.
+          des_ifs.
+          exploit mapM_cons_inv; eauto. i. des. subst.
+          erewrite IHp with (n:= (n + Datatypes.length np_hd)) (n0:= S n0); auto.
+          des_ifs. rewrite length_app, add_comm.
+          assert (branch_in_block a = Datatypes.length np_hd).
+          { clear -x0. destruct a. unfold uslh_blk in x0.
+            eapply bind_inv in x0. des. subst. unfold branch_in_block. ss.
+            assert (concatM (mapM uslh_inst l) n = (a, pm) -> Datatypes.length pm = _branch_in_block l).
+            { clear. ii. unfold concatM in *. eapply bind_inv in H. des.
+              ss. unfold MiniCET.uslh_ret in H0. clarify.
+              rewrite app_nil_r.
+              ginduction l; ss; ii.
+              { unfold mapM in *. ss. unfold MiniCET.uslh_ret in *; ss. clarify. }
+              exploit mapM_cons_inv; eauto. i. des. subst.
+              exploit IHl; eauto. i.
+              rewrite length_app. rewrite x2. unfold _branch_in_block at 2.
+              ss.
+              assert ((fun (acc : nat) (i : inst) => match i with
+                                                | <{{ branch _ to _ }}> => add acc 1
+                                                | _ => acc
+                                                end) =
+                        (fun (acc : nat) (i : inst) => acc + match i with
+                                                        | <{{ branch _ to _ }}> => 1
+                                                        | _ => 0
+                                                        end)).
+              { extensionalities acc. extensionalities i. des_ifs; lia. }
+              rewrite H0.
+              rewrite fold_left_init_0. rewrite <- H0.
+              clear -x0. unfold uslh_inst in x0. ss. unfold MiniCET.uslh_ret in *.
+              des_ifs; ss; unfold _branch_in_block; try lia.
+              eapply bind_inv in x0. des. subst.
+              unfold add_block_M in x0. unfold add_block in x0. ss. clarify. ss. lia. }
+            rewrite length_app. unfold MiniCET.uslh_ret in *.
+            rewrite H; auto. des_ifs; ss; lia. }
+          lia. }
+      i. rewrite <- H.
 
+      (* TODO: divide this things to several lemmas *)
+      assert (offset_branch_before (blk, is_proc) o =
+                len_before uslh_inst blk o (Datatypes.length p + branch_in_prog_before p l)).
+      { remember (Datatypes.length p + branch_in_prog_before p l). clear Heqn.
+        clear. unfold offset_branch_before. ss.
+        ginduction blk; ss; ii.
+        { unfold _offset_branch_before, len_before. destruct o; ss. }
+        destruct o; ss.
+        unfold _offset_branch_before, len_before.
+        ss. des_ifs.
+        eapply mapM_cons_inv in Heq. des. subst.
+        exploit IHblk; eauto. unfold _offset_branch_before.
+        instantiate (2:=o). instantiate (1:= (n + Datatypes.length np_hd)).
+        unfold len_before. des_ifs. i.
+        unfold _branch_in_block. ss.
+        assert ((fun (acc : nat) (i : inst) => match i with
+                                          | <{{ branch _ to _ }}> => add acc 1
+                                          | _ => acc
+                                          end) =
+                  (fun (acc : nat) (i : inst) => acc + match i with
+                                                  | <{{ branch _ to _ }}> => 1
+                                                  | _ => 0
+                                                  end)).
+        { extensionalities acc. extensionalities i. des_ifs; lia. }
+        rewrite H. rewrite fold_left_init_0. rewrite <- H.
+        rewrite length_app. unfold _branch_in_block in x0.
+        rewrite x0. clear - Heq.
+        unfold uslh_inst in Heq. ss. unfold MiniCET.uslh_ret in *.
+        des_ifs; ss; unfold _branch_in_block; try lia.
+        eapply bind_inv in Heq. des. subst.
+        unfold add_block_M in Heq. unfold add_block in Heq. ss. clarify. ss. lia. }
+      lia.
   (* call *)
-  - admit.
+  (* TODO: existential case also could be a lemma *)
+  - unfold MiniCET.uslh_ret in x5. clarify.
+    exists <{{ callee := (msf = 1) ? & 0 : fp }}>.
+    split.
+    + destruct blk' as [blk' is_proc']. ss.
+      exploit concat_nth_error; i.
+      { eapply x2. }
+      { instantiate (2:= 0). ss. }
+      des_ifs.
+      { unfold MiniCET.uslh_ret in Heq1. clarify.
+        assert (prefix_offset a o 0 + 2 = o + blk_offset (blk, true) o).
+        { unfold blk_offset. ss. unfold prefix_offset.
+          rewrite <- fold_left_add_init. eapply offset_eq_aux; eauto.
+          exploit mapM_perserve_len; eauto. i. rewrite x1.
+          eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
+        rewrite <- H. rewrite add_comm.
+        replace (2 + prefix_offset a o 0) with (S (S (prefix_offset a o 0))) by lia.
+        rewrite add_0_r in x4. auto. }
+      { unfold MiniCET.uslh_ret in Heq1. clarify.
+        assert (prefix_offset a o 0 + 0 = o + blk_offset (blk, false) o).
+        { rewrite add_0_r.
+          unfold blk_offset. ss. eapply offset_eq_aux; eauto.
+          exploit mapM_perserve_len; eauto. i. rewrite x1.
+          eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
+        rewrite <- H. auto. }
+    + econs 3; auto.
   (* ctarget *)
   - exists <{{ ctarget }}>. split;
     destruct blk' as [blk' prc_bool]; unfold no_ct_prog in NCT;
@@ -1272,7 +1367,7 @@ Proof.
       apply NCT in H; unfold no_ct_blk in H; rewrite Forall_forall in H;
       specialize (nth_error_In blk o Heq0); intros; apply H in H0;
       destruct H0.
-Admitted.
+Qed.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->

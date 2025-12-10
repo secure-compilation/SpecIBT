@@ -374,6 +374,20 @@ Proof.
   rewrite bind_of_return; auto.
 Qed.
 
+Lemma bind_inv {A B} m (f: A -> M B) c res np
+    (BIND: bind m f c = (res, np)) :
+  exists a pm rf pf,
+    m c = (a, pm)
+  /\ f a (c + Datatypes.length pm) = (rf, pf)
+  /\ res = rf
+  /\ np = pm ++ pf.
+Proof.
+  unfold bind, monadUSLH, uslh_bind in BIND.
+  destruct (m c) eqn:MC.
+  destruct (f a (c + Datatypes.length p)) eqn:FAC. clarify. esplits; eauto.
+  eapply tr_app_correct.
+Qed.
+
 Lemma unfold_mapM A B (f: A -> M B) hd tl:
   mapM f (hd :: tl) = x <- f hd ;; xs <- mapM f tl ;; ret (x :: xs).
 Proof.
@@ -383,6 +397,21 @@ Proof.
   erewrite mapT_id_cons_to_bind; auto.
 Unshelve.
 apply monadUSLH_law.
+Qed.
+
+Lemma mapM_cons_inv {A B} (f: A -> M B) hd tl c res np
+    (MM: mapM f (hd :: tl) c = (res, np)) :
+  exists res_hd np_hd res_tl np_tl,
+    f hd c = (res_hd, np_hd)
+  /\ mapM f tl (c + Datatypes.length np_hd) = (res_tl, np_tl)
+  /\ res = res_hd :: res_tl
+  /\ np = np_hd ++ np_tl.
+Proof.
+  rewrite unfold_mapM in MM.
+  exploit bind_inv; eauto. i. des. subst.
+  exploit bind_inv; eauto. i. des. subst.
+  ss. unfold uslh_ret in x3. clarify. ss.
+  esplits; eauto. rewrite app_nil_r. auto.
 Qed.
 
 Fixpoint foldM {A B: Type} (f : B -> A -> M B) (acc : B) (l: list A) : M B :=
