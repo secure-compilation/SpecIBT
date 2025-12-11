@@ -414,6 +414,28 @@ Proof.
   esplits; eauto. rewrite app_nil_r. auto.
 Qed.
 
+Lemma mapM_app_inv {A B} (f: A -> M B) l1 l2 c res np
+    (MM: mapM f (l1 ++ l2) c = (res, np)) :
+  exists res1 np1 res2 np2,
+    mapM f l1 c = (res1, np1)
+  /\ mapM f l2 (c + Datatypes.length np1) = (res2, np2)
+  /\ res = res1 ++ res2
+  /\ np = np1 ++ np2.
+Proof.
+  ginduction l1; ss; ii.
+  { unfold mapM at 1. ss. unfold uslh_ret. esplits; eauto; ss.
+    rewrite add_0_r. auto. }
+  exploit mapM_cons_inv; eauto. i. des. subst.
+  exploit IHl1; eauto. i. des. subst.
+  rewrite <- add_assoc in x3. rewrite <- length_app in x3.
+
+  assert (mapM f (a :: l1) c = (res_hd :: res1, np_hd ++ np1)).
+  { clear - x0 x2. rewrite unfold_mapM.
+    ss. unfold uslh_bind. rewrite x0. rewrite x2. ss. f_equal.
+    do 2 rewrite tr_app_correct. rewrite app_nil_r. auto. }
+  esplits; eauto. rewrite app_assoc. auto.
+Qed.
+
 Fixpoint foldM {A B: Type} (f : B -> A -> M B) (acc : B) (l: list A) : M B :=
   match l with
   | nil => ret acc

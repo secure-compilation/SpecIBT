@@ -1174,6 +1174,33 @@ Proof.
   unfold add_block_M in Heq. unfold add_block in Heq. ss. clarify. ss. lia.
 Qed.
 
+Lemma src_inv_branch_aux p tp pc tpc e l e' l'
+    (TRP: uslh_prog p = tp)
+    (PS: pc_sync p pc = Some tpc)
+    (INST: p[[pc]] = Some <{{ branch e to l }}>)
+    (NTH: match_branch_target p pc = Some l')
+    (COND: e' = <{{ (msf = 1) ? 0 : e }}>) :
+  nth_error tp l' = Some ([<{{ msf := (~ e') ? 1 : msf }}>; <{{ jump l }}>], false).
+Proof.
+  destruct pc as [b o]. ss. des_ifs.
+  destruct p0 as [blk is_proc]. ss.
+  unfold uslh_prog. des_ifs.
+
+  assert(LENP: Datatypes.length p = Datatypes.length l0).
+  { eapply mapM_perserve_len in Heq0. rewrite <- Heq0. symmetry. eapply length_add_index. }
+
+  rewrite LENP.
+  rewrite nth_error_app. des_ifs.
+  { rewrite ltb_lt in Heq1. lia. }
+  rewrite <- add_assoc, add_comm. rewrite add_sub.
+
+  exploit nth_error_add_index; try eapply Heq. i.
+  exploit firstn_skipn_middle; eauto. i.
+  rewrite <- x1 in Heq0.
+  exploit mapM_app_inv; eauto. i. des; subst.
+  exploit mapM_cons_inv; eauto. i. des; subst.
+Admitted.
+
 Lemma src_inv p tp pc tpc i
     (NCT: no_ct_prog p)
     (TRP: uslh_prog p = tp)
