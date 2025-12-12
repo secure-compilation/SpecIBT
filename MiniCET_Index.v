@@ -1618,6 +1618,24 @@ Proof.
             }
       }
       { (* branch *)
+        (*
+        Print match_inst_uslh.
+        | uslh_branch : forall (e e' : exp) (l l' : nat),
+                          e' = <{{ (msf = 1) ? 0 : e }}> ->
+                          match_branch_target p0 pc = Some l' ->
+                          nth_error (uslh_prog p0) l' = Some ([<{{ msf := (~ e') ? 1 : msf }}>; <{{ jump l }}>], false) ->
+                          match_inst_uslh p0 p c <{{ branch e to l }}> <{{ branch e' to l' }}>
+        *)
+        (* 
+        Check src_inv_branch_aux.
+        src_inv_branch_aux : forall (p tp : prog) (pc tpc : cptr) (e : exp) (l : nat) (e' : exp) (l' : nat),
+          uslh_prog p = tp ->
+          pc_sync p pc = Some tpc ->
+          p [[pc]] = Some <{{ branch e to l }}> ->
+          match_branch_target p pc = Some l' ->
+          e' = <{{ (msf = 1) ? 0 : e }}> ->
+          nth_error tp l' = Some ([<{{ msf := (~ e') ? 1 : msf }}>; <{{ jump l }}>], false)
+        *)
         unfold pc_sync in Hpcsync. simpl in Hpcsync. rewrite Hipc in *.
         simpl in Hfst, Hsnd. rewrite Hfst, Hsnd in Hpcsync. injection Hpcsync; intros. clear Hpcsync.
         rewrite <- H5, <- H4 in *.
@@ -1625,26 +1643,33 @@ Proof.
 
         apply src_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; auto; cycle 1.
         { rewrite Hspc. unfold pc_sync. simpl. rewrite Hfst, Hsnd. auto. }
-        destruct H1 as (i' & H1). destruct H1 as (Hsome & Hmatch). 
+        destruct H1 as (i' & H1). destruct H1 as (Hsome & Hmatch).
+        
         rewrite H3 in Hsome. injection Hsome; intros. rewrite H1 in *. clear H1. clear Hsome.
         unfold wf_dir in wfds. simpl in wfds. rewrite Hfst, Hsnd in wfds.
-        inv Hmatch; clarify. unfold match_branch_target in LB. rewrite Hfst in LB. injection LB; intros.
-        rewrite <- H1 in *. clear H1. clear LB. 
+        inv Hmatch; clarify. 
+
+        remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+        remember (o + fold_left f (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) as so.
+        apply src_inv_branch_aux with 
+          (tp:=(uslh_prog (b :: bs))) (tpc:=(sl, so)) (e:=e) (l:=l0) (e':=(<{{ (msf = 1) ? 0 : e }}>)) in LB; clarify.
+        2 : { unfold pc_sync. simpl. rewrite Hfst, Hsnd. auto. }
+        2 : { unfold fetch. simpl. rewrite Hfst, Hsnd. auto. }
+        clear LB. 
 
         specialize (rev_fetch (b :: bs) (sl, o) iblk <{{ branch e to l0 }}> Hfst Hsnd); intros.
         remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
         remember (o + fold_left f (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) as so.
-        unfold wf_dir in wfds.
         simpl in ms_msf, Hsfst, Hssnd, Hfst, Hsnd.
         rename H3 into tgt_fetch. rename H1 into src_fetch.
         inv tgt_steps; clarify.
 
         unfold wf_block in H0. rewrite Forall_forall in H0.
-        specialize (nth_error_In (b :: bs) sl Hfst); intros. 
-        apply H0 in H3. destruct H3, H4. rewrite Forall_forall in H5. 
-        specialize (H5 <{{ branch e to l0 }}>). 
-        specialize (nth_error_In (fst iblk) o Hsnd); intros. 
-        apply H5 in H6. unfold wf_instr in H6. unfold wf_lbl in H6. 
+        specialize (nth_error_In (b :: bs) sl Hfst); intros.
+        apply H0 in H3. destruct H3, H4. rewrite Forall_forall in H5.
+        specialize (H5 <{{ branch e to l0 }}>).
+        specialize (nth_error_In (fst iblk) o Hsnd); intros.
+        apply H5 in H6. unfold wf_instr in H6. unfold wf_lbl in H6.
         destruct H6. 
         destruct (nth_error (b :: bs) l0) eqn:Hlbl; clarify. rename p into br_blk. 
         destruct br_blk as (br_insts & br_bool) eqn:Hbr_blk. 
@@ -1652,20 +1677,11 @@ Proof.
         apply H0 in H8. destruct H8, H9. apply blk_not_empty_list in H8. simpl in H8.
         destruct br_insts eqn:Hbri; clarify. simpl in wfds. rewrite Forall_forall in wfds.
         rename l into rest. simpl in H10.
-        unfold branch_in_prog_before in *. unfold offset_branch_before in *. 
-        unfold _offset_branch_before in *. unfold _branch_in_block in *.
-        simpl in Hssnd, tgt_fetch. 
-
+        
         destruct ms eqn:Hms.
         { (* speculating *) 
-          ss. inv H1; try (simpl in H18; rewrite tgt_fetch in H18; discriminate).
-          simpl in n_steps. destruct ds2 eqn:Hds2; clarify. destruct b' eqn:Hb'.
-          { (* DBranch true *)
-            injection H7; intros. rewrite <- H1 in *. inv H2. admit.
-
-          }
-          { (* DBranch false *)
-            admit.
+          inv H2.
+          { rewrite app_nil_r in *. 
 
           }
         }
