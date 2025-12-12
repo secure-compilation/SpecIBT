@@ -1401,8 +1401,33 @@ Proof.
           exploit mapM_perserve_len; eauto. i. rewrite x1.
           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
         rewrite <- H. auto. }
-    + econs 3; eauto.
-      admit.
+    + econs 3; eauto. ss. unfold uslh_prog. rewrite Huslh.
+      rewrite nth_error_app1.
+      2:{ rewrite <- nth_error_Some. ii. clarify. }
+      rewrite x0.
+      replace (fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then add acc 1 else acc) (firstn o blk)
+             (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
+
+      destruct blk' as [blk' is_proc']. ss.
+      exploit concat_nth_error; i.
+      { eapply x2. }
+      { instantiate (2:= 1). ss. }
+      des_ifs.
+      { unfold MiniCET.uslh_ret in Heq1. clarify.
+        assert (prefix_offset a o 0 + 2 = o + blk_offset (blk, true) o).
+        { unfold blk_offset. ss. unfold prefix_offset.
+          rewrite <- fold_left_add_init. eapply offset_eq_aux; eauto.
+          exploit mapM_perserve_len; eauto. i. rewrite x1.
+          eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
+        rewrite <- H. rewrite <- add_assoc. rewrite add_comm.
+        replace ((add 2 1) + prefix_offset a o 0)%nat with (S (S (add (prefix_offset a o 0) 1))) by lia.
+        do 2 rewrite nth_error_cons_succ. auto. }
+      { unfold MiniCET.uslh_ret in Heq1. clarify.
+        assert (prefix_offset a o 0 = o + blk_offset (blk, false) o).
+        { unfold blk_offset. ss. eapply offset_eq_aux; eauto.
+          exploit mapM_perserve_len; eauto. i. rewrite x1.
+          eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
+        rewrite <- H. auto. }
   (* ctarget *)
   - exists <{{ ctarget }}>. exfalso.
     destruct blk' as [blk' prc_bool].
@@ -1414,7 +1439,7 @@ Proof.
     apply NCT in H. unfold no_ct_blk in H. rewrite Forall_forall in H.
     specialize (nth_error_In blk o Heq0). intros.
     apply H in H0. destruct H0.
-Admitted.
+Qed.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
