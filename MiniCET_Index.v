@@ -807,11 +807,13 @@ Variant match_inst_uslh (p: prog) (pc: cptr) : inst -> inst -> Prop :=
 | uslh_branch e e' l l'
   (COND: e' = <{{ (msf = 1) ? 0 : e }}>)
   (LB: match_branch_target p pc = Some l')
-  (IN: nth_error (uslh_prog p) l' = Some ([<{{ msf := (~ e') ? 1 : msf }}>; <{{ jump l }}>], false))
-  :
+  (IN: nth_error (uslh_prog p) l' =
+         Some ([<{{ msf := (~ e') ? 1 : msf }}>; <{{ jump l }}>], false)) :
   match_inst_uslh p pc (IBranch e l) (IBranch e' l')
-| uslh_call e e'
-  (CALL: e' = <{{ (msf = 1) ? & 0 : e }}>) :
+| uslh_call e e' tpc
+  (CALL: e' = <{{ (msf = 1) ? & 0 : e }}>)
+  (SYNC: pc_sync p pc = Some tpc)
+  (IN: (uslh_prog p)[[ tpc + 1 ]] = Some (ICall e')) :
   match_inst_uslh p pc (ICall e) (IAsgn callee e')
 .
 
@@ -1399,7 +1401,8 @@ Proof.
           exploit mapM_perserve_len; eauto. i. rewrite x1.
           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
         rewrite <- H. auto. }
-    + econs 3; auto.
+    + econs 3; eauto.
+      admit.
   (* ctarget *)
   - exists <{{ ctarget }}>. exfalso.
     destruct blk' as [blk' prc_bool].
@@ -1411,7 +1414,7 @@ Proof.
     apply NCT in H. unfold no_ct_blk in H. rewrite Forall_forall in H.
     specialize (nth_error_In blk o Heq0). intros.
     apply H in H0. destruct H0.
-Qed.
+Admitted.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
