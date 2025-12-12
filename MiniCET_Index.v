@@ -551,13 +551,22 @@ Definition get_pc_ic (ic: ideal_cfg) : cptr :=
 
 Definition wf_dir (p: prog) (pc: cptr) (d: direction) : Prop :=
   match d, p[[pc]] with
-  | DBranch b, Some (IBranch e l) => is_some p[[(l, 0)]] = true
+  | DBranch b, Some (IBranch e l) => is_some p[[(l, 0)]] = true (* YH: this should be checked in program's well-formness. *)
   | DCall pc', Some (ICall e) => is_some p[[pc']] = true
   | _, _ => False
   end.
 
 Definition wf_ds (p: prog) (pc: cptr) (ds: dirs) : Prop :=
   Forall (wf_dir p pc) ds.
+
+Definition wf_dir' (p: prog) (d: direction) : Prop :=
+  match d with
+  | DCall pc' => is_some p[[pc']] = true
+  | _ => True
+  end.
+
+Definition wf_ds' (p: prog) (ds: dirs) : Prop :=
+  Forall (wf_dir' p) ds.
 
 Definition nonempty_block (blk : (list inst * bool)) : Prop :=
   0 < Datatypes.length (fst blk).
@@ -1918,15 +1927,18 @@ Admitted.
 
 (* End BCC. *)
 
-(* Lemma ultimate_slh_bcc (p: prog) : forall sc1 tsc1 tsc2 n ds os,
+Lemma ultimate_slh_bcc (p: prog) : forall ic1 sc1 sc2 n ds os,
+  no_ct_prog p ->
+  wf_prog p ->
+  wf_ds' p ds ->
   unused_prog msf p ->
   unused_prog callee p ->
-  msf_lookup tsc1 = N (if (ms_true tsc1) then 1 else 0) ->
-  tsc1 = spec_cfg_sync p sc1 ->
-  uslh_prog p |- <(( S_Running tsc1 ))> -->*_ds^^os^^n <(( tsc2 ))> ->
-  exists sc2, p |- <(( S_Running sc1 ))> -->i*_ ds ^^ os <(( sc2 ))> /\ tsc2 = spec_cfg_sync p sc2 /\ same_result_type sc2 tsc2.
+  msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
+  match_cfgs p ic1 sc1 ->
+  uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( sc2 ))> ->
+  exists ic2, p |- <(( S_Running ic1 ))> -->i*_ ds ^^ os <(( ic2 ))>.
 Proof.
-   Admitted. *)
+Admitted.
 
  (** * Definition of Relative Secure *) 
 
@@ -2268,7 +2280,7 @@ Lemma ideal_eval_relative_secure: forall p pc r1 r2 m1 m2 stk,
     seq_same_obs p pc r1 r2 m1 m2 stk ->
     ideal_same_obs p pc r1 r2 m1 m2 stk.
 Proof.
-    unfold ideal_same_obs. intros p pc r1 r2 m1 m2 stk Hsso ds os1 os2 c1 c2 Hexec1 Hexec2.
+  unfold ideal_same_obs. intros p pc r1 r2 m1 m2 stk Hsso ds os1 os2 c1 c2 Hexec1 Hexec2.
 Admitted.
 
 
