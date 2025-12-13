@@ -1545,9 +1545,12 @@ Proof.
       { (* x := e *) 
         apply src_simple_inv with (tp:=(uslh_prog p)) (tpc:=spc) in H1; clarify; cycle 1.
         { unfold pc_sync. simpl. rewrite Hfst, Hsnd. auto. }
-        destruct si;
-        try (destruct H1 as (i' & H1); destruct H1 as (Hsome & Hmatch);
-        rewrite H3 in Hsome; injection Hsome; intros; rewrite <- H1 in *; inv Hmatch).
+
+        destruct H1 as (i' & H1). destruct H1 as (Hsome & Hmatch). 
+        rewrite H3 in Hsome. injection Hsome; intros. rewrite H1 in *.
+        clear H1. clear Hsome. clear PC. clear H2.
+        inv Hmatch. 
+
         rewrite <- app_nil_r with (l:=ds) in tgt_steps.
         rewrite <- app_nil_r with (l:=os) in tgt_steps.
 
@@ -1558,47 +1561,49 @@ Proof.
         unfold b_unused in H1. rewrite Forall_forall in H1.
         replace (snd (sl, o)) with o in Hsnd by auto.
         specialize (nth_error_In (fst iblk) o Hsnd); intros.
-        apply H1 in H4. simpl in H4. destruct H4.
-        rewrite <- String.eqb_neq in H4. 
+        apply H1 in H2. simpl in H2. destruct H2.
+        rewrite <- String.eqb_neq in H2. 
         assert (callee = "callee"). { auto. }
-        rewrite <- H6 in H4. rewrite H4 in n_steps.
+        rewrite <- H5 in H2. rewrite H2 in n_steps.
         
         unfold unused_prog in unused_p_msf. rewrite Hsplit in unused_p_msf. 
         rewrite Forall_forall in unused_p_msf. 
         specialize (nth_error_In (b :: bs) sl Hfst); intros.
-        apply in_split_l in H7. rewrite Hsplit in H7. simpl in H7. apply unused_p_msf in H7.
-        unfold b_unused in H7. rewrite Forall_forall in H7.
+        apply in_split_l in H6. rewrite Hsplit in H6. simpl in H6. apply unused_p_msf in H6.
+        unfold b_unused in H6. rewrite Forall_forall in H6.
         specialize (nth_error_In (fst iblk) o Hsnd); intros.
-        apply H7 in H8. simpl in H8. destruct H8. 
-        rewrite <- String.eqb_neq in H8.
+        apply H6 in H7. simpl in H7. destruct H7. 
+        rewrite <- String.eqb_neq in H7.
         assert (msf = "msf"). { auto. }
-        rewrite <- H10 in H8. rewrite H8 in n_steps. 
-        
-        injection n_steps; intros. rewrite <- H11 in *. clear n_steps.
-        inv tgt_steps. exists (sl, (add o 1), x0 !-> (eval r e0); r, m, sk, ms).
+        rewrite <- H9 in H7. rewrite H7 in n_steps. 
+        injection n_steps; intros. rewrite <- H10 in *. clear n_steps.
+
+        inv tgt_steps. inv H17. 
+        exists (sl, (add o 1), x !-> (eval r e); r, m, sk, ms).
         assert (ds = [] /\ os = []).
-        { inv H18. inv H17; clarify. ss. rewrite app_nil_r in H12, H13. auto. }
-        des; subst. simpl in H12, H13. eapply app_eq_nil in H12, H13. des; subst.
+        { inv H16; clarify. ss. rewrite app_nil_r in H11, H12. auto. }
+        des; subst. simpl in H11, H12. eapply app_eq_nil in H11, H12. des; subst.
+        clear H13. clear H10.
         split.
         - econs. unfold fetch. cbn. rewrite Hfst. assumption.
-        - inv H18. inv H17; clarify. 
+        - inv H16; clarify. 
           econs; eauto.
           + unfold pc_sync. cbn. replace (fst (sl, o)) with sl in Hfst by auto. rewrite Hfst. 
             assert (exists i', (nth_error (fst iblk) (add o 1)) = Some i').
-            { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ x0 := e0 }}>); clarify.
+            { apply block_always_terminator with (p:=(b :: bs)) (i:=<{{ x := e }}>); clarify.
               rewrite Forall_forall in H0. specialize (nth_error_In (b :: bs) sl Hfst); intros.
               apply H0 in H3. assumption.
             }
             destruct H3 as (i' & H3). rewrite H3.
             assert (forall n, (add n 1) = S n). { lia. }
-            specialize (H11 o). rewrite H11. replace (snd (sl, o)) with o in Hsnd by auto.
-            specialize (firstnth_error (fst iblk) o <{{ x0 := e0 }}> Hsnd) as ->.
+            specialize (H10 o). rewrite H10. replace (snd (sl, o)) with o in Hsnd by auto.
+            specialize (firstnth_error (fst iblk) o <{{ x := e }}> Hsnd) as ->.
             rewrite fold_left_app. cbn. 
             assert (forall n, (add n 1) = S n). { lia. }
-            rewrite H13. auto.
+            rewrite H12. auto.
           + inv REG. econs; cycle 1.
             { unfold TotalMap.t_apply, TotalMap.t_update, t_update in H11.
-              unfold TotalMap.t_apply, TotalMap.t_update, t_update. rewrite H8 in *.
+              unfold TotalMap.t_apply, TotalMap.t_update, t_update. rewrite H7 in *.
               assumption.
             }
             { admit. }
@@ -1639,14 +1644,32 @@ Proof.
         simpl in wfds. specialize (nth_error_In (b :: bs) l0 Hlbl); intros.
         apply H0 in H9. destruct H9, H10. apply blk_not_empty_list in H9. simpl in H9.
         destruct br_insts eqn:Hbri; clarify. simpl in wfds. rewrite Forall_forall in wfds.
-        rename l into rest. simpl in *.
-        
-        destruct ms eqn:Hms.
-        { (* speculating *) 
-          inv H3.
-          { rewrite app_nil_r in *. admit. }
-          { admit. }
-        }
+        rename l into rest. 
+        clear PC. clear H2.
+
+        destruct (ds1 ++ ds2); clarify. destruct d; clarify. destruct l; clarify.
+        destruct b' eqn:Hbranch.
+        { (* branch taken *)
+          injection H8; intros. rewrite <- H2 in *. clear H2. clear H8.
+          destruct ms eqn:Hms.
+          { (* speculating / masking *)
+            unfold TotalMap.t_apply in *. inv REG. inv H3. inv H1; clarify. 
+            simpl in H13. destruct b' eqn:Hb'.
+            { assert (n = 0).
+              { simpl in H22. rewrite H8 in H22. simpl in H22. injection H22; intros. rewrite H1. auto. }
+              rewrite H1 in *. unfold not_zero. rewrite Nat.eqb_refl. simpl.
+              (* need to show that os0, os3 are [], as well as ds0, ds3 *)
+              remember ([<{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>; <{{ jump l0 }}>]) as l'blk.
+              assert (nth_error l'blk 0 = Some <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>).
+              { rewrite Heql'blk. simpl. auto. }
+              inv H18; clarify. inv H21; clarify.
+              specialize (rev_fetch (uslh_prog (b :: bs)) (l', 0) 
+                ([<{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>; <{{ jump l0 }}>], false) 
+                  <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}> IN H3); intros. 
+                  apply SpecSMI_Asgn with 
+                    (r:=msf !-> eval r' (<{{ (~ (msf = 1) ? 0 : e) ? 1 : msf }}>); r') (m:=m) (sk:=ssk) (ms:=true) in H1.
+              admit. 
+            }
         { (* not speculating *)
           admit.
         }
