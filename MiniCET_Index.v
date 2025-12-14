@@ -1930,24 +1930,12 @@ Proof.
         exists (pc', r, m, sk', ms). split; econs; eauto.
         unfold fetch. cbn. rewrite Hfst, Hsnd. auto.
       }
-    + (* None *)
-      simpl in cfg_sync. destruct (pc_sync p (l, o)) eqn:Hpcsync; clarify; cycle 1.
-      { admit.
-
-      }
-      destruct (map_opt (pc_sync p) sk) eqn:Hsksync; clarify; cycle 1. 
-      { admit. }
-      unfold pc_sync in Hpcsync. rename c into pc'. rename l0 into sk'.
-      cbn in Hpcsync. destruct (nth_error p l) as [blk'|] eqn:Hfst'; try discriminate.
-      injection Hfst; intros. rewrite H1 in *. clear Hfst. clear H1.
-      destruct (nth_error (fst iblk) o) as [i'|] eqn:Hsnd'; discriminate.
-  - (* None *)
-    simpl in cfg_sync. simpl in cfg_sync. destruct (pc_sync p (l, o)) eqn:Hpcsync; clarify; cycle 1.
-    { admit. }
-    destruct (map_opt (pc_sync p) sk) eqn:Hsksync; clarify; cycle 1. 
-    { admit. }
-    unfold pc_sync in Hpcsync.
-    cbn in Hpcsync. destruct (nth_error p l) as [blk'|] eqn:Hfst'; discriminate.
+    + (* None *) 
+      inv cfg_sync. unfold pc_sync in PC. simpl in PC.
+      rewrite Hfst, Hsnd in PC. discriminate.
+  - (* None *) 
+    inv cfg_sync. unfold pc_sync in PC. simpl in PC.
+    rewrite Hfst in PC. discriminate.
 Admitted.
 
 (* End BCC. *)
