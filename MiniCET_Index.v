@@ -13,7 +13,8 @@ From Stdlib Require Import Arith.PeanoNat. Import Nat.
 From Stdlib Require Import Lia.
 From Stdlib Require Import List. Import ListNotations.
 Require Import ExtLib.Data.Monads.OptionMonad.
-From SECF Require Import Maps MapsFunctor.
+From SECF Require Import Maps.
+From SECF Require Import MapsFunctor.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
@@ -21,6 +22,8 @@ Module MCC := MiniCETCommon(TotalMap).
 Import MCC.
 Import FunctionalExtensionality.
 
+Notation t_update_eq := TotalMap.t_update_eq.
+Notation t_update_neq := TotalMap.t_update_neq.
 
 (* %s/\s\+$//e to strip trailing whitespace *)
 
@@ -726,7 +729,9 @@ Proof.
   red in H0. des_ifs.
   destruct (le_dec o (Datatypes.length (fst b) - 1)).
   (* o <= Datatypes.length (fst b) - 1: this is the in-bounds case *)
-  { assert (i <> i0). { unfold not; intros. unfold is_terminator in *. destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify. }
+  { assert (i <> i0).
+    { unfold not; intros. unfold is_terminator in *.
+      destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify. }
   destruct (eq_dec o (Datatypes.length (fst b) - 1)).
     (* o = Datatypes.length (fst b) - 1: not possible bc i ≠ i0 and i0 is last element *)
     { assert (rev (i0 :: l) = rev l ++ [i0]). { simpl. auto. }
@@ -1493,10 +1498,8 @@ Lemma eval_regs_eq : forall (r r': reg) (e: exp),
 Proof.
   intros. ginduction e; clarify.
   { intros. simpl in H, H0. 
-    assert (x <> msf /\ x <> callee). { split; auto. }
-    apply H1 in H2. simpl. unfold TotalMap.t_apply. 
-    assumption.
-  }
+    assert (x <> msf /\ x <> callee) by (split; auto).
+    apply H1 in H2. simpl. eauto. }
   { intros. simpl in *. destruct H, H0. f_equal.
     { apply IHe1; clarify. }
     { apply IHe2; clarify. }
@@ -1653,15 +1656,10 @@ Proof.
             assert (forall n, (add n 1) = S n). { lia. }
             rewrite H12. auto.
           + inv REG. econs; cycle 1.
-            { unfold TotalMap.t_apply, TotalMap.t_update, t_update in H11.
-              unfold TotalMap.t_apply, TotalMap.t_update, t_update. rewrite H7 in *.
-              assumption.
-            }
-            { i. unfold TotalMap.t_apply, TotalMap.t_update, t_update in *.
-              destruct (string_dec x x0); subst.
-              - rewrite eqb_refl. apply eval_regs_eq; clarify.
-              - rewrite <- eqb_neq in n. rewrite n.
-                eapply H3; eauto. }
+            { rewrite eqb_neq in H7. rewrite t_update_neq; eauto. }
+            { i. destruct (string_dec x x0); subst.
+              - do 2 rewrite t_update_eq. apply eval_regs_eq; eauto.
+              - rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
       }
       { (* branch *)
         apply src_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; auto; cycle 1.
@@ -1708,7 +1706,7 @@ Proof.
           injection H8; intros. rewrite <- H2 in *. clear H2. clear H8.
           destruct ms eqn:Hms.
           { (* speculating / masking *)
-            unfold TotalMap.t_apply in *. inv REG. inv H3. inv H1; clarify. 
+            unfold TotalMap.t_apply in *. inv REG. inv H3. inv H1; clarify.
             simpl in H13. destruct b' eqn:Hb'.
             { (* branch taken *)
               assert (n = 0).
