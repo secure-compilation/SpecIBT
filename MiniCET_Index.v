@@ -113,7 +113,7 @@ p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
-  p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n] <(( S_Running ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
+p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n] <(( S_Running ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
   | SpecSMI_Store : forall pc r m sk e e' n ms,
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
@@ -1706,26 +1706,11 @@ Proof.
         destruct b' eqn:Hb'.
         { (* attacker directive is to take branch *)
           injection H8; intros. rewrite <- H2 in *. clear H2. clear H8.
-          (* either we were speculating already or, we weren't but this instruction initiates it *)
           destruct ms eqn:Hms.
           { (* speculating already *)
             remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
             remember (o + fold_left f (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) as so.
-            inv H3. inv H16.
-            inv H17. 
-            (*Print SpecSMI_Branch.
-            SpecSMI_Branch : forall (pc : cptr) (pc' : nat * nat) 
-                       (r : reg) (m : mem) (sk : list cptr)
-                       (ms ms' b b' : bool) (e : exp) 
-                       (n l : nat),
-                     p [[pc]] = Some <{{ branch e to l }}> ->
-                     to_nat (eval r e) = Some n ->
-                     b = not_zero n -> 
-                     pc' = (if b' then (l, 0) else pc + 1) ->
-                     ms' = ms || negb (Bool.eqb b b') ->
-                     p |- <(( S_Running (pc, r, m, sk, false, ms) ))> -->_
-                     [DBranch b'] ^^ [OBranch b] <((
-               S_Running (pc', r, m, sk, false, ms') ))>*)
+            inv H3. inv H16. inv H17. 
             apply SpecSMI_Branch with 
               (pc':=(l', 0)) (r:=r') (m:=m) (sk:=ssk) (ms:=true) (ms':=true) 
                 (b:=false) (b':=true) (n:=0) in tgt_fetch; clarify; cycle 1.
@@ -1739,14 +1724,45 @@ Proof.
               rewrite <- H12 in *. unfold not_zero. rewrite Nat.eqb_refl. simpl. auto.
             }
             rewrite H2 in *.
-            assert (os0 = []).
-            { inv H8; clarify; admit.
 
+            assert (os0 = []).
+            { admit. }
+            rewrite H12 in *. 
+            assert (os2 = []).
+            { admit. }
+            rewrite H13 in *. simpl.
+
+            exists (l0, 0, r, m, sk, true).
+            rewrite Hsfst in H17. rewrite Hssnd in H17. injection H17; intros. 
+            rewrite <- H14 in *.
+
+            assert (to_nat (eval r e) = Some n).
+            { unfold not_zero in H22. destruct n; clarify. 
+              rewrite <- H21. f_equal. 
+              assert (eval r' <{{ (msf = 1) ? 0 : e }}> = N 0).
+              { inv REG.
+                unfold TotalMap.t_apply in H12.
+                unfold r_sync. unfold unused_prog in unused_p_msf. 
+                destruct (split (b :: bs)) as (blks, bools) eqn:Hsplit. rewrite Forall_forall in unused_p_msf.
+                specialize (nth_error_In (b :: bs) sl Hfst); intros.
+                apply in_split_l in H13. rewrite Hsplit in H13. simpl in H13. apply unused_p_msf in H13.
+                unfold b_unused in H13. rewrite Forall_forall in H13.
+                specialize (nth_error_In (fst iblk) o Hsnd); intros.
+                apply H13 in H14. simpl in H14. assert (msf = "msf"). { auto. }
+                rewrite <- H15 in H14. unfold BEq. simpl. 
+                unfold TotalMap.t_apply. rewrite H12. simpl. auto.
+              }
+              admit.
             }
-            admit.
+            split; [econs; eauto|].
+            assert (sc2 = (l0, 0, r', m, ssk, false, true)). { admit. }
+            rewrite H16 in *. econs; eauto.
+            unfold pc_sync. simpl. rewrite Hlbl. simpl. auto.
           }
-          { (* initiating speculation *)
-            admit.
+          { (* not yet speculating *)
+            remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+            remember (o + fold_left f (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) as so.
+            inv H3. inv H16. inv H17. admit.
           }
         }
         { (* attacker directive is to step *)
