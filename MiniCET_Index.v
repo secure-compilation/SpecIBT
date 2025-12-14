@@ -45,7 +45,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OBranch (not_zero n)] <(( S_Running (pc', r, m, sk) ))>
   | SSMI_Jump : forall l pc r m sk,
       p[[pc]] = Some <{{ jump l }}> ->
-      p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running ((l,0), r, m, sk) ))>
+p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running ((l,0), r, m, sk) ))>
   | SSMI_Load : forall pc r m sk x e n v',
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
@@ -98,8 +98,8 @@ Inductive spec_eval_small_step (p:prog):
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   | SpecSMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
-      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
-  | SpecSMI_Branch : forall pc pc' r m sk ms ms' b (b': bool) e n l,
+p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
+| SpecSMI_Branch : forall pc pc' r m sk ms ms' b (b': bool) e n l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
       b = (not_zero n) ->
@@ -1659,7 +1659,7 @@ Proof.
             }
             { i. unfold TotalMap.t_apply, TotalMap.t_update, t_update in *.
               destruct (string_dec x x0); subst.
-              - rewrite eqb_refl. admit.
+              - rewrite eqb_refl. apply eval_regs_eq; clarify.
               - rewrite <- eqb_neq in n. rewrite n.
                 eapply H3; eauto. }
       }
@@ -1798,8 +1798,20 @@ Proof.
             unfold b_unused in H5. rewrite Forall_forall in H5.
             specialize (nth_error_In (fst iblk) o Hsnd); intros.
             apply H5 in H6. inv H6. assert (msf = "msf"). { auto. }
-            rewrite <- H6 in H8. apply eval_unused_update with (r:=r) (v:=(N 0)) in H8. 
-            rewrite <- H8. unfold TotalMap.t_update. rewrite <- H4. unfold t_update. admit. (* help *)
+            rewrite <- H6 in H8. unfold BEq. simpl. 
+            unfold TotalMap.t_apply. rewrite H4. simpl.
+            apply eval_regs_eq; clarify. 
+           
+            unfold unused_prog in unused_p_callee. 
+            rewrite Hsplit, Forall_forall in unused_p_callee.
+            specialize (nth_error_In (b :: bs) sl Hfst); intros.
+            apply in_split_l in H9. rewrite Hsplit in H9. simpl in H9. apply unused_p_callee in H9.
+            unfold b_unused in H9. rewrite Forall_forall in H9.
+            specialize (nth_error_In (fst iblk) o Hsnd); intros.
+            apply H9 in H10. inv H10. 
+            assert (callee = "callee"). { auto. }
+            rewrite <- H10 in H15. 
+            assumption.
           }
         }
         { unfold pc_sync. cbn. rewrite Hfst. rewrite Forall_forall in H0. 
@@ -1857,10 +1869,49 @@ Proof.
           specialize (nth_error_In (fst iblk) o Hsnd); intros.
           apply H2 in H3. inv H3. assert (msf = "msf"). { auto. }
           rewrite <- H3 in H4. apply eval_unused_update with (r:=r) (v:=(N 0)) in H4.
-          rewrite ms_msf. cbn. inv REG. admit. (* help *)
+          rewrite ms_msf. cbn. inv REG. 
+          apply eval_regs_eq; clarify.
+          { specialize (nth_error_In (fst iblk) o Hsnd); intros. apply H2 in H8. 
+            simpl in H8. destruct H8. rewrite <- H3 in H8.
+            assumption.
+          }
+          { specialize (nth_error_In (fst iblk) o Hsnd); intros. 
+            unfold unused_prog in unused_p_callee. 
+            rewrite Hsplit in unused_p_callee. rewrite Forall_forall in unused_p_callee.
+            specialize (nth_error_In (b :: bs) sl Hfst); intros.
+            apply in_split_l in H9. rewrite Hsplit in H9. simpl in H9. apply unused_p_callee in H9.
+            unfold b_unused in H9. rewrite Forall_forall in H9. 
+            specialize (nth_error_In (fst iblk) o Hsnd); intros.
+            apply H9 in H10. simpl in H10. destruct H10.
+            assert (callee = "callee"). { auto. }
+            rewrite <- H14 in H10. 
+            assumption.
+          }
         }
         { clear PC. simpl. inv REG. unfold TotalMap.t_apply in *.
-          assert (eval r e = eval r' e). { admit. } (* help *)
+          assert (eval r e = eval r' e). 
+          { apply eval_regs_eq; clarify.
+            { unfold unused_prog in unused_p_msf. 
+              destruct (split (b :: bs)) as (blks, bools) eqn:Hsplit. rewrite Forall_forall in unused_p_msf.
+              specialize (nth_error_In (b :: bs) sl Hfst); intros.
+              apply in_split_l in H4. rewrite Hsplit in H4. simpl in H4. apply unused_p_msf in H4.
+              unfold b_unused in H4. rewrite Forall_forall in H4.
+              specialize (nth_error_In (fst iblk) o Hsnd); intros.
+              apply H4 in H5. inv H5. assert (msf = "msf"). { auto. }
+              rewrite <- H5 in H7.
+              assumption.
+            }
+            { unfold unused_prog in unused_p_callee. 
+              destruct (split (b :: bs)) as (blks, bools) eqn:Hsplit. rewrite Forall_forall in unused_p_callee.
+              specialize (nth_error_In (b :: bs) sl Hfst); intros.
+              apply in_split_l in H4. rewrite Hsplit in H4. simpl in H4. apply unused_p_callee in H4.
+              unfold b_unused in H4. rewrite Forall_forall in H4.
+              specialize (nth_error_In (fst iblk) o Hsnd); intros.
+              apply H4 in H5. inv H5. assert (callee = "callee"). { auto. }
+              rewrite <- H5 in H7.
+              assumption.
+            }
+          } 
           rewrite <- H4 in *. econs; eauto.
           { unfold pc_sync. cbn. rewrite Hfst. rewrite Forall_forall in H0. 
             specialize (nth_error_In (b :: bs) sl Hfst); intros.
