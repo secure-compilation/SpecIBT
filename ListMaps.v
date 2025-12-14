@@ -58,3 +58,12 @@ Definition lm_map {A B: Type} (f: A -> B) (m: total_map A) : total_map B :=
   let '(d, sl) := m in
   let '(kl, vl) := split sl in
   (f d, combine kl (List.map f vl)).
+
+Lemma t_update_eq : forall {A : Type} (m : total_map A) x v,
+  apply (t_update m x v) x = v.
+Proof. Admitted.
+
+Lemma t_update_neq : forall {A : Type} (m : total_map A) x1 x2 v,
+  x1 <> x2 ->
+  apply (t_update m x1 v) x2 = apply m x2.
+Proof. Admitted.

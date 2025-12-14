@@ -330,9 +330,7 @@ Lemma eval_unused_update : forall (x : string) (r: reg) (e: exp) (v: val),
   e_unused x e -> eval (x !-> v; r) e = eval r e.
 Proof.
   intros until v. induction e; intros; simpl in *; try reflexivity.
-  - unfold TotalMap.t_apply, TotalMap.t_update, t_update. 
-    rewrite <- String.eqb_neq, String.eqb_sym in H.
-    rewrite H; auto.
+  - eapply t_update_neq; auto.
   - destruct H. specialize (IHe1 H). specialize (IHe2 H0).
     rewrite IHe1, IHe2. auto.
   - destruct H, H0. specialize (IHe1 H). specialize (IHe2 H0).
@@ -1629,10 +1627,11 @@ Proof.
               unfold TotalMap.t_apply, TotalMap.t_update, t_update. rewrite H7 in *.
               assumption.
             }
-            { intros. unfold TotalMap.t_apply, TotalMap.t_update, t_update in *. 
-              apply H3 in H12.
-              destruct (x =? x0) eqn:Hxx0; clarify. admit. (* help *)
-            }
+            { i. unfold TotalMap.t_apply, TotalMap.t_update, t_update in *.
+              destruct (string_dec x x0); subst.
+              - rewrite eqb_refl. admit.
+              - rewrite <- eqb_neq in n. rewrite n.
+                eapply H3; eauto. }
       }
       { (* branch *)
         apply src_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; auto; cycle 1.
@@ -1969,7 +1968,7 @@ Proof.
     { inv H7. admit. (* make contradiction: H9 *) }
     assert (SZ: n0 > S n \/ n0 <= S n) by lia.
     destruct SZ as [SZ|SZ].
-    + destruct ic1. destruct i; ss. admit. (* induction does not needed *)
+    + destruct ic1. admit. (* induction does not needed *)
     + admit. (* real induction case *)
 Admitted.
 
