@@ -1703,39 +1703,57 @@ Proof.
         clear PC. clear H2.
 
         destruct (ds1 ++ ds2); clarify. destruct d; clarify. destruct l; clarify.
-        destruct b' eqn:Hbranch.
-        { (* branch taken *)
+        destruct b' eqn:Hb'.
+        { (* attacker directive is to take branch *)
           injection H8; intros. rewrite <- H2 in *. clear H2. clear H8.
+          (* either we were speculating already or, we weren't but this instruction initiates it *)
           destruct ms eqn:Hms.
-          { (* speculating / masking *)
-            unfold TotalMap.t_apply in *. inv REG. inv H3. inv H1; clarify. 
-            simpl in H13. destruct b' eqn:Hb'.
-            { (* branch taken *)
-              assert (n = 0).
-              { simpl in H22. rewrite H8 in H22. simpl in H22. injection H22; intros. rewrite H1. auto. }
-              rewrite H1 in *. unfold not_zero. rewrite Nat.eqb_refl. simpl.
-              (* need to show that os0, os3 are [], as well as ds0, ds3 *)
-              remember ([<{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>; <{{ jump l0 }}>]) as l'blk.
-              assert (nth_error l'blk 0 = Some <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>).
-              { rewrite Heql'blk. simpl. auto. }
-              inv H18; clarify. inv H21; clarify.
-              specialize (rev_fetch (uslh_prog (b :: bs)) (l', 0) 
-                ([<{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>; <{{ jump l0 }}>], false) 
-                  <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}> IN H3); intros. 
-                  apply SpecSMI_Asgn with 
-                    (r:=msf !-> eval r' (<{{ (~ (msf = 1) ? 0 : e) ? 1 : msf }}>); r') (m:=m) (sk:=ssk) (ms:=true) in H1.
-              admit. 
+          { (* speculating already *)
+            remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+            remember (o + fold_left f (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) as so.
+            inv H3. inv H16.
+            inv H17. 
+            (*Print SpecSMI_Branch.
+            SpecSMI_Branch : forall (pc : cptr) (pc' : nat * nat) 
+                       (r : reg) (m : mem) (sk : list cptr)
+                       (ms ms' b b' : bool) (e : exp) 
+                       (n l : nat),
+                     p [[pc]] = Some <{{ branch e to l }}> ->
+                     to_nat (eval r e) = Some n ->
+                     b = not_zero n -> 
+                     pc' = (if b' then (l, 0) else pc + 1) ->
+                     ms' = ms || negb (Bool.eqb b b') ->
+                     p |- <(( S_Running (pc, r, m, sk, false, ms) ))> -->_
+                     [DBranch b'] ^^ [OBranch b] <((
+               S_Running (pc', r, m, sk, false, ms') ))>*)
+            apply SpecSMI_Branch with 
+              (pc':=(l', 0)) (r:=r') (m:=m) (sk:=ssk) (ms:=true) (ms':=true) 
+                (b:=false) (b':=true) (n:=0) in tgt_fetch; clarify; cycle 1.
+            { simpl. rewrite ms_msf. simpl. auto. }
+            inv tgt_fetch. injection H23; intros. rewrite H2 in *. clear H2. clear H23. simpl in *. 
+            clear H24. 
+            assert (os1 = [OBranch false]).
+            { inv H1; try (unfold fetch in H20; cbn in H20; rewrite Hsfst in H20; rewrite Hssnd in H20; discriminate). 
+              unfold fetch in H16. cbn in H16. rewrite Hsfst in H16. rewrite Hssnd in H16. injection H16; intros.
+              rewrite <- H2 in *. simpl in H23. rewrite ms_msf in H23. simpl in H23. injection H23; intros. 
+              rewrite <- H12 in *. unfold not_zero. rewrite Nat.eqb_refl. simpl. auto.
             }
-            { (* branch not taken *)
-              admit.
+            rewrite H2 in *.
+            assert (os0 = []).
+            { inv H8; clarify; admit.
+
             }
+            admit.
           }
-          { (* not speculating *)
+          { (* initiating speculation *)
             admit.
           }
         }
-        { (* branch not taken *)
-          admit. }
+        { (* attacker directive is to step *)
+          injection H8; intros. rewrite <- H2 in *. clear H2. clear H8.
+          inv H3. inv H16. 
+          admit.
+        }
       }
       { (* jump *) 
         apply src_simple_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; clarify; cycle 1.
