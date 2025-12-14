@@ -1629,7 +1629,10 @@ Proof.
               unfold TotalMap.t_apply, TotalMap.t_update, t_update. rewrite H7 in *.
               assumption.
             }
-            { admit. }
+            { intros. unfold TotalMap.t_apply, TotalMap.t_update, t_update in *. 
+              apply H3 in H12.
+              destruct (x =? x0) eqn:Hxx0; clarify. admit. (* help *)
+            }
       }
       { (* branch *)
         apply src_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; auto; cycle 1.
@@ -1678,7 +1681,8 @@ Proof.
           { (* speculating / masking *)
             unfold TotalMap.t_apply in *. inv REG. inv H3. inv H1; clarify. 
             simpl in H13. destruct b' eqn:Hb'.
-            { assert (n = 0).
+            { (* branch taken *)
+              assert (n = 0).
               { simpl in H22. rewrite H8 in H22. simpl in H22. injection H22; intros. rewrite H1. auto. }
               rewrite H1 in *. unfold not_zero. rewrite Nat.eqb_refl. simpl.
               (* need to show that os0, os3 are [], as well as ds0, ds3 *)
@@ -1693,12 +1697,19 @@ Proof.
                     (r:=msf !-> eval r' (<{{ (~ (msf = 1) ? 0 : e) ? 1 : msf }}>); r') (m:=m) (sk:=ssk) (ms:=true) in H1.
               admit. 
             }
-        { (* not speculating *)
-          admit.
+            { (* branch not taken *)
+              admit.
+            }
+          }
+          { (* not speculating *)
+            admit.
+          }
         }
+        { (* branch not taken *)
+          admit. }
       }
       { (* jump *) 
-        apply src_simple_inv with (tp:=(uslh_prog p)) (tpc:=spc) in H1; clarify; cycle 1.
+        apply src_simple_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; clarify; cycle 1.
         { unfold pc_sync. cbn. replace (fst (sl, o)) with sl in Hfst by auto. rewrite Hfst, Hsnd; auto. }
           clear H2.
         destruct si;
@@ -1759,7 +1770,7 @@ Proof.
             specialize (nth_error_In (fst iblk) o Hsnd); intros.
             apply H5 in H6. inv H6. assert (msf = "msf"). { auto. }
             rewrite <- H6 in H8. apply eval_unused_update with (r:=r) (v:=(N 0)) in H8. 
-            rewrite <- H8. unfold TotalMap.t_update. rewrite <- H4. unfold t_update. admit.
+            rewrite <- H8. unfold TotalMap.t_update. rewrite <- H4. unfold t_update. admit. (* help *)
           }
         }
         { unfold pc_sync. cbn. rewrite Hfst. rewrite Forall_forall in H0. 
@@ -1817,10 +1828,10 @@ Proof.
           specialize (nth_error_In (fst iblk) o Hsnd); intros.
           apply H2 in H3. inv H3. assert (msf = "msf"). { auto. }
           rewrite <- H3 in H4. apply eval_unused_update with (r:=r) (v:=(N 0)) in H4.
-          rewrite ms_msf. cbn. inv REG. admit.
+          rewrite ms_msf. cbn. inv REG. admit. (* help *)
         }
         { clear PC. simpl. inv REG. unfold TotalMap.t_apply in *.
-          assert (eval r e = eval r' e). { admit. }
+          assert (eval r e = eval r' e). { admit. } (* help *)
           rewrite <- H4 in *. econs; eauto.
           { unfold pc_sync. cbn. rewrite Hfst. rewrite Forall_forall in H0. 
             specialize (nth_error_In (b :: bs) sl Hfst); intros.
@@ -1920,14 +1931,22 @@ Proof.
         unfold fetch. cbn. rewrite Hfst, Hsnd. auto.
       }
     + (* None *)
-      simpl in cfg_sync. destruct (pc_sync p (l, o)) eqn:Hpcsync; try discriminate.
-      destruct (map_opt (pc_sync p) sk) eqn:Hsksync; try discriminate. unfold pc_sync in Hpcsync.
+      simpl in cfg_sync. destruct (pc_sync p (l, o)) eqn:Hpcsync; clarify; cycle 1.
+      { admit.
+
+      }
+      destruct (map_opt (pc_sync p) sk) eqn:Hsksync; clarify; cycle 1. 
+      { admit. }
+      unfold pc_sync in Hpcsync. rename c into pc'. rename l0 into sk'.
       cbn in Hpcsync. destruct (nth_error p l) as [blk'|] eqn:Hfst'; try discriminate.
       injection Hfst; intros. rewrite H1 in *. clear Hfst. clear H1.
       destruct (nth_error (fst iblk) o) as [i'|] eqn:Hsnd'; discriminate.
   - (* None *)
-    simpl in cfg_sync. simpl in cfg_sync. destruct (pc_sync p (l, o)) eqn:Hpcsync; try discriminate.
-    destruct (map_opt (pc_sync p) sk) eqn:Hsksync; try discriminate. unfold pc_sync in Hpcsync.
+    simpl in cfg_sync. simpl in cfg_sync. destruct (pc_sync p (l, o)) eqn:Hpcsync; clarify; cycle 1.
+    { admit. }
+    destruct (map_opt (pc_sync p) sk) eqn:Hsksync; clarify; cycle 1. 
+    { admit. }
+    unfold pc_sync in Hpcsync.
     cbn in Hpcsync. destruct (nth_error p l) as [blk'|] eqn:Hfst'; discriminate.
 Admitted.
 
