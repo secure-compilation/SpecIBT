@@ -423,6 +423,29 @@ Definition steps_to_sync_point (tp: prog) (tsc: spec_cfg) (ds: dirs) : option na
   | _ => None
   end.
 
+Definition steps_to_sync_point' (p: prog) (ic: ideal_cfg) (ds: dirs) : option nat :=
+  let '(c, ms) := ic in
+  let '(pc, r, m, sk) := c in
+  (* check pc is well-formed *)
+  match nth_error p (fst pc) with
+  | Some blk => match nth_error (fst blk) (snd pc) with
+               | Some i =>
+                   match i with
+                   | IBranch e l => match ds with
+                                   | DBranch b :: ds' => Some (if b then 3 else 2)
+                                   | _ => None
+                                   end
+                   | ICall e => match ds with
+                               | DCall pc' :: ds' => Some 4
+                               | _ => None
+                               end
+                   | _ => Some 1
+                   end
+               | _ => None
+               end
+  | _ => None
+  end.
+
 Definition get_reg_sc (sc: spec_cfg) : reg :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
@@ -1927,7 +1950,7 @@ Admitted.
 
 (* End BCC. *)
 
-Lemma ultimate_slh_bcc (p: prog) : forall ic1 sc1 sc2 n ds os,
+Lemma ultimate_slh_bcc (p: prog) : forall n ic1 sc1 sc2 ds os,
   no_ct_prog p ->
   wf_prog p ->
   wf_ds' p ds ->
@@ -1938,6 +1961,14 @@ Lemma ultimate_slh_bcc (p: prog) : forall ic1 sc1 sc2 n ds os,
   uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( sc2 ))> ->
   exists ic2, p |- <(( S_Running ic1 ))> -->i*_ ds ^^ os <(( ic2 ))>.
 Proof.
+  intros n. induction n using strong_induction_le; ii.
+  - inv H6. esplits. econs.
+  - destruct (steps_to_sync_point' p ic1 ds) eqn:SYNCPT; cycle 1.
+    { inv H7. admit. (* make contradiction: H9 *) }
+    assert (SZ: n0 > S n \/ n0 <= S n) by lia.
+    destruct SZ as [SZ|SZ].
+    + destruct ic1. destruct i; ss. admit. (* induction does not needed *)
+    + admit. (* real induction case *)
 Admitted.
 
  (** * Definition of Relative Secure *) 
