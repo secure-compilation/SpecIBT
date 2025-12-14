@@ -77,7 +77,7 @@ Reserved Notation
 
 Inductive multi_seq_inst (p : prog) (c : @state cfg) : @state cfg -> obs -> Prop :=
   | multi_seq_inst_refl : p |- <(( c ))> -->*^[] <(( c ))>
-  | multi_seq_inst_trans (c' c'' : @state cfg) (os1 os2 : obs) :
+| multi_seq_inst_trans (c' c'' : @state cfg) (os1 os2 : obs) :
       p |- <(( c ))> -->^os1 <(( c' ))> ->
       p |- <(( c' ))> -->*^os2 <(( c'' ))> ->
       p |- <(( c ))> -->*^(os1 ++ os2) <(( c'' ))>
@@ -1483,6 +1483,36 @@ Proof.
     rewrite nth_error_cons in H. destruct n as [|n']; clarify.
     specialize IHl with (n:=n') (i:=i). specialize (IHl H).
     rewrite IHl. simpl. rewrite firstn_nil. simpl. rewrite sub_0_r. auto.
+Qed.
+
+Lemma eval_regs_eq : forall (r r': reg) (e: exp),
+   e_unused msf e ->
+   e_unused callee e ->
+   (forall x : string, x <> msf /\ x <> callee -> r x = r' x) ->
+   eval r e = eval r' e.
+Proof.
+  intros. ginduction e; clarify.
+  { intros. simpl in H, H0. 
+    assert (x <> msf /\ x <> callee). { split; auto. }
+    apply H1 in H2. simpl. unfold TotalMap.t_apply. 
+    assumption.
+  }
+  { intros. simpl in *. destruct H, H0. f_equal.
+    { apply IHe1; clarify. }
+    { apply IHe2; clarify. }
+  }
+  { intros. simpl in *. destruct H, H0, H2, H3.
+    assert (eval r e1 = eval r' e1).
+    { apply IHe1; clarify. }
+    rewrite H6. 
+    assert (eval r e2 = eval r' e2).
+    { apply IHe2; clarify. }
+    rewrite H7.
+    assert (eval r e3 = eval r' e3).
+    { apply IHe3; clarify. }
+    rewrite H8.
+    auto.
+  }
 Qed.
 
 (* BCC lemma for one single instruction *)
