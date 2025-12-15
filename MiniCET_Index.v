@@ -2331,6 +2331,28 @@ Admitted.
 
  Require Import Stdlib.Program.Equality.
 
+Lemma multi_seq_app p c1 os1 c2 os2 c3:
+    p |- <(( c1 ))> -->*^ os1 <(( c2 ))> ->
+            p |- <(( c2 ))> -->*^ os2 <(( c3 ))> ->
+                    p |- <(( c1 ))> -->*^ os1 ++ os2 <(( c3 ))>.
+Proof.
+    intro H. dependent induction H.
+    - intro H. cbn. assumption.
+    - intro Hlast. apply IHmulti_seq_inst in Hlast.
+      rewrite <- app_assoc. econstructor; eassumption.
+Qed.
+
+Lemma multi_seq_rcons p c1 os1 c2 os2 c3:
+    p |- <(( c1 ))> -->*^ os1 <(( c2 ))> ->
+            p |- <(( c2 ))> -->^ os2 <(( c3 ))> ->
+                    p |- <(( c1 ))> -->*^ os1 ++ os2 <(( c3 ))>.
+Proof.
+    intros Hmulti Hstep.
+    eapply multi_seq_inst_trans in Hstep. 2: constructor.
+    rewrite app_nil_r in Hstep.
+    eapply multi_seq_app; eassumption.
+Qed.
+
 Lemma ideal_step_one_or_no_directive p pc r m stk b ds os c:
   p |- <(( S_Running (pc, r, m, stk, b) ))> -->i_ ds ^^ os <(( c ))> ->
       ds = [] \/ exists d, ds = [d].
@@ -2406,6 +2428,21 @@ Proof.
       econstructor; eassumption.
 Qed.
 
+Lemma multi_ideal_ms_monotonic {p pc r m stk ms ds os pc' r' m' stk'}:
+    p|- <(( S_Running (pc, r, m, stk, ms) ))> -->i*_ ds ^^ os <(( S_Running (pc', r', m', stk', false) ))> ->
+            ms = false.
+Proof.
+    intro Hmulti.
+    dependent induction Hmulti.
+    - reflexivity.
+    - destruct ic2. 2-4: inv Hmulti; inv H0.
+      destruct a as [ [ [ [pc'' r''] m''] stk''] ms''].
+      erewrite IHHmulti with (ms := ms'') in H. 2, 3: reflexivity.
+      inv H; try reflexivity.
+      + symmetry in H17. now apply orb_false_elim in H17.
+      + symmetry in H15. now apply orb_false_elim in H15.
+Qed.
+
 Lemma multi_ideal_nonspec_seq p pc r m stk ds os pc' r' m' stk':
     p |- <(( S_Running (pc, r, m, stk, false) ))> -->i*_ ds ^^ os <(( S_Running (pc', r', m', stk', false) ))> ->
             p |- <(( S_Running (pc, r, m, stk) ))> -->*^ os <(( S_Running (pc', r', m', stk') ))>.
@@ -2413,12 +2450,21 @@ Proof.
     intro H. dependent induction H.
     - constructor.
     - assert (exists pc'' r'' m'' stk'', ic2 = S_Running (pc'', r'', m'', stk'', false)).
-      { inv H0. 1: repeat eexists; reflexivity. inv H1; repeat eexists; admit. (* ms flag deterministic *) }
+      { 
+          inv H0. 1: repeat eexists; reflexivity. 
+          inv H1; repeat eexists.
+          all: try (rewrite (multi_ideal_ms_monotonic H2); reflexivity).
+          3, 4: inv H2; inv H1. (* I think these two cases leave unresolved evars *)
+          all: apply multi_ideal_ms_monotonic, orb_false_elim in H2 as [-> _].
+          all: reflexivity.
+          Unshelve.
+          all: assumption.
+      }
       destruct H1 as (pc'' & r'' & m'' & stk'' & ->).
       econstructor.
       + eapply ideal_nonspec_seq. eassumption.
       + eapply IHmulti_ideal_inst; reflexivity.
-Admitted.
+Qed.
 
 Lemma ideal_nonspec_step_preserves_seq_same_obs p pc r1 r2 m1 m2 stk ds os1 os2 pc' r1' r2' m1' m2' stk':
     seq_same_obs p pc r1 r2 m1 m2 stk ->
@@ -2429,6 +2475,27 @@ Proof.
     intros Hsso Hst1 Hst2.
     eapply seq_steps_preserves_seq_same_obs. 1: eassumption.
     all: eapply ideal_nonspec_seq; eassumption.
+Qed.
+
+Lemma multi_ideal_nonspec_step_preserves_seq_same_obs p pc r1 r2 m1 m2 stk ds os1 os2 pc' r1' r2' m1' m2' stk':
+    seq_same_obs p pc r1 r2 m1 m2 stk ->
+    p |- <(( S_Running (pc, r1, m1, stk, false ) ))> -->i*_ ds ^^ os1 <(( S_Running (pc', r1', m1', stk', false) ))> ->
+            p |- <(( S_Running (pc, r2, m2, stk, false ) ))> -->i*_ ds ^^ os2 <(( S_Running (pc', r2', m2', stk', false) ))> ->
+                    Datatypes.length os1 = Datatypes.length os2 ->
+    seq_same_obs p pc' r1' r2' m1' m2' stk'.
+Proof.
+    intros Hsso Hsteps1%multi_ideal_nonspec_seq Hsteps2%multi_ideal_nonspec_seq Hlen.
+    intros os1' os2' c1' c2 Hsteps1' Hsteps2'.
+    edestruct Hsso. 1, 2: eapply multi_seq_app; eassumption.
+    - left.
+      destruct H. exists x.
+      rewrite <- app_assoc in H.
+      eapply app_eq_len_tail_eq. all: eassumption.
+    - right.
+      destruct H. exists x.
+      rewrite <- app_assoc in H.
+      eapply app_eq_len_tail_eq. 1: eassumption.
+      symmetry. assumption.
 Qed.
 
 Lemma ideal_multi_no_dirs_run_or_term p pc r m stk b os ic:
@@ -2489,7 +2556,7 @@ Lemma ideal_eval_multi_exec_split {p pc r1 r2 m1 m2 stk ds os1 os2 c1 c2}:
                 /\ (c1 = S_Running (pc1', r1', m1', stk1', false) \/ c1 = S_Term /\ p |- <(( S_Running (pc1', r1', m1', stk1', false) ))> -->i_ [] ^^ [] <(( S_Term ))>)
                 /\ (c2 = S_Running (pc2', r2', m2', stk2', false) \/ c2 = S_Term /\ p |- <(( S_Running (pc2', r2', m2', stk2', false) ))> -->i_ [] ^^ [] <(( S_Term))>)
                 \/ exists ds'' os1'' os2'', 
-                ds = ds' ++ ds'' /\ os1 = os1' ++ os1'' /\ os2 = os2' ++ os2'' /\
+                ds = ds' ++ ds'' /\ os1 = os1' ++ os1'' /\ os2 = os2' ++ os2'' /\ pc1' = pc2' /\ stk1' = stk2' /\ Datatypes.length os1' = Datatypes.length os2' /\
                   (
                   c1 = S_Fault /\ c2 = S_Fault /\ p |- <(( S_Running (pc1', r1', m1', stk1', false) ))> -->i_ ds'' ^^ os1'' <(( S_Fault ))> /\ p |- <(( S_Running (pc2', r2', m2', stk2', false) ))> -->i_ ds'' ^^os2'' <(( S_Fault))> 
                       \/
@@ -2579,7 +2646,8 @@ Proof.
       destruct H3 as [H3 | H3].
       -- repeat destruct H3 as [-> H3]. left. repeat split; try reflexivity; apply H3.
       -- right. repeat destruct H3 as [? H3]. subst.
-         repeat eexists. exact H3.
+         repeat eexists. 2: exact H3.
+         simpl. f_equal. assumption.
     * repeat eexists. 1, 2: econstructor.
       right. repeat eexists.
       right.
@@ -2608,8 +2676,8 @@ Proof.
       1: change (OLoad n :: os0) with ([OLoad n] ++ os0).
       2: change (OLoad n0 :: os3) with ([OLoad n0] ++ os3).
       all: econstructor; eassumption.
-    * repeat eexists. 3: {
-      right. repeat destruct H3 as [? H3]. subst. repeat eexists. 3: eassumption. 1, 2: rewrite app_comm_cons; reflexivity.
+    * repeat destruct H3 as [? H3]. subst. repeat eexists. 3: {
+      right. do 3 eexists. repeat (match goal with | |- ?A /\ ?B => split end). 7: eassumption. 2, 3: rewrite app_comm_cons; reflexivity. all: try reflexivity. simpl. f_equal. assumption.
     }
       all: change x9 with ([] ++ x9). 
       1: change (OLoad n :: x10) with ([OLoad n] ++ x10).
@@ -2624,8 +2692,10 @@ Proof.
       1: change (OStore n :: os0) with ([OStore n] ++ os0).
       2: change (OStore n0 :: os3) with ([OStore n0] ++ os3).
       all: econstructor; eassumption.
-    * repeat eexists. 3: {
-      right. repeat destruct H3 as [? H3]. subst. repeat eexists. 3: eassumption. 1, 2: rewrite app_comm_cons; reflexivity.
+    * repeat destruct H3 as [? H3]. subst. repeat eexists. 3: {
+      right. do 3 eexists. repeat (match goal with |- ?A /\ ?B => split end). 7: eassumption. 2, 3: rewrite app_comm_cons; reflexivity.
+      all: try reflexivity.
+      simpl. f_equal. assumption.
     }
       all: change x7 with ([] ++ x7). 
       1: change (OStore n :: x8) with ([OStore n] ++ x8).
@@ -2659,7 +2729,8 @@ Proof.
       destruct H4 as [H4 | H4].
       -- repeat destruct H4 as [-> H4]. left. repeat split ; try reflexivity;  apply H4.
       -- right. repeat destruct H4 as [? H4]. subst.
-         repeat eexists. exact H4.
+         repeat eexists. 2: exact H4.
+         simpl. f_equal. assumption. 
     * repeat eexists. 1, 2: econstructor.
       right. repeat eexists. right.
       repeat eexists. all: eassumption.
@@ -2702,26 +2773,114 @@ Proof.
       all: assumption.
 Qed.
 
+Lemma prefix_eq_length_eq {A} {os1 os2 : list A}:
+    Utils.prefix os1 os2 \/ Utils.prefix os2 os1 ->
+    Datatypes.length os1 = Datatypes.length os2 ->
+    os1 = os2.
+Proof.
+    intros [H | H].
+    - intro Hlen. destruct H.
+      apply (f_equal (@Datatypes.length _)) in H as H'.
+      rewrite length_app in H'.
+      assert (Datatypes.length x = 0) by lia.
+      destruct x; [|cbn in H0; lia].
+      now rewrite app_nil_r in H.
+    - intro Hlen. destruct H.
+      apply (f_equal (@Datatypes.length _)) in H as H'.
+      rewrite length_app in H'.
+      assert (Datatypes.length x = 0) by lia.
+      destruct x; [|cbn in H0; lia].
+      now rewrite app_nil_r in H.
+Qed.
+
+Lemma ideal_misspec_unwinding {p pc r1 r2 m1 m2 stk ds os1 os2 c1 c2}:
+  p |- <(( S_Running (pc, r1, m1, stk, true) ))> -->i*_ ds ^^ os1 <(( c1 ))> ->
+      p |- <(( S_Running (pc, r2, m2, stk, true) ))> -->i*_ ds ^^ os2 <(( c2 ))> ->
+    Utils.prefix os1 os2 \/ Utils.prefix os2 os1.
+Proof.
+    intros Hexec1 Hexec2.
+  dependent induction Hexec1 generalizing pc r1 r2 m1 m2 stk os2; dependent destruction Hexec2.
+  - left. exists []. reflexivity.
+  - left. exists (os1 ++ os2). reflexivity.
+  - right. exists (os1 ++ os0). reflexivity.
+  - inv H; inv H0; try congruence; cbn in *; subst.
+    + eapply IHHexec1; try eassumption. reflexivity.
+    + eapply IHHexec1; try eassumption. reflexivity.
+    + inv x. rewrite H6 in H5; inv H5.
+      edestruct IHHexec1. 1: reflexivity. 1: eassumption.
+      * left. destruct H. exists x. cbn. f_equal. assumption.  
+      * right. destruct H. exists x. cbn. f_equal. assumption.  
+    + eapply IHHexec1; try eassumption. rewrite H9 in H8. inv H8. reflexivity.
+    + rewrite H9 in H8. inv H8. inv H11. inv H13.
+      edestruct IHHexec1. 1: reflexivity. 1: eassumption.
+      * left. destruct H. exists x. cbn. f_equal. assumption.
+      * right. destruct H. exists x. cbn. f_equal. assumption.
+    + rewrite H9 in H8. inv H8. inv H11. inv H12.
+      edestruct IHHexec1. 1: reflexivity. 1: eassumption.
+      * left. destruct H. exists x. cbn. f_equal. assumption.
+      * right. destruct H. exists x. cbn. f_equal. assumption.
+    + inv x. rewrite H6 in H5. inv H5.
+      edestruct IHHexec1. 1: reflexivity. 1: eassumption.
+      * left. destruct H. exists x. cbn. f_equal. assumption.
+      * right. destruct H. exists x. cbn. f_equal. assumption.
+    + inv Hexec2.
+      * right. exists os0. reflexivity.
+      * inv H.
+    + inv Hexec1.
+      * left. exists os3. reflexivity.
+      * inv H.
+    + inv Hexec1. 2: inv H.
+      inv Hexec2. 2: inv H.
+      left. exists []. reflexivity.
+    + eapply IHHexec1; try eassumption. reflexivity.
+    + inv Hexec2. 2: inv H.
+      right. exists os0. reflexivity.
+Qed.
 
 Lemma ideal_eval_relative_secure: forall p pc r1 r2 m1 m2 stk,
     seq_same_obs p pc r1 r2 m1 m2 stk ->
     ideal_same_obs p pc r1 r2 m1 m2 stk.
 Proof.
     unfold ideal_same_obs. intros p pc r1 r2 m1 m2 stk Hsso ds os1 os2 c1 c2 Hexec1 Hexec2.
-    pose proof (ideal_eval_multi_exec_split Hsso Hexec1 Hexec2) as (pc1' & pc2' & pr1' & r2' & m1' & m2' & stk1' & stk2' & ds' & os1' & os2' & Hns1 & Hns2 & Hsplit).
+    pose proof (ideal_eval_multi_exec_split Hsso Hexec1 Hexec2) as (pc1' & pc2' & r1' & r2' & m1' & m2' & stk1' & stk2' & ds' & os1' & os2' & Hns1 & Hns2 & Hsplit).
     clear Hexec1 Hexec2.
     destruct Hsplit.
-    2: destruct H as (ds'' & os1'' & os2''& -> & -> & -> & H); destruct H.
+    2: destruct H as (ds'' & os1'' & os2''& -> & -> & -> & -> & -> & Hobslen & H); destruct H.
     - repeat destruct H as [-> H].
-      (* need to switch to reflexive prefix thing *)
-      admit.
+      apply multi_ideal_nonspec_seq in Hns1, Hns2.
+      eapply Hsso; eassumption.
     - destruct H as (-> & -> & Hf1 & Hf2).
-      (* even if os1'' = os2'', we're missing info on the length of os1' and os2' to prove this *)
-      (* also need pc1' = pc2' (and might as well have it for stk as well)*)
-      admit.
+      inv Hf1; inv Hf2. rewrite H3 in H6. inv H6.
+      apply multi_ideal_nonspec_seq in Hns1, Hns2.
+      eapply multi_seq_rcons in Hns1, Hns2.
+      2, 3: econstructor; eassumption.
+      eapply Hsso; eassumption.
     - destruct H as (pc'' & r1'' & r2'' & m1'' & m2'' & stk'' & d & ds''' & o1 & os1''' & o2 & os2''' & -> & -> & ->  & Hmp1 & Hspec1 & Hmp2 & Hspec2).
-      (* once again, we need info on the lengths of os1 and os2*)
-    
-Admitted.
+      apply prefix_eq_length_eq in Hobslen. 2: eapply Hsso; eapply multi_ideal_nonspec_seq; eassumption.
+      subst.
+      assert (o1 = o2) as ->.
+      {
+          eapply multi_ideal_nonspec_step_preserves_seq_same_obs in Hsso. 2-3: eassumption. 2: reflexivity.
+          clear - Hsso Hmp1 Hmp2.
+          inv Hmp1; inv Hmp2.
+          - rewrite H6 in H7. inv H7.
+            edestruct Hsso. 1, 2: econstructor 2; [|constructor].
+            1, 2: eapply SSMI_Branch; try eassumption.
+            1, 2: reflexivity.
+            all: do 2 rewrite app_nil_r in H.
+            all: destruct H.
+            all: now inv H.
+          - rewrite H7 in H10. inv H10.
+            edestruct Hsso. 1, 2: econstructor 2; [|econstructor].
+            1, 2: eapply SSMI_Call; try eassumption.
+            all: do 2 rewrite app_nil_r in H.
+            all: destruct H.
+            all: now inv H.
+      }
+      edestruct (ideal_misspec_unwinding Hspec1 Hspec2).
+      + left. destruct H. exists x. rewrite <- app_assoc. f_equal. cbn. f_equal. assumption.
+      + right. destruct H. exists x. rewrite <- app_assoc. f_equal. cbn. f_equal. assumption.
+Qed.
+
 
 
