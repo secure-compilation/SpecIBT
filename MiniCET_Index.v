@@ -2332,10 +2332,25 @@ Proof.
       { (* speculating *)
         injection Heq0; i; subst; ss. injection Heq; i; subst.
         clear Heq0. clear Heq. unfold not_zero. rewrite Nat.eqb_refl. ss.
-        (* why does it say (pc' + 1) + 1 in sc2?? *) admit.
-      }
 
-      admit.
+        exists (l, (add o 1), r, m, sk, true).
+        split.
+        { econs; eauto. }
+        { econs; eauto.
+          { unfold pc_sync in *. ss. 
+            destruct (nth_error p l) as [iblk|] eqn:Hfst; clarify.
+            destruct (nth_error (fst iblk) o) eqn:Hsnd; clarify.
+            admit.
+          }
+          { admit.
+
+          }
+
+        }
+      }
+      { (* not speculating *)
+        admit.
+      }
   (* jump *)
   - assert (n = 1) by (ss; des_ifs). subst.
     inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
