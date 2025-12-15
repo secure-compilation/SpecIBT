@@ -1421,7 +1421,34 @@ Proof.
         { eapply uslh_inst_np_length. }
         lia.
       * eauto.
-      * admit.
+      (* TODO: lemma? #2 *)
+      * ss. unfold uslh_prog. rewrite Huslh.
+        rewrite nth_error_app1.
+        2:{ rewrite <- nth_error_Some. ii. clarify. }
+        rewrite x0.
+        replace (fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then add acc 1 else acc) (firstn o blk)
+                   (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
+
+        destruct blk' as [blk' is_proc']. ss.
+        exploit concat_nth_error; i.
+        { eapply x2. }
+        { instantiate (2:= 1). ss. }
+        des_ifs.
+        { unfold MiniCET.uslh_ret in Heq1. clarify.
+          assert (prefix_offset a o 0 + 2 = o + blk_offset (blk, true) o).
+          { unfold blk_offset. ss. unfold prefix_offset.
+            rewrite <- fold_left_add_init. eapply offset_eq_aux; eauto.
+            exploit mapM_perserve_len; eauto. i. rewrite x1.
+            eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
+          rewrite <- H. rewrite <- add_assoc. rewrite add_comm.
+          replace ((add 2 1) + prefix_offset a o 0)%nat with (S (S (add (prefix_offset a o 0) 1))) by lia.
+          do 2 rewrite nth_error_cons_succ. auto. }
+        { unfold MiniCET.uslh_ret in Heq1. clarify.
+          assert (prefix_offset a o 0 = o + blk_offset (blk, false) o).
+          { unfold blk_offset. ss. eapply offset_eq_aux; eauto.
+            exploit mapM_perserve_len; eauto. i. rewrite x1.
+            eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
+          rewrite <- H. auto. }
   (* call *)
   (* TODO: existential case also could be a lemma *)
   - unfold MiniCET.uslh_ret in x5. clarify.
@@ -1448,6 +1475,7 @@ Proof.
           exploit mapM_perserve_len; eauto. i. rewrite x1.
           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
         rewrite <- H. auto. }
+    (* TODO: lemma? #2 *)
     + econs 3; eauto. ss. unfold uslh_prog. rewrite Huslh.
       rewrite nth_error_app1.
       2:{ rewrite <- nth_error_Some. ii. clarify. }
@@ -1486,7 +1514,7 @@ Proof.
     apply NCT in H. unfold no_ct_blk in H. rewrite Forall_forall in H.
     specialize (nth_error_In blk o Heq0). intros.
     apply H in H0. destruct H0.
-Admitted.
+Qed.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
@@ -1508,26 +1536,16 @@ Lemma eval_regs_eq : forall (r r': reg) (e: exp),
    (forall x : string, x <> msf /\ x <> callee -> r x = r' x) ->
    eval r e = eval r' e.
 Proof.
-  intros. ginduction e; clarify.
-  { intros. simpl in H, H0. 
+  intros. ginduction e; ss; ii.
+  - simpl in H, H0.
     assert (x <> msf /\ x <> callee) by (split; auto).
-    apply H1 in H2. simpl. eauto. }
-  { intros. simpl in *. destruct H, H0. f_equal.
+    apply H1 in H2. simpl. eauto.
+  - simpl in *. destruct H, H0. f_equal.
     { apply IHe1; clarify. }
     { apply IHe2; clarify. }
-  }
-  { intros. simpl in *. destruct H, H0, H2, H3.
-    assert (eval r e1 = eval r' e1).
-    { apply IHe1; clarify. }
-    rewrite H6. 
-    assert (eval r e2 = eval r' e2).
-    { apply IHe2; clarify. }
-    rewrite H7.
-    assert (eval r e3 = eval r' e3).
-    { apply IHe3; clarify. }
-    rewrite H8.
-    auto.
-  }
+  - ss. destruct H, H0, H2, H3.
+    exploit IHe1; eauto. exploit IHe2; eauto. exploit IHe3; eauto. i.
+    rewrite x0, x1, x2. eauto.
 Qed.
 
 Lemma wf_prog_lookup p pc i
@@ -2152,8 +2170,7 @@ Proof.
                 Some <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>).
       { clear - IN. ss. rewrite IN. ss. }
       inv H7. inv H2; clarify. inv H8.
-      assert (ITGT3: (uslh_prog p)[[(l', 1)]] =
-                       Some <{{ jump l0 }}>).
+      assert (ITGT3: (uslh_prog p)[[(l', 1)]] = Some <{{ jump l0 }}>).
       { clear - IN. ss. rewrite IN. ss. }
       inv H2; clarify. admit.
     (* false branch 1 more steps *)
