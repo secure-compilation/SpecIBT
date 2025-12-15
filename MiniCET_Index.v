@@ -847,11 +847,13 @@ Variant match_inst_uslh (p: prog) (pc: cptr) : inst -> inst -> Prop :=
   (SIMPL: simple_inst i)
   (MATCH: match_simple_inst_uslh i i') :
   match_inst_uslh p pc i i'
-| uslh_branch e e' l l'
+| uslh_branch e e' l l' tpc
   (COND: e' = <{{ (msf = 1) ? 0 : e }}>)
   (LB: match_branch_target p pc = Some l')
   (IN: nth_error (uslh_prog p) l' =
-         Some ([<{{ msf := (~ e') ? 1 : msf }}>; <{{ jump l }}>], false)) :
+         Some ([<{{ msf := (~ e') ? 1 : msf }}>; <{{ jump l }}>], false))
+  (SYNC: pc_sync p pc = Some tpc)
+  (NXT: (uslh_prog p)[[tpc + 1]] = Some <{{ msf := e' ? 1 : msf }}>) :
   match_inst_uslh p pc (IBranch e l) (IBranch e' l')
 | uslh_call e e' tpc
   (CALL: e' = <{{ (msf = 1) ? & 0 : e }}>)
@@ -1402,22 +1404,24 @@ Proof.
           { ss. rewrite Heq. subst. f_equal.
             erewrite <- uslh_blk_np_length, <- uslh_inst_np_length; eauto. }
           ss. des_ifs. }
-      des_ifs_safe. f_equal.
-      do 2 rewrite <- add_assoc. rewrite add_cancel_l.
+      * des_ifs_safe. f_equal.
+        do 2 rewrite <- add_assoc. rewrite add_cancel_l.
 
-      (* The number of branches in previous blocks and
+        (* The number of branches in previous blocks and
          the number of new blocks created during `uslh_blk` are equal. *)
-      assert (branch_in_prog_before p l = len_before uslh_blk (add_index p) l (Datatypes.length p)).
-      { eapply uslh_blk_np_length. }
-      i. rewrite <- H.
+        assert (branch_in_prog_before p l = len_before uslh_blk (add_index p) l (Datatypes.length p)).
+        { eapply uslh_blk_np_length. }
+        i. rewrite <- H.
 
-      (* The number of branches before the current offset and
+        (* The number of branches before the current offset and
          the number of blocks created when `uslh` is applied
          to the current block up to the current offset are equal. *)
-      assert (offset_branch_before (blk, is_proc) o =
-                len_before uslh_inst blk o (Datatypes.length p + branch_in_prog_before p l)).
-      { eapply uslh_inst_np_length. }
-      lia.
+        assert (offset_branch_before (blk, is_proc) o =
+                  len_before uslh_inst blk o (Datatypes.length p + branch_in_prog_before p l)).
+        { eapply uslh_inst_np_length. }
+        lia.
+      * eauto.
+      * admit.
   (* call *)
   (* TODO: existential case also could be a lemma *)
   - unfold MiniCET.uslh_ret in x5. clarify.
@@ -1482,7 +1486,7 @@ Proof.
     apply NCT in H. unfold no_ct_blk in H. rewrite Forall_forall in H.
     specialize (nth_error_In blk o Heq0). intros.
     apply H in H0. destruct H0.
-Qed.
+Admitted.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
@@ -2136,7 +2140,25 @@ Proof.
         { rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
       * erewrite t_update_neq; eauto.
   (* branch *)
-  - admit.
+  - inv x1; try simpl in SIMPL; clarify.
+    unfold steps_to_sync_point' in n_steps. rewrite ISRC in n_steps.
+    des_ifs_safe. inv tgt_steps.
+    (* first step *)
+    inv H5; clarify. simpl in H1. clarify. rename H10 into ITGT1.
+
+    destruct b'; clarify.
+    (* true branch: 2 more steps *)
+    + assert (ITGT2: (uslh_prog p)[[(l', 0)]] =
+                Some <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>).
+      { clear - IN. ss. rewrite IN. ss. }
+      inv H7. inv H2; clarify. inv H8.
+      assert (ITGT3: (uslh_prog p)[[(l', 1)]] =
+                       Some <{{ jump l0 }}>).
+      { clear - IN. ss. rewrite IN. ss. }
+      inv H2; clarify. admit.
+    (* false branch 1 more steps *)
+    + inv H7. inv H8. inv H2; clarify. simpl.
+      admit.
   (* jump *)
   - assert (n = 1) by (ss; des_ifs). subst.
     inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
@@ -2195,7 +2217,19 @@ Proof.
       erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
       rewrite add_1_r. auto.
   (* call *)
-  - admit.
+  - inv x1; try simpl in SIMPL; clarify.
+    unfold steps_to_sync_point' in n_steps. rewrite ISRC in n_steps.
+    des_ifs_safe. inv tgt_steps.
+    inv H5; clarify. simpl in H1.
+    inv H7. inv H3; clarify. simpl in H6. clarify.
+    inv H9. inv H2; clarify.
+
+    assert (ITGT: (uslh_prog p)[[lo + 1]] = Some <{{ msf := (callee = (& (fst lo))) ? msf : 1 }}>).
+    { admit. (* TODO: YH will make lemma for this case. *) }
+
+    inv H7. inv H8. inv H2; clarify.
+
+    admit.
   (* ctarget *)
   - exfalso. red in nct. ss. des_ifs_safe.
     rewrite Forall_forall in nct. eapply nth_error_In in Heq.
