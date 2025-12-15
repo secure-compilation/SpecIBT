@@ -173,10 +173,9 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), ms) ))>
-  | ISMI_Branch : forall pc pc' r m sk (ms ms' b b' : bool) e n n' l,
+  | ISMI_Branch : forall pc pc' r m sk (ms ms' b b' : bool) e n' l,
       p[[pc]] = Some <{{ branch e to l }}> ->
-      to_nat (eval r e) = Some n ->
-      n' = (if ms then 0 else n) -> (* uslh masking *)
+      (if ms then Some 0 else to_nat (eval r e)) = Some n' ->
       b = (not_zero n') ->
       pc' = (if b' then (l,0) else pc+1) ->
       ms' = (ms || (negb (Bool.eqb b b'))) ->
@@ -2419,9 +2418,9 @@ Lemma ideal_nonspec_seq p pc r m stk ds os pc' r' m' stk':
 Proof.
     inversion 1; subst; try (econstructor; eassumption).
     - eapply SSMI_Branch. 1,2: eassumption.
-      cbn in H17. apply (f_equal negb) in H17. cbn in H17.
-      rewrite negb_involutive in H17.
-      symmetry in H17. apply eqb_prop in H17 as ->. reflexivity.
+      cbn in H16. apply (f_equal negb) in H16. cbn in H16.
+      rewrite negb_involutive in H16.
+      symmetry in H16. apply eqb_prop in H16 as ->. reflexivity.
     - cbn in H15. apply (f_equal negb) in H15. cbn in H15. rewrite negb_involutive in H15.
       symmetry in H15. rewrite Nat.eqb_eq in H15.
       destruct pc'; cbn in *; subst.
@@ -2439,7 +2438,7 @@ Proof.
       destruct a as [ [ [ [pc'' r''] m''] stk''] ms''].
       erewrite IHHmulti with (ms := ms'') in H. 2, 3: reflexivity.
       inv H; try reflexivity.
-      + symmetry in H17. now apply orb_false_elim in H17.
+      + symmetry in H16. now apply orb_false_elim in H16.
       + symmetry in H15. now apply orb_false_elim in H15.
 Qed.
 
@@ -2619,12 +2618,12 @@ Proof.
       1: change x10 with ([] ++ x10).
       2: change x11 with ([] ++ x11).
       all: econstructor; eassumption.
-    + rewrite H6 in H20. inv H20. inv x.
-      assert (not_zero n = not_zero n0).
+    + rewrite H6 in H19. inv H19. inv x.
+      assert (not_zero n' = not_zero n'0).
       {
         clear Hexec1 IHHexec1 Hexec2.
         unfold seq_same_obs in Hseq_same.
-        specialize (Hseq_same ([OBranch (not_zero n)]) ([OBranch (not_zero n0)])).
+        specialize (Hseq_same ([OBranch (not_zero n')]) ([OBranch (not_zero n'0)])).
         edestruct Hseq_same.
         - rewrite <- app_nil_r. econstructor. 2: constructor.
           eapply SSMI_Branch. 1,2: eassumption. reflexivity.
@@ -2634,14 +2633,14 @@ Proof.
         - destruct H1 as [? H1]. now inv H1.
       }
       rewrite H1 in *. clear H1.
-      destruct (Bool.eqb (not_zero n0) b').
+      destruct (Bool.eqb (not_zero n'0) b').
     * cbn in *. 
       eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?).
       repeat eexists.
       1,2: change (DBranch b' :: ds2) with ([DBranch b'] ++ ds2). 
-      1: change (OBranch (not_zero n0) :: os0) with ([OBranch (not_zero n0)] ++ os0).
-      2: change (OBranch (not_zero n0) :: os3) with ([OBranch (not_zero n0)] ++ os3).
+      1: change (OBranch (not_zero n'0) :: os0) with ([OBranch (not_zero n'0)] ++ os0).
+      2: change (OBranch (not_zero n'0) :: os3) with ([OBranch (not_zero n'0)] ++ os3).
       1,2: econstructor 2; eassumption.
       destruct H3 as [H3 | H3].
       -- repeat destruct H3 as [-> H3]. left. repeat split; try reflexivity; apply H3.
@@ -2806,7 +2805,7 @@ Proof.
   - inv H; inv H0; try congruence; cbn in *; subst.
     + eapply IHHexec1; try eassumption. reflexivity.
     + eapply IHHexec1; try eassumption. reflexivity.
-    + inv x. rewrite H6 in H5; inv H5.
+    + inv x. rewrite H6 in H5; inv H5. inv H10. inv  H11.
       edestruct IHHexec1. 1: reflexivity. 1: eassumption.
       * left. destruct H. exists x. cbn. f_equal. assumption.  
       * right. destruct H. exists x. cbn. f_equal. assumption.  
@@ -2863,7 +2862,7 @@ Proof.
           eapply multi_ideal_nonspec_step_preserves_seq_same_obs in Hsso. 2-3: eassumption. 2: reflexivity.
           clear - Hsso Hmp1 Hmp2.
           inv Hmp1; inv Hmp2.
-          - rewrite H6 in H7. inv H7.
+          - rewrite H5 in H6. inv H6.
             edestruct Hsso. 1, 2: econstructor 2; [|constructor].
             1, 2: eapply SSMI_Branch; try eassumption.
             1, 2: reflexivity.
