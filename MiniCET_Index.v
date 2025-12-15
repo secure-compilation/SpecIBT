@@ -52,7 +52,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Load : forall pc r m sk x e n v',
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
-      nth_error m n = Some v' ->
+nth_error m n = Some v' ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OLoad n] <(( S_Running (pc+1, (x !-> v'; r), m, sk) ))>
   | SSMI_Store : forall pc r m sk e e' n,
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
@@ -2175,7 +2175,153 @@ Proof.
 
       unfold to_nat in H14. des_ifs_safe. simpl in Heq. des_ifs_safe.
       rewrite Heq. simpl in ms_msf. simpl. rewrite ms_msf in *. ss.
-      admit.
+
+      destruct ms eqn:Hms.
+      { (* already speculating *)
+        unfold not_zero in *. rewrite Nat.eqb_refl in *.
+        simpl in Heq0. injection Heq0; i; subst. clear Heq0.
+        simpl in Heq. injection Heq; i; subst. clear Heq.
+        simpl.
+
+        assert (exists i', p[[(l0, 0)]] = Some i').
+        { assert (wf_instr p <{{ branch e to l0 }}>) by (eapply wf_prog_lookup with (pc:=(l, o)); eauto).
+          dup H1.
+          unfold wf_instr in H2. des. unfold wf_lbl in H3. unfold fetch. cbn.
+          destruct (nth_error p l0) as [l0blk|] eqn:Hl0; clarify.
+          specialize (nth_error_In p l0 Hl0); i. 
+          unfold wf_block in H0. rewrite Forall_forall in H0.
+          apply H0 in H4. des. apply blk_not_empty_list in H4. destruct (fst l0blk); clarify.
+          exists i. auto.
+        }
+
+        exists (l0, 0, r, m, sk, true).
+        split.
+        { econs; eauto. }
+        { econs; eauto.
+          { unfold pc_sync. simpl. des. 
+            unfold fetch in H1. simpl in H1. 
+            destruct (nth_error p l0) eqn:Hl0; clarify. destruct (fst p0); clarify.
+            assert (wf_instr p <{{ branch e to l0 }}>) by (eapply wf_prog_lookup with (pc:=(l, o)); eauto).
+            unfold wf_instr in H1. des. unfold wf_lbl in H2. unfold fetch. cbn.  
+            rewrite Hl0 in H2. destruct p0. rewrite <- H2. simpl. auto.
+          }
+          { econs; eauto; i. inv REG. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
+            des. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2.
+            apply H3. rewrite String.eqb_sym, String.eqb_neq in H2. 
+            split; auto.
+          }
+        }
+      }
+      { (* not yet speculating *)
+        unfold not_zero in *. rewrite Nat.eqb_refl in *.
+        simpl in Heq0. injection Heq0; i; subst. clear Heq0.
+        simpl in Heq. simpl. rewrite negb_involutive. 
+        des_ifs.
+        { (* initiate speculation *)
+          destruct (Nat.eqb n0 0) eqn:Hn0; clarify. simpl in *. clear Heq0.
+
+          assert (exists i', p[[(l0, 0)]] = Some i').
+          { assert (wf_instr p <{{ branch e to l0 }}>). 
+            { eapply wf_prog_lookup with (pc:=(l, o)); eauto.
+              unfold fetch. cbn. des_ifs.
+            }
+            dup H1.
+            unfold wf_instr in H2. des. unfold wf_lbl in H3. unfold fetch. cbn.
+            destruct (nth_error p l0) as [l0blk|] eqn:Hl0; clarify.
+            specialize (nth_error_In p l0 Hl0); i. 
+            unfold wf_block in H0. rewrite Forall_forall in H0.
+            apply H0 in H4. des. apply blk_not_empty_list in H4. destruct (fst l0blk); clarify.
+            exists i. auto.
+          }
+
+          des.
+          exists (l0, 0, r, m, sk, true).
+          split.
+          { econs; eauto. 
+            - unfold fetch. cbn. destruct (nth_error p l); clarify.
+              destruct (nth_error (fst p0) o); clarify.
+            - assert (to_nat (eval r' e) = Some n0) by (rewrite Heq; auto).
+              erewrite <- H2. f_equal.
+              specialize (rev_fetch p (l, o) p0 <{{ branch e to l0 }}> Heq3 ISRC); i.
+              apply eval_regs_eq.
+              + eapply unused_prog_lookup with (x:=msf) in H3; eauto.
+              + eapply unused_prog_lookup with (x:=callee) in H3; eauto.
+              + inv REG. unfold TotalMap.t_apply in H4. 
+                assumption.
+            - destruct n0; clarify.
+          }
+          { econs; eauto.
+            - unfold pc_sync. cbn. dup H1. unfold fetch in H2. cbn in H2.
+              destruct (nth_error p l) eqn:Hfst; clarify.
+              rename p0 into iblk. 
+              specialize (nth_error_In p l Hfst); i.
+              rewrite Forall_forall in H0. apply H0 in H3. unfold wf_block in H3. des.
+              rewrite Forall_forall in H5.
+              specialize (nth_error_In (fst iblk) o ISRC); i.
+              apply H5 in H6. unfold wf_instr in H6. des.
+              unfold wf_lbl in H7.
+              destruct (nth_error p l0) eqn:Hl0; clarify.
+              destruct p0. rewrite <- H7. cbn. destruct l1; clarify.
+            - econs; eauto. i. inv REG.
+              unfold TotalMap.t_apply, TotalMap.t_update, t_update.
+              des. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2.
+              apply H3. rewrite String.eqb_sym, String.eqb_neq in H2. 
+              split; auto.
+          }
+        }
+        { (* don't initiate speculation *)
+          destruct (Nat.eqb n0 0) eqn:Hn0; clarify. simpl in *. clear Heq0.
+
+          assert (exists i', p[[(l0, 0)]] = Some i').
+          { assert (wf_instr p <{{ branch e to l0 }}>). 
+            { eapply wf_prog_lookup with (pc:=(l, o)); eauto.
+              unfold fetch. cbn. des_ifs.
+            }
+            dup H1.
+            unfold wf_instr in H2. des. unfold wf_lbl in H3. unfold fetch. cbn.
+            destruct (nth_error p l0) as [l0blk|] eqn:Hl0; clarify.
+            specialize (nth_error_In p l0 Hl0); i. 
+            unfold wf_block in H0. rewrite Forall_forall in H0.
+            apply H0 in H4. des. apply blk_not_empty_list in H4. destruct (fst l0blk); clarify.
+            exists i. auto.
+          }
+
+          des.
+          exists (l0, 0, r, m, sk, false).
+          split.
+          { econs; eauto. 
+            - unfold fetch. cbn. destruct (nth_error p l); clarify.
+              destruct (nth_error (fst p0) o); clarify.
+            - assert (to_nat (eval r' e) = Some n0) by (rewrite Heq; auto).
+              erewrite <- H2. f_equal.
+              specialize (rev_fetch p (l, o) p0 <{{ branch e to l0 }}> Heq3 ISRC); i.
+              apply eval_regs_eq.
+              + eapply unused_prog_lookup with (x:=msf) in H3; eauto.
+              + eapply unused_prog_lookup with (x:=callee) in H3; eauto.
+              + inv REG. unfold TotalMap.t_apply in H4. 
+                assumption.
+            - destruct n0; clarify.
+          }
+          { econs; eauto.
+            - unfold pc_sync. cbn. dup H1. unfold fetch in H2. cbn in H2.
+              destruct (nth_error p l) eqn:Hfst; clarify.
+              rename p0 into iblk. 
+              specialize (nth_error_In p l Hfst); i.
+              rewrite Forall_forall in H0. apply H0 in H3. unfold wf_block in H3. des.
+              rewrite Forall_forall in H5.
+              specialize (nth_error_In (fst iblk) o ISRC); i.
+              apply H5 in H6. unfold wf_instr in H6. des.
+              unfold wf_lbl in H7.
+              destruct (nth_error p l0) eqn:Hl0; clarify.
+              destruct p0. rewrite <- H7. cbn. destruct l1; clarify.
+            - econs; eauto. i. inv REG.
+              unfold TotalMap.t_apply, TotalMap.t_update, t_update.
+              des. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2.
+              apply H3. rewrite String.eqb_sym, String.eqb_neq in H2. 
+              split; auto.
+          }
+        }
+      }
     (* false branch 1 more steps *)
     + inv H7. inv H8. inv H2; clarify. simpl.
       admit.
