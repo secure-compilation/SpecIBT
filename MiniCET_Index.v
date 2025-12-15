@@ -2172,7 +2172,24 @@ Proof.
       inv H7. inv H2; clarify. inv H8.
       assert (ITGT3: (uslh_prog p)[[(l', 1)]] = Some <{{ jump l0 }}>).
       { clear - IN. ss. rewrite IN. ss. }
-      inv H2; clarify. admit.
+      inv H2; inv H7; clarify.
+      do 2 rewrite app_nil_r.
+      simpl in ms_msf.
+      destruct ms eqn:Hms.
+      { (* already speculating *)
+        simpl in H14. rewrite ms_msf in *. simpl.
+        simpl in H14. injection H14; i. subst. clear H14.
+        unfold not_zero. simpl.
+
+        exists (l0, 0, r, m, sk, true).
+        split.
+        { econs; eauto. admit. }
+        { econs; eauto; admit.
+          
+
+        }
+        }   admit.      
+      
     (* false branch 1 more steps *)
     + inv H7. inv H8. inv H2; clarify. simpl.
       admit.
