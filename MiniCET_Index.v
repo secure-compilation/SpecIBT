@@ -1732,39 +1732,73 @@ Proof.
         clear PC. clear H2.
 
         destruct (ds1 ++ ds2); clarify. destruct d; clarify. destruct l; clarify.
-        destruct b' eqn:Hbranch.
-        { (* branch taken *)
+        destruct b' eqn:Hb'.
+        { (* attacker directive is to take branch *)
           injection H8; intros. rewrite <- H2 in *. clear H2. clear H8.
           destruct ms eqn:Hms.
-          { (* speculating / masking *)
-            unfold TotalMap.t_apply in *. inv REG. inv H3. inv H1; clarify.
-            simpl in H13. destruct b' eqn:Hb'.
-            { (* branch taken *)
-              assert (n = 0).
-              { simpl in H22. rewrite H8 in H22. simpl in H22. injection H22; intros. rewrite H1. auto. }
-              rewrite H1 in *. unfold not_zero. rewrite Nat.eqb_refl. simpl.
-              (* need to show that os0, os3 are [], as well as ds0, ds3 *)
-              remember ([<{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>; <{{ jump l0 }}>]) as l'blk.
-              assert (nth_error l'blk 0 = Some <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>).
-              { rewrite Heql'blk. simpl. auto. }
-              inv H18; clarify. inv H21; clarify.
-              specialize (rev_fetch (uslh_prog (b :: bs)) (l', 0) 
-                ([<{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>; <{{ jump l0 }}>], false) 
-                  <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}> IN H3); intros. 
-                  apply SpecSMI_Asgn with 
-                    (r:=msf !-> eval r' (<{{ (~ (msf = 1) ? 0 : e) ? 1 : msf }}>); r') (m:=m) (sk:=ssk) (ms:=true) in H1.
-              admit. 
+          { (* speculating already *)
+            remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+            remember (o + fold_left f (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) as so.
+            inv H3. inv H16. inv H17. 
+            apply SpecSMI_Branch with 
+              (pc':=(l', 0)) (r:=r') (m:=m) (sk:=ssk) (ms:=true) (ms':=true) 
+                (b:=false) (b':=true) (n:=0) in tgt_fetch; clarify; cycle 1.
+            { simpl. rewrite ms_msf. simpl. auto. }
+            inv tgt_fetch. injection H23; intros. rewrite H2 in *. clear H2. clear H23. simpl in *. 
+            clear H24. 
+            assert (os1 = [OBranch false]).
+            { inv H1; try (unfold fetch in H20; cbn in H20; rewrite Hsfst in H20; rewrite Hssnd in H20; discriminate). 
+              unfold fetch in H16. cbn in H16. rewrite Hsfst in H16. rewrite Hssnd in H16. injection H16; intros.
+              rewrite <- H2 in *. simpl in H23. rewrite ms_msf in H23. simpl in H23. injection H23; intros. 
+              rewrite <- H12 in *. unfold not_zero. rewrite Nat.eqb_refl. simpl. auto.
             }
-            { (* branch not taken *)
+            rewrite H2 in *.
+
+            assert (os0 = []).
+            { admit. }
+            rewrite H12 in *. 
+            assert (os2 = []).
+            { admit. }
+            rewrite H13 in *. simpl.
+
+            exists (l0, 0, r, m, sk, true).
+            rewrite Hsfst in H17. rewrite Hssnd in H17. injection H17; intros. 
+            rewrite <- H14 in *.
+
+            assert (to_nat (eval r e) = Some n).
+            { unfold not_zero in H22. destruct n; clarify. 
+              rewrite <- H21. f_equal. 
+              assert (eval r' <{{ (msf = 1) ? 0 : e }}> = N 0).
+              { inv REG.
+                unfold TotalMap.t_apply in H12.
+                unfold r_sync. unfold unused_prog in unused_p_msf. 
+                destruct (split (b :: bs)) as (blks, bools) eqn:Hsplit. rewrite Forall_forall in unused_p_msf.
+                specialize (nth_error_In (b :: bs) sl Hfst); intros.
+                apply in_split_l in H13. rewrite Hsplit in H13. simpl in H13. apply unused_p_msf in H13.
+                unfold b_unused in H13. rewrite Forall_forall in H13.
+                specialize (nth_error_In (fst iblk) o Hsnd); intros.
+                apply H13 in H14. simpl in H14. assert (msf = "msf"). { auto. }
+                rewrite <- H15 in H14. unfold BEq. simpl. 
+                unfold TotalMap.t_apply. rewrite H12. simpl. auto.
+              }
               admit.
             }
+            split; [econs; eauto|].
+            assert (sc2 = (l0, 0, r', m, ssk, false, true)). { admit. }
+            rewrite H16 in *. econs; eauto.
+            unfold pc_sync. simpl. rewrite Hlbl. simpl. auto.
           }
-          { (* not speculating *)
-            admit.
+          { (* not yet speculating *)
+            remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+            remember (o + fold_left f (firstn o (fst iblk)) (if Bool.eqb (snd iblk) true then 2 else 0)) as so.
+            inv H3. inv H16. inv H17. admit.
           }
         }
-        { (* branch not taken *)
-          admit. }
+        { (* attacker directive is to step *)
+          injection H8; intros. rewrite <- H2 in *. clear H2. clear H8.
+          inv H3. inv H16. 
+          admit.
+        }
       }
       { (* jump *) 
         apply src_simple_inv with (tp:=(uslh_prog (b :: bs))) (tpc:=spc) in H1; clarify; cycle 1.
