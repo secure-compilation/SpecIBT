@@ -48,7 +48,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OBranch (not_zero n)] <(( S_Running (pc', r, m, sk) ))>
   | SSMI_Jump : forall l pc r m sk,
       p[[pc]] = Some <{{ jump l }}> ->
-p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running ((l,0), r, m, sk) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running ((l,0), r, m, sk) ))>
   | SSMI_Load : forall pc r m sk x e n v',
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
@@ -60,7 +60,7 @@ p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running ((l,0), r, m, sk) ))>
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (pc+1, r, upd n m (eval r e'), sk) ))>
   | SSMI_Call : forall pc r m sk e l,
       p[[pc]] = Some <{{ call e }}> ->
-to_fp (eval r e) = Some l ->
+      to_fp (eval r e) = Some l ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
   | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
@@ -101,14 +101,14 @@ Inductive spec_eval_small_step (p:prog):
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   | SpecSMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
-p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
-| SpecSMI_Branch : forall pc pc' r m sk ms ms' b (b': bool) e n l,
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
+  | SpecSMI_Branch : forall pc pc' r m sk ms ms' b (b': bool) e n l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
       b = (not_zero n) ->
       pc' = (if b' then (l, 0) else (pc+1)) ->
       ms' = ms || negb (Bool.eqb b b') ->
-  p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DBranch b']^^[OBranch b] <(( S_Running ((pc', r, m, sk), false, ms') ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DBranch b']^^[OBranch b] <(( S_Running ((pc', r, m, sk), false, ms') ))>
   | SpecSMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running (((l,0), r, m, sk), false, ms) ))>
@@ -116,24 +116,24 @@ p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
-  p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n] <(( S_Running ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[OLoad n] <(( S_Running ((pc+1, (x !-> v'; r), m, sk), false, ms) ))>
   | SpecSMI_Store : forall pc r m sk e e' n ms,
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[OStore n] <(( S_Running ((pc+1, r, upd n m (eval r e'), sk), false, ms) ))>
-| SpecSMI_Call : forall pc pc' r m sk e l ms ms',
+  | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
-  p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   | SpecSMI_CTarget_F : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))>
   | SpecSMI_Ret : forall pc r m sk pc' ms,
-  p[[pc]] = Some <{{ ret }}> ->
+      p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
   | SpecSMI_Term : forall pc r m ms,
       p[[pc]] = Some <{{ ret }}> -> 
@@ -428,22 +428,18 @@ Definition steps_to_sync_point' (p: prog) (ic: ideal_cfg) (ds: dirs) : option na
   let '(c, ms) := ic in
   let '(pc, r, m, sk) := c in
   (* check pc is well-formed *)
-  match nth_error p (fst pc) with
-  | Some blk => match nth_error (fst blk) (snd pc) with
-               | Some i =>
-                   match i with
-                   | IBranch e l => match ds with
-                                   | DBranch b :: ds' => Some (if b then 3 else 2)
-                                   | _ => None
-                                   end
-                   | ICall e => match ds with
-                               | DCall pc' :: ds' => Some 4
-                               | _ => None
-                               end
-                   | _ => Some 1
-                   end
-               | _ => None
-               end
+  match p[[pc]] with
+  | Some i => match i with
+             | IBranch e l => match ds with
+                             | DBranch b :: ds' => Some (if b then 3 else 2)
+                             | _ => None
+                             end
+             | ICall e => match ds with
+                         | DCall pc' :: ds' => Some 4
+                         | _ => None
+                         end
+             | _ => Some 1
+             end
   | _ => None
   end.
 
@@ -776,6 +772,18 @@ Proof.
   assert (nth_error (fst b) o <> None).
   { ii. clarify. }
   rewrite nth_error_Some in H. lia.
+Qed.
+
+Lemma block_always_terminator_prog p pc i
+    (WF: wf_prog p)
+    (INST: p[[pc]] = Some i)
+    (NT: ~ is_terminator i) :
+  exists i', p[[pc+1]] = Some i'.
+Proof.
+  inv WF. destruct pc as [l o]. ss. des_ifs_safe.
+  exploit block_always_terminator; eauto.
+  rewrite Forall_forall in H0. eapply H0.
+  eapply nth_error_In; eauto.
 Qed.
 
 Import MonadNotation.
@@ -1518,6 +1526,29 @@ Proof.
   }
 Qed.
 
+Lemma wf_prog_lookup p pc i
+    (WF: wf_prog p)
+    (INST: p [[pc]] = Some i) :
+  wf_instr p i.
+Proof.
+  destruct pc; ss. des_ifs_safe. inv WF.
+  rewrite Forall_forall in H0. eapply nth_error_In in Heq.
+  eapply H0 in Heq. unfold wf_block in Heq. des.
+  rewrite Forall_forall in Heq1. eapply nth_error_In in INST. eauto.
+Qed.
+
+Lemma unused_prog_lookup x p pc i
+    (UNUSED: unused_prog x p)
+    (INST: p [[pc]] = Some i) :
+  i_unused x i.
+Proof.
+  unfold unused_prog in *. destruct pc; ss. des_ifs_safe.
+  rewrite Forall_forall in UNUSED. eapply nth_error_In in Heq.
+  exploit in_split_l; eauto. i. rewrite Heq0 in x1. ss.
+  exploit UNUSED; eauto. i. unfold b_unused in x2.
+  rewrite Forall_forall in x2. eapply nth_error_In in INST. eauto.
+Qed.
+
 (* BCC lemma for one single instruction *)
 Lemma ultimate_slh_bcc_single_cycle (p: prog) : forall ic1 sc1 sc2 n ds os,
   no_ct_prog p ->
@@ -2016,6 +2047,139 @@ Proof.
     rewrite Hfst in PC. discriminate.
 Admitted.
 
+Lemma ultimate_slh_bcc_single_cycle_refactor (p: prog) : forall ic1 sc1 sc2 n ds os,
+  no_ct_prog p ->
+  wf_prog p ->
+  wf_ds' p ds ->
+  unused_prog msf p ->
+  unused_prog callee p ->
+  msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
+  steps_to_sync_point' p ic1 ds = Some n ->
+  match_cfgs p ic1 sc1 ->
+  uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( S_Running sc2 ))> ->
+      exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> 
+                  /\ match_cfgs p ic2 sc2.
+Proof.
+  intros until os. intros nct wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
+  destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r).
+  assert (wftp: wf_prog (uslh_prog p)). { apply wf_uslh. assumption. }
+
+  dup wfp. unfold wf_prog in wfp. destruct wfp. unfold nonempty_program in H.
+  unfold wf_ds' in wfds.
+  destruct ipc as (l & o).
+
+  destruct (p[[(l, o)]]) eqn: ISRC; cycle 1.
+  (* source instruction lookup failed: n_steps gives this. *)
+  { ss. des_ifs. }
+  inv cfg_sync. exploit src_inv; try eapply ISRC; eauto. i. des.
+  destruct i.
+  (* skip *)
+  - assert (n = 1) by (ss; des_ifs). subst.
+    (* generate step *)
+    inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
+    clear n_steps. esplits; econs; eauto.
+    (* restore match *)
+    exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
+    unfold pc_sync in *. ss. des_ifs_safe. replace (add o 1) with (S o) by lia.
+    erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
+    rewrite add_1_r. auto.
+  (* asgn *)
+  - assert (n = 1) by (ss; des_ifs). subst.
+    inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
+    clear n_steps.
+
+    exists (l, (add o 1), x2 !-> (eval r e0); r, m, sk, ms).
+    split; econs; eauto.
+    + exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
+      unfold pc_sync in *. ss. des_ifs_safe. replace (add o 1) with (S o) by lia.
+      erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
+      rewrite add_1_r. auto.
+    + eapply unused_prog_lookup in unused_p_msf; eauto.
+      eapply unused_prog_lookup in unused_p_callee; eauto. ss; des.
+      inv REG. econs.
+      * i. destruct (string_dec x x2); subst.
+        { do 2 rewrite t_update_eq. apply eval_regs_eq; eauto. }
+        { rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
+      * erewrite t_update_neq; eauto.
+  (* branch *)
+  - admit.
+  (* jump *)
+  - assert (n = 1) by (ss; des_ifs). subst.
+    inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
+    clear n_steps.
+
+    exists (l1, 0, r, m, sk, ms). split; econs; eauto.
+
+    exploit wf_prog_lookup; try eapply ISRC; eauto. i.
+    ss. unfold pc_sync, wf_lbl in *. ss. des_ifs_safe. ss.
+    subst. inv wfp0. rewrite Forall_forall in H2.
+    eapply nth_error_In in Heq. eapply H2 in Heq.
+    red in Heq. des. ss.
+  (* load *)
+  - assert (n = 1) by (ss; des_ifs). subst.
+    inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
+    clear n_steps.
+
+    exists (((l, o) + 1), x2 !-> v'; r, m, sk, ms).
+
+    eapply unused_prog_lookup in unused_p_msf; eauto.
+    eapply unused_prog_lookup in unused_p_callee; eauto.
+
+    split; econs; eauto.
+    + clear - H11 REG unused_p_msf unused_p_callee.
+      inv REG. ss. rewrite H0 in H11. ss. des.
+      des_ifs. rewrite <- H11. f_equal. eapply eval_regs_eq; eauto.
+    + exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
+      unfold pc_sync in *. ss. des_ifs_safe. replace (add o 1) with (S o) by lia.
+      erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
+      rewrite add_1_r. auto.
+    + red. splits; i.
+      * destruct (string_dec x x2); subst.
+        { do 2 rewrite t_update_eq; eauto. }
+        { rewrite t_update_neq; eauto. rewrite t_update_neq; eauto.
+          inv REG. eauto. }
+      * ss. des. rewrite t_update_neq; eauto.
+  (* store *)
+  - assert (n = 1) by (ss; des_ifs). subst.
+    inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
+    clear n_steps.
+
+    eapply unused_prog_lookup in unused_p_msf; eauto.
+    eapply unused_prog_lookup in unused_p_callee; eauto.
+
+    exists (((l, o) + 1), r, (upd n m (eval r e')), sk, ms).
+    simpl. split.
+    + eapply ISMI_Store; eauto.
+      clear - H11 REG unused_p_msf unused_p_callee.
+      inv REG. ss. rewrite H0 in H11. ss. des.
+      des_ifs. rewrite <- H11. f_equal. eapply eval_regs_eq; eauto.
+    + simpl in unused_p_callee, unused_p_msf. des. dup REG. inv REG.
+      erewrite <- eval_regs_eq with (r := r) (r' := r'); eauto.
+      econs; eauto.
+      exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
+      unfold pc_sync in *. ss. des_ifs_safe. replace (add o 1) with (S o) by lia.
+      erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
+      rewrite add_1_r. auto.
+  (* call *)
+  - admit.
+  (* ctarget *)
+  - exfalso. red in nct. ss. des_ifs_safe.
+    rewrite Forall_forall in nct. eapply nth_error_In in Heq.
+    eapply in_split_l in Heq. rewrite Heq1 in Heq. ss. eapply nct in Heq.
+    red in Heq. rewrite Forall_forall in Heq. eapply nth_error_In in Heq0.
+    eapply Heq in Heq0. ss.
+  (* ret *)
+  - assert (n = 1) by (ss; des_ifs). subst.
+    inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
+    clear n_steps.
+
+    destruct sk ; [ss|].
+
+    exists (c, r, m, sk, ms). simpl. split.
+    + eapply ISMI_Ret; eauto.
+    + econs; eauto; simpl in STK; des_ifs.
+Admitted.
+
 (* End BCC. *)
 
 Lemma ultimate_slh_bcc (p: prog) : forall n ic1 sc1 sc2 ds os,
@@ -2032,7 +2196,17 @@ Proof.
   intros n. induction n using strong_induction_le; ii.
   - inv H6. esplits. econs.
   - destruct (steps_to_sync_point' p ic1 ds) eqn:SYNCPT; cycle 1.
-    { inv H7. admit. (* make contradiction: H9 *) }
+    { inv H7. inv H6. destruct pc as [l o].
+      unfold steps_to_sync_point' in SYNCPT.
+      destruct (p[[(l, o)]]) eqn: ISRC; cycle 1.
+      { (* by PC *) unfold pc_sync in PC. ss. des_ifs. }
+      destruct i; clarify.
+      - exploit src_inv; eauto. i. des. inv x1; ss; clarify.
+        inv H9; clarify.
+      - exploit src_inv; eauto. i. des. inv x1; ss; clarify.
+        destruct n.
+        + inv H14. inv H9; clarify. ss. esplits. econs.
+        + inv H9; clarify. inv H14. inv H7; clarify. }
     assert (SZ: n0 > S n \/ n0 <= S n) by lia.
     destruct SZ as [SZ|SZ].
     + destruct ic1. admit. (* induction does not needed *)
