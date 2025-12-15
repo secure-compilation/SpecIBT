@@ -80,7 +80,7 @@ Reserved Notation
 
 Inductive multi_seq_inst (p : prog) (c : @state cfg) : @state cfg -> obs -> Prop :=
   | multi_seq_inst_refl : p |- <(( c ))> -->*^[] <(( c ))>
-| multi_seq_inst_trans (c' c'' : @state cfg) (os1 os2 : obs) :
+  | multi_seq_inst_trans (c' c'' : @state cfg) (os1 os2 : obs) :
       p |- <(( c ))> -->^os1 <(( c' ))> ->
       p |- <(( c' ))> -->*^os2 <(( c'' ))> ->
       p |- <(( c ))> -->*^(os1 ++ os2) <(( c'' ))>
@@ -2172,7 +2172,11 @@ Proof.
       inv H7. inv H2; clarify. inv H8.
       assert (ITGT3: (uslh_prog p)[[(l', 1)]] = Some <{{ jump l0 }}>).
       { clear - IN. ss. rewrite IN. ss. }
-      inv H2; clarify. admit.
+      inv H7. inv H2; clarify.
+
+      unfold to_nat in H14. des_ifs_safe. simpl in Heq. des_ifs_safe.
+      rewrite Heq. simpl in ms_msf. simpl. rewrite ms_msf in *. ss.
+      admit.
     (* false branch 1 more steps *)
     + inv H7. inv H8. inv H2; clarify. simpl.
       admit.
