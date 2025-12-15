@@ -2324,6 +2324,17 @@ Proof.
       }
     (* false branch 1 more steps *)
     + inv H7. inv H8. inv H2; clarify. simpl.
+      
+      unfold to_nat in H14. des_ifs_safe. simpl in Heq. des_ifs_safe.
+      rewrite Heq. simpl in ms_msf. simpl. rewrite ms_msf in *. ss.
+
+      destruct ms eqn:Hms; ss.
+      { (* speculating *)
+        injection Heq0; i; subst; ss. injection Heq; i; subst.
+        clear Heq0. clear Heq. unfold not_zero. rewrite Nat.eqb_refl. ss.
+        (* why does it say (pc' + 1) + 1 in sc2?? *) admit.
+      }
+
       admit.
   (* jump *)
   - assert (n = 1) by (ss; des_ifs). subst.
