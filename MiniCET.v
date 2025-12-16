@@ -680,7 +680,22 @@ Proof.
     + apply S_Term.
 Defined.
 
-Module MiniCETCommon (M: TMap).
+Module Type Semantics.
+  Parameter PC : Type.
+  Parameter REG : Type.
+  Parameter DIRS : Type.
+  Definition cfg : Type := ((PC * REG) * mem) * list PC.
+  Definition spec_cfg : Type := (cfg * bool) * bool.
+
+  Parameter eval : REG -> exp -> val.
+  Parameter fetch : prog -> PC -> option inst.
+  Parameter step : prog -> state cfg -> state cfg * obs.
+  Parameter steps : nat -> prog -> state cfg -> state cfg * obs.
+  Parameter spec_step : prog -> state spec_cfg -> DIRS -> state spec_cfg * DIRS * obs.
+  Parameter spec_steps : nat -> prog -> state spec_cfg -> DIRS -> state spec_cfg * DIRS * obs.
+End Semantics.
+
+Module MiniCETCommon (M: TMap) <: Semantics.
 
 Notation "'_' '!->' v" := (M.init v)
     (at level 100, right associativity).
@@ -733,28 +748,12 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
 
 Definition ideal_cfg : Type := cfg * bool.
 
-End MiniCETCommon.
+Definition PC := cptr.
+Definition REG := reg.
+Definition DIRS := dirs.
+Definition fetch := fetch.
 
-Module Type Step.
-  Parameter CFG : Type.
-  Parameter SPECCFG : Type.
-  Parameter DIRS : Type.
-  Parameter step : prog -> state CFG -> state CFG * obs.
-  Parameter steps : nat -> prog -> state CFG -> state CFG * obs.
-  Parameter spec_step : prog -> state SPECCFG -> DIRS -> state SPECCFG * DIRS * obs.
-  Parameter spec_steps : nat -> prog -> state SPECCFG -> DIRS -> state SPECCFG * DIRS * obs.
-End Step.
-
-Module MCC := MiniCETCommon(ListTotalMap).
-Import MCC.
-
-(* Executable Semantics of MiniCET *)
-Module MiniCETStep <: Step.
-  Definition CFG := cfg.
-  Definition SPECCFG := spec_cfg.
-  Definition DIRS := MiniCET.dirs.
-
-  Definition step (p:prog) (sc:state CFG) : (state CFG * obs) :=
+Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
     match sc with
     | S_Running c =>
         let '(pc, r, m, sk) := c in
@@ -812,7 +811,7 @@ Module MiniCETStep <: Step.
     | s => (s, [])
     end.
 
-  Definition spec_step (p:prog) (ssc: state spec_cfg) (ds:DIRS) : (state spec_cfg * DIRS * obs) :=
+  Definition spec_step (p:prog) (ssc: state spec_cfg) (ds: DIRS) : (state spec_cfg * DIRS * obs) :=
     match ssc with
     | S_Running sc =>
         let '(c, ct, ms) := sc in
@@ -881,8 +880,8 @@ Module MiniCETStep <: Step.
     | s => (s, ds, [])
     end.
 
-  Fixpoint spec_steps (f:nat) (p:prog) (sc: state SPECCFG) (ds:DIRS)
-    : (state SPECCFG * DIRS * obs) :=
+  Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds: DIRS)
+    : (state spec_cfg * DIRS * obs) :=
     match f with
     | S f' =>
         match sc with
@@ -898,7 +897,7 @@ Module MiniCETStep <: Step.
     end.
 
   (* Morally state+output monad hidden in here: step p >> steps f' p  *)
-  Fixpoint steps (f:nat) (p:prog) (sc: state CFG) : (state CFG * obs) :=
+  Fixpoint steps (f:nat) (p:prog) (sc: state cfg) : (state cfg * obs) :=
     match f with
     | S f' =>
         match sc with
@@ -912,4 +911,5 @@ Module MiniCETStep <: Step.
         (sc, [])
     end.
 
-End MiniCETStep.
+End MiniCETCommon.
+
