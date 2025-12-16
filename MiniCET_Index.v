@@ -644,6 +644,16 @@ Lemma wf_ds_app p ds1 ds2
   wf_ds' p ds1 /\ wf_ds' p ds2.
 Proof. eapply Forall_app. eauto. Qed.
 
+Lemma multi_spec_splitting p sc ds os n sct m
+    (LEN: n >= m)
+    (STEPS: p |- <(( sc ))> -->*_ ds ^^ os ^^ n <(( sct ))>) :
+  exists scm ds1 ds2 os1 os2,
+    p |- <(( sc ))> -->*_ ds1 ^^ os1 ^^ m <(( scm ))>
+  /\ p |- <(( scm ))> -->*_ ds2 ^^ os2 ^^ (n - m) <(( sct ))>
+  /\ ds = ds1 ++ ds2 /\ os = os1 ++ os2.
+Proof.
+Admitted.
+
 Lemma wf_uslh : forall (p: prog),   
   wf_prog p -> wf_prog (uslh_prog p).
 Proof.
@@ -2125,7 +2135,7 @@ Lemma ultimate_slh_bcc_single_cycle_refactor (p: prog) : forall ic1 sc1 sc2 n ds
   wf_ds' p ds ->
   unused_prog msf p ->
   unused_prog callee p ->
-  msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
+  msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) -> (* YH: I think this premise contained in mathc_cfgs. *)
   steps_to_sync_point' p ic1 ds = Some n ->
   match_cfgs p ic1 sc1 ->
   uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( S_Running sc2 ))> ->
@@ -2577,7 +2587,8 @@ Proof.
     assert (SZ: n0 > S n \/ n0 <= S n) by lia.
     destruct SZ as [SZ|SZ].
     + destruct ic1. admit. (* induction does not needed *)
-    + assert (SZ': n0 > 0) by admit.
+    + assert (SZ': n0 > 0).
+      { unfold steps_to_sync_point' in SYNCPT. des_ifs; lia. }
       destruct (eq_decidable (S n) n0).
       { destruct sc2.
         - rewrite H8 in H7.
@@ -2593,12 +2604,27 @@ Proof.
              /\ ds = ds1 ++ ds2 /\ os = os1 ++ os2).
       { admit. }
       des. subst. eapply wf_ds_app in H2. des.
-      exploit ultimate_slh_bcc_single_cycle_refactor; try eapply H9; eauto.
-      { admit. }
-      i. des.
+      assert (steps_to_sync_point' p ic1 ds1 = Some n0).
+      { destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
+        des_ifs_safe. rename c into pc.
+        dup H6. inv H6. exploit src_inv; eauto. intros (i' & ITGT1 & IMATCH).
+        assert (SIMPL: simple_inst i \/ ~ simple_inst i) by (destruct i; ss; eauto).
+        destruct SIMPL as [SIMPL | NSIMPL].
+        - assert (n0 = 1) by des_ifs. subst.
+          unfold steps_to_sync_point'. rewrite Heq. des_ifs.
+        - destruct i; simpl in NSIMPL; clarify.
+          3:{ admit. (* no ctarget in the source code *) }
+          + inv IMATCH; [ss|]. destruct ds1.
+            { ss. exfalso. inv H9; [lia|]. inv H13; clarify. }
+            simpl in SYNCPT. des_ifs_safe. simpl. rewrite Heq. auto.
+          + inv IMATCH; [ss|]. destruct ds1.
+            { des_ifs_safe. exfalso. inv H9. inv H16; clarify.
+              inv H18. inv H13; clarify. }
+            simpl in SYNCPT. des_ifs_safe. simpl. rewrite Heq. auto. }
+      exploit ultimate_slh_bcc_single_cycle_refactor; try eapply H9; eauto. i. des.
       exploit H; try eapply H10; eauto.
       { lia. }
-      { admit. }
+      { inv x1. inv REG. ss. }
       i. des. exists ic0. econs; eauto.
 Admitted.
 
