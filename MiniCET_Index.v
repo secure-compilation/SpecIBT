@@ -199,8 +199,8 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   (* no fault if program goes to the beginning of some procedure block, whether or not it's the intended one *)
   | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool) blk,
       p[[pc]] = Some <{{ call e }}> ->
-      to_fp (eval r e) = Some l ->
-      l' = (if ms then 0 else l) -> (* uslh masking *)
+      (if ms then Some 0 else to_fp (eval r e)) = Some l ->
+      (*l' = (if ms then 0 else l) -> (* uslh masking *)*)
       ms' = ms || negb (fst pc' =? l) ->
       nth_error p (fst pc') = Some blk -> (* always established by well-formed directive *)
       snd blk = true ->
@@ -210,8 +210,8 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   (* directives are always "well-formed": nth_error p (fst pc') = Some blk /\ nth_error blk (snd pc') = Some i always established. *)
   | ISMI_Call_F : forall pc pc' r m sk e l l' (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
-      to_fp (eval r e) = Some l ->
-      l' = (if ms then 0 else l) -> (* uslh masking *)
+      (if ms then Some 0 else to_fp (eval r e)) = Some l ->
+      (* l' = (if ms then 0 else l) -> (* uslh masking *) *)
       (forall blk, nth_error p (fst pc') = Some blk -> snd blk = false \/ snd pc' <> 0) ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Fault ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
@@ -2546,6 +2546,121 @@ Proof.
     { admit. (* TODO: YH will make lemma for this case. *) }
 
     inv H7. inv H8. inv H2; clarify.
+    ss. destruct ms eqn:Hms.
+    { (* already speculating *)
+      rewrite ms_msf in *. ss. des_ifs_safe.
+      unfold TotalMap.t_apply, TotalMap.t_update, t_update in *. simpl in Heq.
+      rewrite ms_msf in *. simpl in Heq. injection Heq; i; subst. 
+      dup H14. simpl in H14.
+      injection H14; i; subst. clear H14. clear Heq. 
+      replace (callee =? msf) with false by auto. 
+
+      (* now, in the ideal semantics, are we faulting or not *)
+      (* First: does attacker pc go to a block in the program at all? *)
+      destruct (nth_error p (fst lo)) as [ablk|] eqn:Hlo; cycle 1.
+      { rewrite Forall_forall in wfds. specialize wfds with (x:=(DCall lo)). 
+        simpl in wfds. assert (DCall lo = DCall lo \/ False).
+        { left; auto. }
+        apply wfds in H2. unfold is_some in H2. unfold fetch in H2. cbn in H2.
+        destruct lo as (al & ao). simpl in H2, Hlo.
+        destruct (nth_error p al); clarify.
+      }
+      destruct (snd ablk) eqn:Hfault1; cycle 1.
+      { (* Fault: attacker pc goes to non-call target block *)
+        admit.
+      }
+      { (* Not necessarily faulting yet. Steered to call target block *)
+        destruct (Nat.eqb (snd lo) 0) eqn:Hfault2; cycle 1.
+        { (* Fault: attacker pc goes to middle of block *)
+          admit.
+        }
+        (* Now, not faulting. Attacker pc goes to beginning of call target block *)
+        rewrite Nat.eqb_eq in Hfault2.
+        (* in not yet speculating case remember to destruct here on whether speculation is initiated 
+           (that is, whether attacker pc label = intended label)
+           but here we're already speculating so it doesn't matter
+        *)
+        specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
+        exists (lo, r, m, ((l, (add o 1)) :: sk), true).
+        split.
+        { econs; eauto. }
+        { econs; eauto. 
+          { exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
+            unfold pc_sync in SYNC |- *. ss. des_ifs_safe. 
+            rewrite Hfault2. clear H1. clear Heq1.
+            specialize (nth_error_In p (fst lo) Heq); i.
+            rewrite Forall_forall in H0. apply H0 in H1.
+            red in H1. des. apply blk_not_empty_list in H1. 
+            destruct (fst ablk); clarify. cbn. unfold cptr.
+            f_equal. destruct lo as (al & ao). 
+            simpl in Hfault2. rewrite Hfault2. simpl.
+            auto.
+          }
+          { econs; eauto; inv REG; i.
+            { unfold TotalMap.t_apply, TotalMap.t_update, t_update. 
+              dup H5. destruct H6.
+              rewrite <- String.eqb_neq, String.eqb_sym in H6, H7. rewrite H6, H7.
+              eauto.
+            }
+            { unfold TotalMap.t_apply, TotalMap.t_update, t_update.
+              simpl. destruct (fst lo); clarify.
+            }
+          }
+          { exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
+            unfold pc_sync in SYNC |- *. simpl in SYNC |- *. rewrite Heq0, ISRC in SYNC.
+            rewrite Heq0. unfold fetch in x0. cbn in x0.
+            rewrite Heq0 in x0. rewrite x0. cbn. 
+
+            unfold pc_sync in STK. admit.
+
+          }
+        }  
+      }
+      (* 
+      SpecSMI_Call
+     : forall (p : prog) (pc : cptr) (pc' : nat * nat) 
+         (r : reg) (m : mem) (sk : list cptr) (e : exp) 
+         (l : nat) (ms ms' : bool),
+       p [[pc]] = Some <{{ call e }}> ->
+       to_fp (eval r e) = Some l ->
+       ms' = ms || negb ((fst pc' =? l)%nat && (snd pc' =? 0)%nat) ->
+       p |- <(( S_Running (pc, r, m, sk, false, ms) ))> -->_ [
+       DCall pc'] ^^ [OCall l] <((
+         S_Running (pc', r, m, pc + 1 :: sk, true, ms') ))> 
+
+| ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool) blk,
+      p[[pc]] = Some <{{ call e }}> ->
+      to_fp (eval r e) = Some l ->
+      l' = (if ms then 0 else l) -> (* uslh masking *)
+      ms' = ms || negb (fst pc' =? l) ->
+      nth_error p (fst pc') = Some blk -> (* always established by well-formed directive *)
+      snd blk = true ->
+      snd pc' = 0 ->
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] 
+           <(( S_Running ((pc', r, m, (pc+1)::sk), ms') ))>
+
+
+  (* fault if attacker pc goes to non-proc block or into the middle of any block *)
+  (* directives are always "well-formed": nth_error p (fst pc') = Some blk /\ nth_error blk (snd pc') = Some i always established. *)
+  | ISMI_Call_F : forall pc pc' r m sk e l l' (ms ms' : bool),
+      p[[pc]] = Some <{{ call e }}> ->
+      to_fp (eval r e) = Some l ->
+      l' = (if ms then 0 else l) -> (* uslh masking *)
+      (forall blk, nth_error p (fst pc') = Some blk -> snd blk = false \/ snd pc' <> 0) ->
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Fault ))>
+
+
+
+
+
+
+
+         *)
+      
+
+    
+
+    }
 
     admit.
   (* ctarget *)
