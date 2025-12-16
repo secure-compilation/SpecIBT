@@ -15,7 +15,7 @@ Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Data.List.
 Import MonadNotation.
 From Stdlib Require Import String.
-From SECF Require Import ListMaps MapsFunctor.
+From SECF Require Import ListMaps MapsFunctor MiniCET.
 Require Import Stdlib.Classes.EquivDec.
 
 (** ** Type system for cryptographic constant-time programming *)
@@ -124,11 +124,6 @@ Definition gen_pub_vars : G pub_vars :=
     "X4" !-> x4; "X5" !-> x5;
     _ !-> default
   ) % string.
-
-Variant val : Type :=
-  | N (n:nat)
-  | FP (l:nat) (* <- NEW: function pointer to procedure at label [l] *)
-  | UV. (* undefined value *)
 
 #[export] Instance genVal : Gen val :=
   {arbitrary := freq [(2, n <- arbitrary;; ret (N n));
@@ -352,3 +347,108 @@ Notation " 'oneOf' ( x ;;; l ) " :=
 
 Notation " 'oneOf' ( x ;;; y ;;; l ) " :=
   (oneOf_ x (cons x (cons y l)))  (at level 1, no associativity) : qc_scope.
+
+
+(** TestingMiniCET-related Gen and Show instances *)
+
+#[export] Instance genId : Gen string :=
+  {arbitrary := (n <- freq [(10, ret 0);
+                             (9, ret 1);
+                             (8, ret 2);
+                             (4, ret 3);
+                             (2, ret 4);
+                             (1, ret 5)];;
+                 ret ("X" ++ show n)%string) }.
+
+#[export] Instance shrinkId : Shrink string :=
+  {shrink :=
+    (fun s => match String.get 1 s with
+           | Some a => match (nat_of_ascii a - nat_of_ascii "0") with
+                      | S n => ["X" ++ show (S n / 2); "X" ++ show (S n - 1)]
+                      | 0 => []
+                      end
+           | None => nil
+           end)%string }.
+
+Eval compute in (shrink "X5")%string.
+Eval compute in (shrink "X0")%string.
+
+#[export] Instance showBinop : Show binop :=
+  {show :=fun op => 
+      match op with
+      | BinPlus => "+"%string
+      | BinMinus => "-"%string  
+      | BinMult => "*"%string
+      | BinEq => "="%string
+      | BinLe => "<="%string
+      | BinAnd => "&&"%string
+      | BinImpl => "->"%string
+      end
+  }.
+
+#[export] Instance showExp : Show exp :=
+  {show := 
+    (let fix showExpRec (e : exp) : string :=
+       match e with
+       | ANum n => show n
+       | AId x => x
+       | ABin o e1 e2 => 
+           "(" ++ showExpRec e1 ++ " " ++ show o ++ " " ++ showExpRec e2 ++ ")"
+       | ACTIf b e1 e2 =>
+           "(" ++ showExpRec b ++ " ? " ++ showExpRec e1 ++ " : " ++ showExpRec e2 ++ ")"
+       | FPtr l => "&" ++ show l
+       end
+     in showExpRec)%string
+  }.
+
+#[export] Instance showInst : Show inst :=
+  {show := 
+      (fun i =>
+         match i with
+         | ISkip => "skip"
+         | IAsgn x e => x ++ " := " ++ show e
+         | IBranch e l => "branch " ++ show e ++ " to " ++ show l
+         | IJump l => "jump " ++ show l
+         | ILoad x a => x ++ " <- load[" ++ show a ++ "]"
+         | IStore a e => "store[" ++ show a ++ "] <- " ++ show e
+         | ICall fp => "call " ++ show fp
+         | ICTarget => "ctarget"
+         | IRet => "ret"
+         end)%string
+  }.
+
+(* As in [TestingStaticIFC.v], we generate a finite total map which we use as state. *)
+#[export] Instance genTotalMap (A:Type) `{Gen A} : Gen (ListTotalMap.t A) :=
+  {arbitrary := (d <- arbitrary;;
+                 v0 <- arbitrary;;
+                 v1 <- arbitrary;;
+                 v2 <- arbitrary;;
+                 v3 <- arbitrary;;
+                 v4 <- arbitrary;;
+                 v5 <- arbitrary;;
+                 ret (d,[("X0",v0); ("X1",v1); ("X2",v2);
+                         ("X3",v3); ("X4",v4); ("X5",v5)])%string)}.
+
+(* [TestingStaticIFC.v]: The ;; notation didn't work with oneOf, probably related to monadic
+   bind also using ;;. So I redefined the notation using ;;;. *)
+Notation " 'oneOf' ( x ;;; l ) " :=
+  (oneOf_ x (cons x l))  (at level 1, no associativity) : qc_scope.
+
+Notation " 'oneOf' ( x ;;; y ;;; l ) " :=
+  (oneOf_ x (cons x (cons y l)))  (at level 1, no associativity) : qc_scope.
+
+Derive (Arbitrary, Shrink) for binop.
+Derive (Arbitrary, Shrink) for exp.
+Derive (Arbitrary, Shrink) for inst.
+
+Definition is_defined (v:val) : bool :=
+  match v with
+  | UV => false
+  | _ => true
+  end.
+
+Fixpoint max n m := match n, m with 
+                   | 0, _ => m
+                   | _, 0 => n
+                   | S n', S m' => S (max n' m')
+                   end.
