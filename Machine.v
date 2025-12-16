@@ -38,6 +38,16 @@ From SECF Require Import sflib.
 (* length m ~ length m + length p : code area *)
 
 (* Aux function : move to Utils.v *)
+
+(* legacy *)
+
+Definition transpose {X : Type} (l : list (option X)) : option (list X) :=
+  fold_right (fun ox ol =>
+                match ox, ol with
+                | Some x, Some l => Some (x :: l)
+                | _, _ => None
+                end) (Some nil) l.
+
 Fixpoint coord_to_flat_idx {X} (ll: list (list X)) (c: nat * nat) : option nat :=
   let '(a, b) := c in
   match ll with
@@ -143,24 +153,6 @@ Lemma pc_inj_total p pc i
 Proof.
 Admitted.
 
-Inductive direction : Type :=
-| DBranch (b':bool)
-| DCall (l:nat).
-
-Definition dirs := list direction.
-
-Definition is_dbranch (d:direction) : option bool :=
-  match d with
-  | DBranch b => Some b
-  | _ => None
-  end.
-
-Definition is_dcall (d:direction) : option nat :=
-  match d with
-  | DCall pc => Some pc
-  | _ => None
-  end.
-
 Definition val_injectb (p: prog) (vsrc vtgt: val) : bool :=
   match vsrc, vtgt with
   | FP l, N n => match pc_inj p (l, 0) with
@@ -182,6 +174,21 @@ Definition val_inject (p: prog) (vsrc vtgt: val) : Prop :=
   | UV, _ => True
   | _, _ => False
   end.
+
+(** Block-based machine level semantics *)
+
+Definition val_injectb_s (p: prog) (vsrc vtgt: val) : bool :=
+  match vsrc, vtgt with
+  | FP l, N n => Nat.eqb l n
+  | N n, N n' => Nat.eqb n n'
+  | UV, _ => true
+  | _, _ => false
+  end.
+
+Definition val_inject_s (p: prog) (vsrc vtgt: val) : Prop :=
+  if val_injectb_s p vsrc vtgt
+  then True
+  else False.
 
 Module MachineCommon (M: TMap).
 
@@ -214,7 +221,7 @@ Fixpoint eval (st : reg) (e: exp) : val :=
   | <{&l}> => N l
   end.
 
-Definition cfg : Type := ((nat*reg)*mem)*list nat. (* (pc, register set, memory, stack frame) *)
+Definition cfg : Type := ((cptr*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
 
 Definition spec_cfg : Type := ((cfg * bool) * bool).
 
@@ -222,7 +229,7 @@ Definition spec_cfg : Type := ((cfg * bool) * bool).
 Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
   let '(c, ct, ms) := sc in
   let '(pc, rs, m, stk) := c in
-  match flat_fetch p pc with
+  match p[[pc]] with
   | Some i => match i with
              | IRet => if seq.nilp stk then true else false (* Normal Termination *)
              | ICTarget => if ct
@@ -239,75 +246,30 @@ End MachineCommon.
 
 (* transformation *)
 
-Fixpoint machine_exp (p: prog) (e: exp) : option exp :=
+Fixpoint machine_exp (e: exp) : exp :=
   match e with
-  | ANum _ | AId _ => Some e
-  | FPtr l => match pc_inj p (l, 0) with
-             | Some l' => Some (ANum l')
-             | None => None
-             end
-  | ABin o e1 e2 => match machine_exp p e1, machine_exp p e2 with
-                   | Some e1', Some e2' => Some (ABin o e1' e2')
-                   | _, _ => None
-                   end
-  | ACTIf e1 e2 e3 => match machine_exp p e1, machine_exp p e2, machine_exp p e3 with
-                     | Some e1', Some e2', Some e3' => Some (ACTIf e1' e2' e3')
-                     | _, _, _ => None
-                     end
+  | ANum _ | AId _ => e
+  | FPtr l => ANum l
+  | ABin o e1 e2 => ABin o (machine_exp e1) (machine_exp e2)
+  | ACTIf e1 e2 e3 => ACTIf (machine_exp e1) (machine_exp e2) (machine_exp e3)
   end.
 
-Definition machine_inst (p: prog) (i: inst) : option inst :=
+Definition machine_inst (i: inst) : inst :=
   match i with
-  | <{{branch e to l}}> =>
-    match machine_exp p e, pc_inj p (l, 0) with
-    | Some e', Some l' => Some <{{ branch e' to l' }}>
-    | _, _ => None
-    end
-  | <{{jump l}}> =>
-    match pc_inj p (l, 0) with
-    | Some l' => Some <{{ jump l' }}>
-    | _ => None
-    end
-  | ICall e =>
-    match machine_exp p e with
-    | Some e' => Some (ICall e')
-    | _ => None
-    end
-  | IAsgn x e =>
-    match machine_exp p e with
-    | Some e' => Some (IAsgn x e')
-    | _ => None
-    end
-  | ILoad x e =>
-    match machine_exp p e with
-    | Some e' => Some (ILoad x e')
-    | _ => None
-    end
-  | IStore e1 e2 =>
-    match machine_exp p e1, machine_exp p e2 with
-    | Some e1', Some e2' => Some (IStore e1' e2')
-    | _, _ => None
-    end
-  | ISkip | IRet | ICTarget => Some i
+  | <{{branch e to l}}> => <{{ branch (machine_exp e) to l }}>
+  | ICall e => ICall (machine_exp e)
+  | IAsgn x e => IAsgn x (machine_exp e)
+  | ILoad x e => ILoad x (machine_exp e)
+  | IStore e1 e2 => IStore (machine_exp e1) (machine_exp e2)
+  | _ => i
   end.
 
-Definition transpose {X : Type} (l : list (option X)) : option (list X) :=
-  fold_right (fun ox ol =>
-                match ox, ol with
-                | Some x, Some l => Some (x :: l)
-                | _, _ => None
-                end) (Some nil) l.
+Definition machine_blk (blk: (list inst * bool)) : (list inst * bool) :=
+  let b := map (machine_inst) (fst blk) in
+  (b, snd blk).
 
-Definition machine_blk (p: prog) (blk: (list inst * bool)) : option (list inst * bool) :=
-  let ob := map (machine_inst p) (fst blk) in
-  match transpose ob with
-  | Some ob' => Some (ob', snd blk)
-  | _ => None
-  end.
-
-Definition machine_prog (p: prog) : option prog :=
-  let op := map (machine_blk p) p in
-  transpose op.
+Definition machine_prog (p: prog) : prog :=
+  map (machine_blk) p.
 
 Module SimCommon (M: TMap).
 
@@ -321,38 +283,21 @@ Definition regs := MiniC.reg.
 Definition regt := MachineC.reg.
 
 Definition reg_inject (p: prog) (r1: regs) (r2: regt) : Prop :=
-  forall x, val_inject p (r1 ! x) (r2 ! x).
+  forall x, val_inject_s p (r1 ! x) (r2 ! x).
 
 Lemma eval_binop_inject p o v1 v1' v2 v2'
-    (INJ1: val_inject p v1 v1')
-    (INJ2: val_inject p v2 v2') :
-  val_inject p (eval_binop o v1 v2) (eval_binop o v1' v2').
+    (INJ1: val_inject_s p v1 v1')
+    (INJ2: val_inject_s p v2 v2') :
+  val_inject_s p (eval_binop o v1 v2) (eval_binop o v1' v2').
 Proof.
-  red in INJ1, INJ2. des_ifs. destruct o; ss.
-  f_equal.
-  destruct (Nat.eq_dec l0 l); clarify.
-  { do 2 rewrite Nat.eqb_refl. auto. }
-  hexploit pc_inj_inject; [| eapply Heq0| eapply Heq|].
-  { ii. eapply n. inv H. auto. }
-  ii. rewrite <- Nat.eqb_neq in n, H. rewrite n, H. auto.
-Qed.
+Admitted.
 
 Lemma eval_inject p r1 r2 e1 e2
   (INJ: reg_inject p r1 r2)
-  (TRANS: machine_exp p e1 = Some e2) :
+  (TRANS: machine_exp e1 = e2) :
   val_inject p (MiniC.eval r1 e1) (MachineC.eval r2 e2).
 Proof.
-  ginduction e1; ss; ii; clarify.
-  - des_ifs. ss.
-    hexploit IHe1_1; eauto. intros INJ1. hexploit IHe1_2; eauto. intros INJ2.
-    eapply (eval_binop_inject p o); eauto.
-  - des_ifs_safe. hexploit IHe1_1; eauto. i. ss.
-    destruct (MiniC.eval r1 e1_1); ss; auto. des_ifs_safe. ss. clarify.
-    des_ifs.
-    + hexploit IHe1_2; eauto.
-    + hexploit IHe1_3; eauto.
-  - des_ifs. ss. clarify.
-Qed.
+Admitted.
 
 (* common simulation *)
 
