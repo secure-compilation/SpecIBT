@@ -2896,8 +2896,8 @@ Proof.
       cbn in H16. apply (f_equal negb) in H16. cbn in H16.
       rewrite negb_involutive in H16.
       symmetry in H16. apply eqb_prop in H16 as ->. reflexivity.
-    - cbn in H15. apply (f_equal negb) in H15. cbn in H15. rewrite negb_involutive in H15.
-      symmetry in H15. rewrite Nat.eqb_eq in H15.
+    - cbn in H14. apply (f_equal negb) in H14. cbn in H14. rewrite negb_involutive in H14.
+      symmetry in H14. rewrite Nat.eqb_eq in H14.
       destruct pc'; cbn in *; subst.
       econstructor; eassumption.
 Qed.
@@ -2914,7 +2914,7 @@ Proof.
       erewrite IHHmulti with (ms := ms'') in H. 2, 3: reflexivity.
       inv H; try reflexivity.
       + symmetry in H16. now apply orb_false_elim in H16.
-      + symmetry in H15. now apply orb_false_elim in H15.
+      + symmetry in H14. now apply orb_false_elim in H14.
 Qed.
 
 Lemma multi_ideal_nonspec_seq p pc r m stk ds os pc' r' m' stk':
@@ -3176,7 +3176,7 @@ Proof.
       2: change (OStore n0 :: x9) with ([OStore n0] ++ x9).
       all: econstructor; eassumption.
     + (* Call case *)
-      inv x. rewrite H21 in H6. inv H6.
+      inv x. rewrite H20 in H6. inv H6.
       assert (l = l0).
       {
         clear Hexec1 IHHexec1 Hexec2.
@@ -3209,10 +3209,10 @@ Proof.
       right. repeat eexists. right.
       repeat eexists. all: eassumption.
     + (* Call case, only one fault *)
-      inv x. apply H27 in H13 as [H13 | H13].
+      inv x. apply H25 in H12 as [H12 | H12].
       all: congruence.
     + (* Call case, only one fault *)
-      inv x. apply H12 in H25 as [H25 | H25].
+      inv x. apply H11 in H23 as [H23 | H23].
       all: congruence.
     + (* Call case - both fault *)
       repeat eexists. 1, 2: constructor.
@@ -3293,18 +3293,19 @@ Proof.
       edestruct IHHexec1. 1: reflexivity. 1: eassumption.
       * left. destruct H. exists x. cbn. f_equal. assumption.
       * right. destruct H. exists x. cbn. f_equal. assumption.
-    + inv x. rewrite H6 in H5. inv H5.
+    + inv x. rewrite H6 in H5. inv H5. inv H7. inv H8.
       edestruct IHHexec1. 1: reflexivity. 1: eassumption.
       * left. destruct H. exists x. cbn. f_equal. assumption.
       * right. destruct H. exists x. cbn. f_equal. assumption.
-    + inv Hexec2.
+    + inv H7. inv H11. inv Hexec2.
       * right. exists os0. reflexivity.
       * inv H.
-    + inv Hexec1.
+    + inv H6. inv H10. inv Hexec1.
       * left. exists os3. reflexivity.
       * inv H.
     + inv Hexec1. 2: inv H.
       inv Hexec2. 2: inv H.
+      inv H12. inv H10.
       left. exists []. reflexivity.
     + eapply IHHexec1; try eassumption. reflexivity.
     + inv Hexec2. 2: inv H.
@@ -3324,7 +3325,7 @@ Proof.
       apply multi_ideal_nonspec_seq in Hns1, Hns2.
       eapply Hsso; eassumption.
     - destruct H as (-> & -> & Hf1 & Hf2).
-      inv Hf1; inv Hf2. rewrite H3 in H6. inv H6.
+      inv Hf1; inv Hf2. rewrite H6 in H9. inv H9.
       apply multi_ideal_nonspec_seq in Hns1, Hns2.
       eapply multi_seq_rcons in Hns1, Hns2.
       2, 3: econstructor; eassumption.
@@ -3344,7 +3345,7 @@ Proof.
             all: do 2 rewrite app_nil_r in H.
             all: destruct H.
             all: now inv H.
-          - rewrite H7 in H10. inv H10.
+          - rewrite H7 in H6. inv H6.
             edestruct Hsso. 1, 2: econstructor 2; [|econstructor].
             1, 2: eapply SSMI_Call; try eassumption.
             all: do 2 rewrite app_nil_r in H.
