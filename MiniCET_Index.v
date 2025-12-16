@@ -2340,16 +2340,66 @@ Proof.
           { unfold pc_sync in *. ss. 
             destruct (nth_error p l) as [iblk|] eqn:Hfst; clarify.
             destruct (nth_error (fst iblk) o) eqn:Hsnd; clarify.
-            admit.
+            specialize (rev_fetch p (l, o) iblk <{{ branch e to l0 }}> Hfst Hsnd); i.
+            assert (~ (is_terminator <{{ branch e to l0 }}>)).
+            { unfold not, is_terminator; i. destruct H2. }
+            specialize (block_always_terminator_prog p (l, o) <{{ branch e to l0 }}> wfp0 H1 H2); i.
+            des. unfold fetch in H3. cbn in H3. rewrite Hfst in H3.
+            rewrite H3. rewrite add_1_r. 
+            specialize (firstnth_error (fst iblk) o <{{ branch e to l0 }}> Hsnd); i.
+            rewrite H4. rewrite fold_left_app. cbn. 
+            unfold cptr. assert (forall n, (add n 1) = S n). { lia. }
+            rewrite <- H5. rewrite add_assoc. auto.
           }
-          { admit.
-
+          { econs; eauto; i. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
+            dup H1. destruct H2. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2. 
+            inv REG. apply H4 in H1. unfold TotalMap.t_apply, TotalMap.t_update, t_update in H1. 
+            assumption.
           }
-
         }
       }
       { (* not speculating *)
-        admit.
+        unfold not_zero in *. injection Heq0; i; subst. clear Heq0.
+        rewrite Nat.eqb_refl in *. ss.
+        des_ifs.
+        { (* initiate speculation *)
+          simpl. exists (l, (add o 1), r, m, sk, true).
+          split.
+          { econs; eauto.
+            { unfold fetch. cbn. rewrite Heq1. eassumption. }
+            { assert (to_nat (eval r' e) = Some n0).
+              { unfold to_nat. rewrite Heq. auto. }
+              rewrite <- H1. f_equal.
+              (* Check wf_prog_lookup.
+              wf_prog_lookup
+               : forall (p : prog) (pc : cptr) (i : inst),
+                 wf_prog p -> p [[pc]] = Some i -> wf_instr p i *)
+    
+
+              (*  apply eval_regs_eq.
+              + eapply unused_prog_lookup with (x:=msf) in unused_p_msf. 
+                
+              + eapply unused_prog_lookup with (x:=callee) in unused_p_callee; eauto.
+              + inv REG. unfold TotalMap.t_apply in H4. 
+                assumption.
+
+
+                 apply eval_regs_eq. *)
+              (* Check eval_regs_eq.
+              eval_regs_eq
+               : forall (r r' : reg) (e : exp),
+               e_unused msf e ->
+               e_unused callee e ->
+               (forall x : string, x <> msf /\ x <> callee -> r x = r' x) ->
+                 eval r e = eval r' e *) admit.
+            }
+          }
+          {
+            admit.
+          }
+        }
+        { (* don't initiate speculation *) admit.
+        }
       }
   (* jump *)
   - assert (n = 1) by (ss; des_ifs). subst.
