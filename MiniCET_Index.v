@@ -2606,37 +2606,58 @@ Proof.
               simpl. destruct (fst lo); clarify.
             }
           }
-          { destruct sk; clarify.
-            { cbn in STK |- *. injection STK; i; subst. clear STK.
-              unfold pc_sync in SYNC. cbn in SYNC.  rewrite Heq0, ISRC in SYNC.
-              injection SYNC; i. destruct pc' as (l' & o'). injection H3; i; subst.
-              destruct (pc_sync p (l', (add o 1))) eqn:Hpcsync; clarify.
-              { do 2 f_equal. unfold pc_sync in Hpcsync.
-                cbn in Hpcsync. destruct (nth_error p l'); clarify.
-                destruct (nth_error (fst p0) (add o 1)); clarify. 
-                remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
-                remember (firstn o (fst p0)) as lst.
-                remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
-                f_equal. replace (add o 1) with (S o) by lia.
-                Check firstnth_error.
-
-              }
-
-            }
-
-
-
-            exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
-            unfold pc_sync in SYNC |- *. simpl in SYNC |- *. rewrite Heq0, ISRC in SYNC.
-            rewrite Heq0. unfold fetch in x0. cbn in x0.
-            rewrite Heq0 in x0. rewrite x0. cbn. 
-
-            destruct sk eqn:Hsk; clarify. 
-
+          { clear H1. admit.
           }
         }  
       }
-      (* 
+    }
+    { (* not yet speculating *)
+      (* break this into initiating and not initiating speculation *)
+      rewrite ms_msf in *. ss. des_ifs_safe.
+      rewrite t_update_neq in Heq; clarify. rewrite ms_msf in Heq. cbn in Heq.
+      injection Heq; i; subst. clear Heq. cbn in H14.
+
+      assert (e_unused callee fp).
+      { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
+        eapply unused_prog_lookup in unused_p_callee; eauto.
+        cbn in unused_p_callee |- *. assert (callee = "callee"). { auto. }
+        eauto.
+      } 
+      apply eval_unused_update with (x:=callee) (r:=r') (v:=(eval r' fp)) in H1.
+      rewrite H1 in H14. 
+     
+      rewrite t_update_neq with (x1:=callee) (x2:=msf); clarify.
+      rewrite ms_msf in *. rewrite t_update_eq. 
+      destruct (eval r' fp); clarify. cbn in H14. injection H14; i; subst. clear H14.
+      cbn. 
+
+      (* Check ISMI_Call.
+        ISMI_Call
+     : forall (p : prog) (pc : cptr) (pc' : nat * nat) 
+         (r : reg) (m : mem) (sk : list cptr) (e : exp) 
+         (l : nat) (ms ms' : bool) (blk : list inst * bool),
+       p [[pc]] = Some <{{ call e }}> ->
+       (if ms then Some 0 else to_fp (eval r e)) = Some l ->
+       ms' = ms || negb (fst pc' =? l)%nat ->
+       nth_error p (fst pc') = Some blk ->
+       snd blk = true ->
+       snd pc' = 0 ->
+       p |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_ [
+       DCall pc'] ^^ [OCall l] <(( S_Running (pc', r, m, pc + 1 :: sk, ms')
+         ))> 
+
+         ISMI_Call_F
+     : forall (p : prog) (pc : cptr) (pc' : nat * nat) 
+         (r : reg) (m : mem) (sk : list cptr) (e : exp) 
+         (l : nat) (ms : bool),
+       bool ->
+       p [[pc]] = Some <{{ call e }}> ->
+       (if ms then Some 0 else to_fp (eval r e)) = Some l ->
+       (forall blk : list inst * bool,
+        nth_error p (fst pc') = Some blk -> snd blk = false \/ snd pc' <> 0) ->
+       p |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_ [
+       DCall pc'] ^^ [OCall l] <(( S_Fault ))>
+
       SpecSMI_Call
      : forall (p : prog) (pc : cptr) (pc' : nat * nat) 
          (r : reg) (m : mem) (sk : list cptr) (e : exp) 
@@ -2646,43 +2667,13 @@ Proof.
        ms' = ms || negb ((fst pc' =? l)%nat && (snd pc' =? 0)%nat) ->
        p |- <(( S_Running (pc, r, m, sk, false, ms) ))> -->_ [
        DCall pc'] ^^ [OCall l] <((
-         S_Running (pc', r, m, pc + 1 :: sk, true, ms') ))> 
+       S_Running (pc', r, m, pc + 1 :: sk, true, ms') ))>
 
-| ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool) blk,
-      p[[pc]] = Some <{{ call e }}> ->
-      to_fp (eval r e) = Some l ->
-      l' = (if ms then 0 else l) -> (* uslh masking *)
-      ms' = ms || negb (fst pc' =? l) ->
-      nth_error p (fst pc') = Some blk -> (* always established by well-formed directive *)
-      snd blk = true ->
-      snd pc' = 0 ->
-      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] 
-           <(( S_Running ((pc', r, m, (pc+1)::sk), ms') ))>
-
-
-  (* fault if attacker pc goes to non-proc block or into the middle of any block *)
-  (* directives are always "well-formed": nth_error p (fst pc') = Some blk /\ nth_error blk (snd pc') = Some i always established. *)
-  | ISMI_Call_F : forall pc pc' r m sk e l l' (ms ms' : bool),
-      p[[pc]] = Some <{{ call e }}> ->
-      to_fp (eval r e) = Some l ->
-      l' = (if ms then 0 else l) -> (* uslh masking *)
-      (forall blk, nth_error p (fst pc') = Some blk -> snd blk = false \/ snd pc' <> 0) ->
-      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Fault ))>
-
-
-
-
-
-
-
-         *)
+      *)
       
-
-    
-
+      admit.
+      
     }
-
-    admit.
   (* ctarget *)
   - exfalso. red in nct. ss. des_ifs_safe.
     rewrite Forall_forall in nct. eapply nth_error_In in Heq.
