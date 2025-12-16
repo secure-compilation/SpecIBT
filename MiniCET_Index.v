@@ -652,7 +652,16 @@ Lemma multi_spec_splitting p sc ds os n sct m
   /\ p |- <(( scm ))> -->*_ ds2 ^^ os2 ^^ (n - m) <(( sct ))>
   /\ ds = ds1 ++ ds2 /\ os = os1 ++ os2.
 Proof.
-Admitted.
+  ginduction m; ii.
+  - esplits; try econs. rewrite sub_0_r. auto.
+  - destruct n as [|n]; try lia. inv STEPS.
+    exploit IHm; try eapply H5; eauto; [lia|]. i. des.
+    replace (S n - S m) with (n - m) by lia.
+    esplits; eauto.
+    { econs; eauto. }
+    { subst. rewrite app_assoc. auto. }
+    { subst. rewrite app_assoc. auto. }
+Qed.
 
 Lemma wf_uslh : forall (p: prog),   
   wf_prog p -> wf_prog (uslh_prog p).
@@ -2602,7 +2611,11 @@ Proof.
                uslh_prog p |- <(( S_Running sc1 ))> -->*_ ds1 ^^ os1 ^^ n0 <(( S_Running sc1' ))>
              /\ uslh_prog p |- <(( S_Running sc1' ))> -->*_ ds2 ^^ os2 ^^ (S n - n0) <(( sc2 ))>
              /\ ds = ds1 ++ ds2 /\ os = os1 ++ os2).
-      { admit. }
+      { exploit multi_spec_splitting; try eapply H7; eauto. i. des.
+        assert (exists sc1', scm = S_Running sc1').
+        { inv x1; [des_ifs; lia|inv H10; eauto]. }
+        des. subst. esplits; eauto. }
+
       des. subst. eapply wf_ds_app in H2. des.
       assert (steps_to_sync_point' p ic1 ds1 = Some n0).
       { destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
