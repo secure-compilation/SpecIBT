@@ -242,7 +242,7 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
 
   Definition ideal_cfg : Type := (cfg * bool)%type.
 
-  Definition DIRS := Machine.dirs.
+  Definition DIRS := dirs.
   Definition PC := nat.
   Definition REG := reg.
 
@@ -252,37 +252,37 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
     match sc with
     | S_Running c =>
         let '(pc, r, m, sk) := c in
-        match flat_fetch p pc with
+        match p[[pc]] with
         | Some i =>
             match i with
             | <{{skip}}> | <{{ctarget}}> =>
-              (S_Running (add pc 1, r, m, sk), [])
+              (S_Running (pc + 1, r, m, sk), [])
             | <{{x:=e}}> =>
-              (S_Running (add pc 1, (x !-> eval r e; r), m, sk), [])
+              (S_Running (pc + 1, (x !-> eval r e; r), m, sk), [])
             | <{{branch e to l}}> =>
                 match to_nat (eval r e) with
                 | Some n => let b := not_zero n in
-                          (S_Running (if b then l else add pc 1, r, m, sk), [OBranch b])
+                          (S_Running (if b then (l, 0) else pc + 1, r, m, sk), [OBranch b])
                 | None => (S_Undef, [])
                 end
             | <{{jump l}}> =>
-              (S_Running (l, r, m, sk), [])
+              (S_Running (l, 0, r, m, sk), [])
             | <{{x<-load[e]}}> =>
                 match to_nat (eval r e) with
                 | Some n => match nth_error m n with
-                          | Some v' => (S_Running (add pc 1, (x !-> v'; r), m, sk), [OLoad n])
+                          | Some v' => (S_Running (pc + 1, (x !-> v'; r), m, sk), [OLoad n])
                           | None => (S_Undef, [])
                           end
                 | None => (S_Undef, [])
                 end
             | <{{store[e]<-e'}}> =>
                 match to_nat (eval r e) with
-                | Some n => (S_Running (add pc 1, r, (upd n m (eval r e')), sk), [OStore n])
+                | Some n => (S_Running (pc + 1, r, (upd n m (eval r e')), sk), [OStore n])
                 | None => (S_Undef, [])
                 end
             | <{{call e}}> =>
                 match to_nat (eval r e) with
-                | Some l => (S_Running (l, r, m, (add pc 1)::sk), [OCall l]) (* Checking needed *)
+                | Some l => (S_Running (l, 0, r, m, (pc + 1)::sk), [OCall l]) (* Checking needed *)
                 | None => (S_Undef, [])
                 end
             | <{{ret}}> =>
@@ -316,7 +316,7 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
     | S_Running sc =>
         let '(c, ct, ms) := sc in
         let '(pc, r, m, sk) := c in
-        match flat_fetch p pc with
+        match p[[pc]] with
         | None => untrace "lookup fail" (S_Undef, ds, [])
         | Some i =>
             match i with
@@ -331,7 +331,7 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
                   n <- to_nat (eval r e);;
                   let b := not_zero n in
                   let ms' := ms || negb (Bool.eqb b b') in
-                  let pc' := if b' then l else (add pc 1) in
+                  let pc' := if b' then (l, 0) else (pc + 1) in
                   ret ((S_Running ((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
               with
               | None => untrace "branch fail" (S_Undef, ds, [])
@@ -346,8 +346,8 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
                   d <- hd_error ds;;
                   pc' <- is_dcall d;;
                   l <- to_nat (eval r e);;
-                  let ms' := ms || negb ((pc' =? l)%nat) in
-                  ret ((S_Running ((pc', r, m, (add pc 1)::sk), true, ms'), tl ds), [OCall l])
+                  let ms' := ms || negb ((fst pc' =? l)%nat && (snd pc' =? 0)%nat) in
+                  ret ((S_Running ((pc', r, m, (pc + 1)::sk), true, ms'), tl ds), [OCall l])
               with
               | None => untrace "call fail" (S_Undef, ds, [])
               | Some (c, ds, os) => (c, ds, os)
@@ -355,7 +355,7 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
             | <{{ctarget}}> =>
               match
                 is_true ct;;
-                (ret (S_Running ((add pc 1, r, m, sk), false, ms), ds, []))
+                (ret (S_Running ((pc + 1, r, m, sk), false, ms), ds, []))
               with
               | None => untrace "ctarget fail!" (S_Undef, ds, [])
               | Some (c, ds, os) => (c, ds, os)
