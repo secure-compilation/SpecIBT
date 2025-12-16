@@ -197,23 +197,23 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       to_nat (eval r me) = Some n ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore n] <(( S_Running ((pc+1, r, upd n m (eval r e'), sk), ms) ))>
   (* no fault if program goes to the beginning of some procedure block, whether or not it's the intended one *)
-  | ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool) blk,
+  | ISMI_Call : forall pc pc' r m sk e l (ms ms' : bool) blk,
       p[[pc]] = Some <{{ call e }}> ->
-      to_fp (eval r e) = Some l ->
-      l' = (if ms then 0 else l) -> (* uslh masking *)
+      (if ms then Some 0 else to_fp (eval r e)) = Some l ->
+      (*l' = (if ms then 0 else l) -> (* uslh masking *)*)
       ms' = ms || negb (fst pc' =? l) ->
       nth_error p (fst pc') = Some blk -> (* always established by well-formed directive *)
       snd blk = true ->
       snd pc' = 0 ->
-      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Running ((pc', r, m, (pc+1)::sk), ms') ))>
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), ms') ))>
   (* fault if attacker pc goes to non-proc block or into the middle of any block *)
   (* directives are always "well-formed": nth_error p (fst pc') = Some blk /\ nth_error blk (snd pc') = Some i always established. *)
-  | ISMI_Call_F : forall pc pc' r m sk e l l' (ms ms' : bool),
+  | ISMI_Call_F : forall pc pc' r m sk e l (ms ms' : bool),
       p[[pc]] = Some <{{ call e }}> ->
-      to_fp (eval r e) = Some l ->
-      l' = (if ms then 0 else l) -> (* uslh masking *)
+      (if ms then Some 0 else to_fp (eval r e)) = Some l ->
+      (* l' = (if ms then 0 else l) -> (* uslh masking *) *)
       (forall blk, nth_error p (fst pc') = Some blk -> snd blk = false \/ snd pc' <> 0) ->
-      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Fault ))>
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l] <(( S_Fault ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), ms) ))> -->i_[]^^[] <(( S_Running ((pc', r, m, sk), ms) ))>
@@ -2546,6 +2546,141 @@ Proof.
     { admit. (* TODO: YH will make lemma for this case. *) }
 
     inv H7. inv H8. inv H2; clarify.
+    ss. destruct ms eqn:Hms.
+    { (* already speculating *)
+      rewrite ms_msf in *. ss. des_ifs_safe.
+      unfold TotalMap.t_apply, TotalMap.t_update, t_update in *. simpl in Heq.
+      rewrite ms_msf in *. simpl in Heq. injection Heq; i; subst. 
+      dup H14. simpl in H14.
+      injection H14; i; subst. clear H14. clear Heq. 
+      replace (callee =? msf) with false by auto. 
+
+      (* now, in the ideal semantics, are we faulting or not *)
+      (* First: does attacker pc go to a block in the program at all? *)
+      destruct (nth_error p (fst lo)) as [ablk|] eqn:Hlo; cycle 1.
+      { rewrite Forall_forall in wfds. specialize wfds with (x:=(DCall lo)). 
+        simpl in wfds. assert (DCall lo = DCall lo \/ False).
+        { left; auto. }
+        apply wfds in H2. unfold is_some in H2. unfold fetch in H2. cbn in H2.
+        destruct lo as (al & ao). simpl in H2, Hlo.
+        destruct (nth_error p al); clarify.
+      }
+      destruct (snd ablk) eqn:Hfault1; cycle 1.
+      { (* Fault: attacker pc goes to non-call target block *)
+        admit.
+      }
+      { (* Not necessarily faulting yet. Steered to call target block *)
+        destruct (Nat.eqb (snd lo) 0) eqn:Hfault2; cycle 1.
+        { (* Fault: attacker pc goes to middle of block *)
+          admit.
+        }
+        (* Now, not faulting. Attacker pc goes to beginning of call target block *)
+        rewrite Nat.eqb_eq in Hfault2.
+        (* in not yet speculating case remember to destruct here on whether speculation is initiated 
+           (that is, whether attacker pc label = intended label)
+           but here we're already speculating so it doesn't matter
+        *)
+        specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
+        exists (lo, r, m, ((l, (add o 1)) :: sk), true).
+        split.
+        { econs; eauto. }
+        { econs; eauto. 
+          { exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
+            unfold pc_sync in SYNC |- *. ss. des_ifs_safe. 
+            rewrite Hfault2. clear H1. clear Heq1.
+            specialize (nth_error_In p (fst lo) Heq); i.
+            rewrite Forall_forall in H0. apply H0 in H1.
+            red in H1. des. apply blk_not_empty_list in H1. 
+            destruct (fst ablk); clarify. cbn. unfold cptr.
+            f_equal. destruct lo as (al & ao). 
+            simpl in Hfault2. rewrite Hfault2. simpl.
+            auto.
+          }
+          { econs; eauto; inv REG; i.
+            { unfold TotalMap.t_apply, TotalMap.t_update, t_update. 
+              dup H5. destruct H6.
+              rewrite <- String.eqb_neq, String.eqb_sym in H6, H7. rewrite H6, H7.
+              eauto.
+            }
+            { unfold TotalMap.t_apply, TotalMap.t_update, t_update.
+              simpl. destruct (fst lo); clarify.
+            }
+          }
+          { destruct sk; clarify.
+            { cbn in STK |- *. injection STK; i; subst. clear STK.
+              unfold pc_sync in SYNC. cbn in SYNC.  rewrite Heq0, ISRC in SYNC.
+              injection SYNC; i. destruct pc' as (l' & o'). injection H3; i; subst.
+              destruct (pc_sync p (l', (add o 1))) eqn:Hpcsync; clarify.
+              { do 2 f_equal. unfold pc_sync in Hpcsync.
+                cbn in Hpcsync. destruct (nth_error p l'); clarify.
+                destruct (nth_error (fst p0) (add o 1)); clarify. 
+                remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+                remember (firstn o (fst p0)) as lst.
+                remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
+                f_equal. replace (add o 1) with (S o) by lia.
+                Check firstnth_error.
+
+              }
+
+            }
+
+
+
+            exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
+            unfold pc_sync in SYNC |- *. simpl in SYNC |- *. rewrite Heq0, ISRC in SYNC.
+            rewrite Heq0. unfold fetch in x0. cbn in x0.
+            rewrite Heq0 in x0. rewrite x0. cbn. 
+
+            destruct sk eqn:Hsk; clarify. 
+
+          }
+        }  
+      }
+      (* 
+      SpecSMI_Call
+     : forall (p : prog) (pc : cptr) (pc' : nat * nat) 
+         (r : reg) (m : mem) (sk : list cptr) (e : exp) 
+         (l : nat) (ms ms' : bool),
+       p [[pc]] = Some <{{ call e }}> ->
+       to_fp (eval r e) = Some l ->
+       ms' = ms || negb ((fst pc' =? l)%nat && (snd pc' =? 0)%nat) ->
+       p |- <(( S_Running (pc, r, m, sk, false, ms) ))> -->_ [
+       DCall pc'] ^^ [OCall l] <((
+         S_Running (pc', r, m, pc + 1 :: sk, true, ms') ))> 
+
+| ISMI_Call : forall pc pc' r m sk e l l' (ms ms' : bool) blk,
+      p[[pc]] = Some <{{ call e }}> ->
+      to_fp (eval r e) = Some l ->
+      l' = (if ms then 0 else l) -> (* uslh masking *)
+      ms' = ms || negb (fst pc' =? l) ->
+      nth_error p (fst pc') = Some blk -> (* always established by well-formed directive *)
+      snd blk = true ->
+      snd pc' = 0 ->
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] 
+           <(( S_Running ((pc', r, m, (pc+1)::sk), ms') ))>
+
+
+  (* fault if attacker pc goes to non-proc block or into the middle of any block *)
+  (* directives are always "well-formed": nth_error p (fst pc') = Some blk /\ nth_error blk (snd pc') = Some i always established. *)
+  | ISMI_Call_F : forall pc pc' r m sk e l l' (ms ms' : bool),
+      p[[pc]] = Some <{{ call e }}> ->
+      to_fp (eval r e) = Some l ->
+      l' = (if ms then 0 else l) -> (* uslh masking *)
+      (forall blk, nth_error p (fst pc') = Some blk -> snd blk = false \/ snd pc' <> 0) ->
+      p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l'] <(( S_Fault ))>
+
+
+
+
+
+
+
+         *)
+      
+
+    
+
+    }
 
     admit.
   (* ctarget *)
@@ -2761,8 +2896,8 @@ Proof.
       cbn in H16. apply (f_equal negb) in H16. cbn in H16.
       rewrite negb_involutive in H16.
       symmetry in H16. apply eqb_prop in H16 as ->. reflexivity.
-    - cbn in H15. apply (f_equal negb) in H15. cbn in H15. rewrite negb_involutive in H15.
-      symmetry in H15. rewrite Nat.eqb_eq in H15.
+    - cbn in H14. apply (f_equal negb) in H14. cbn in H14. rewrite negb_involutive in H14.
+      symmetry in H14. rewrite Nat.eqb_eq in H14.
       destruct pc'; cbn in *; subst.
       econstructor; eassumption.
 Qed.
@@ -2779,7 +2914,7 @@ Proof.
       erewrite IHHmulti with (ms := ms'') in H. 2, 3: reflexivity.
       inv H; try reflexivity.
       + symmetry in H16. now apply orb_false_elim in H16.
-      + symmetry in H15. now apply orb_false_elim in H15.
+      + symmetry in H14. now apply orb_false_elim in H14.
 Qed.
 
 Lemma multi_ideal_nonspec_seq p pc r m stk ds os pc' r' m' stk':
@@ -3041,7 +3176,7 @@ Proof.
       2: change (OStore n0 :: x9) with ([OStore n0] ++ x9).
       all: econstructor; eassumption.
     + (* Call case *)
-      inv x. rewrite H21 in H6. inv H6.
+      inv x. rewrite H20 in H6. inv H6.
       assert (l = l0).
       {
         clear Hexec1 IHHexec1 Hexec2.
@@ -3074,10 +3209,10 @@ Proof.
       right. repeat eexists. right.
       repeat eexists. all: eassumption.
     + (* Call case, only one fault *)
-      inv x. apply H27 in H13 as [H13 | H13].
+      inv x. apply H25 in H12 as [H12 | H12].
       all: congruence.
     + (* Call case, only one fault *)
-      inv x. apply H12 in H25 as [H25 | H25].
+      inv x. apply H11 in H23 as [H23 | H23].
       all: congruence.
     + (* Call case - both fault *)
       repeat eexists. 1, 2: constructor.
@@ -3158,18 +3293,19 @@ Proof.
       edestruct IHHexec1. 1: reflexivity. 1: eassumption.
       * left. destruct H. exists x. cbn. f_equal. assumption.
       * right. destruct H. exists x. cbn. f_equal. assumption.
-    + inv x. rewrite H6 in H5. inv H5.
+    + inv x. rewrite H6 in H5. inv H5. inv H7. inv H8.
       edestruct IHHexec1. 1: reflexivity. 1: eassumption.
       * left. destruct H. exists x. cbn. f_equal. assumption.
       * right. destruct H. exists x. cbn. f_equal. assumption.
-    + inv Hexec2.
+    + inv H7. inv H11. inv Hexec2.
       * right. exists os0. reflexivity.
       * inv H.
-    + inv Hexec1.
+    + inv H6. inv H10. inv Hexec1.
       * left. exists os3. reflexivity.
       * inv H.
     + inv Hexec1. 2: inv H.
       inv Hexec2. 2: inv H.
+      inv H12. inv H10.
       left. exists []. reflexivity.
     + eapply IHHexec1; try eassumption. reflexivity.
     + inv Hexec2. 2: inv H.
@@ -3189,7 +3325,7 @@ Proof.
       apply multi_ideal_nonspec_seq in Hns1, Hns2.
       eapply Hsso; eassumption.
     - destruct H as (-> & -> & Hf1 & Hf2).
-      inv Hf1; inv Hf2. rewrite H3 in H6. inv H6.
+      inv Hf1; inv Hf2. rewrite H6 in H9. inv H9.
       apply multi_ideal_nonspec_seq in Hns1, Hns2.
       eapply multi_seq_rcons in Hns1, Hns2.
       2, 3: econstructor; eassumption.
@@ -3209,7 +3345,7 @@ Proof.
             all: do 2 rewrite app_nil_r in H.
             all: destruct H.
             all: now inv H.
-          - rewrite H7 in H10. inv H10.
+          - rewrite H7 in H6. inv H6.
             edestruct Hsso. 1, 2: econstructor 2; [|econstructor].
             1, 2: eapply SSMI_Call; try eassumption.
             all: do 2 rewrite app_nil_r in H.
