@@ -15,6 +15,7 @@ From Stdlib Require Import List. Import ListNotations.
 Require Import ExtLib.Data.Monads.OptionMonad.
 From SECF Require Import Maps.
 From SECF Require Import MapsFunctor.
+
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
@@ -52,7 +53,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Load : forall pc r m sk x e n v',
       p[[pc]] = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
-nth_error m n = Some v' ->
+      nth_error m n = Some v' ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OLoad n] <(( S_Running (pc+1, (x !-> v'; r), m, sk) ))>
   | SSMI_Store : forall pc r m sk e e' n,
       p[[pc]] = Some <{{ store[e] <- e' }}> ->
@@ -633,14 +634,30 @@ Definition nonempty_program (p: prog) : Prop :=
 Definition wf_prog (p: prog) : Prop :=
   nonempty_program p /\ Forall (wf_block p) p.
 
+From SECF Require Import sflib.
+
+
+(* Aux Lemmas *)
+
+Lemma wf_ds_app p ds1 ds2
+    (WF: wf_ds' p (ds1 ++ ds2)) :
+  wf_ds' p ds1 /\ wf_ds' p ds2.
+Proof. eapply Forall_app. eauto. Qed.
+
 Lemma wf_uslh : forall (p: prog),   
   wf_prog p -> wf_prog (uslh_prog p).
 Proof.
 Admitted.
 
-(* Tactics *)
+(* Lemma multi_spec_msf_lookup_preserved p sc1 ds os n sc1' *)
+(* one more condition is needed : n steps of spec exec should be matched with single ideal steps *)
+(*     (LK: msf_lookup_sc sc1 = N (if ms_true_sc sc1 then 1 else 0)) *)
+(*     (STEPS: p |- <(( S_Running sc1 ))> -->*_ ds ^^ os ^^ n <(( S_Running sc1' ))>) : *)
+(*   msf_lookup_sc sc1' = N (if ms_true_sc sc1' then 1 else 0). *)
+(* Proof. *)
+(* Admitted. *)
 
-From SECF Require Import sflib.
+(* Tactics *)
 
 (* using this *)
 Lemma rev_fetch : forall (p: prog) (pc: cptr) (blk: list inst * bool) (i: inst),
@@ -2117,7 +2134,7 @@ Lemma ultimate_slh_bcc_single_cycle_refactor (p: prog) : forall ic1 sc1 sc2 n ds
 Proof.
   intros until os. intros nct wfp wfds unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
   destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r).
-  assert (wftp: wf_prog (uslh_prog p)). { apply wf_uslh. assumption. }
+  (* assert (wftp: wf_prog (uslh_prog p)). { apply wf_uslh. assumption. } *)
 
   dup wfp. unfold wf_prog in wfp. destruct wfp. unfold nonempty_program in H.
   unfold wf_ds' in wfds.
@@ -2470,7 +2487,29 @@ Proof.
     assert (SZ: n0 > S n \/ n0 <= S n) by lia.
     destruct SZ as [SZ|SZ].
     + destruct ic1. admit. (* induction does not needed *)
-    + admit. (* real induction case *)
+    + assert (SZ': n0 > 0) by admit.
+      destruct (eq_decidable (S n) n0).
+      { destruct sc2.
+        - rewrite H8 in H7.
+          exploit ultimate_slh_bcc_single_cycle_refactor; try eapply H7; eauto.
+          i. des; eauto. rewrite <- app_nil_r with (l:=ds). rewrite <- app_nil_r with (l:=os).
+          eexists. econs 2; eauto. econs.
+        - admit. (* no step to S_Undef state *)
+        - inv H7. admit. (* contradiction *)
+        - admit. (* ret. stack is empty *) }
+      assert (exists sc1' ds1 ds2 os1 os2,
+               uslh_prog p |- <(( S_Running sc1 ))> -->*_ ds1 ^^ os1 ^^ n0 <(( S_Running sc1' ))>
+             /\ uslh_prog p |- <(( S_Running sc1' ))> -->*_ ds2 ^^ os2 ^^ (S n - n0) <(( sc2 ))>
+             /\ ds = ds1 ++ ds2 /\ os = os1 ++ os2).
+      { admit. }
+      des. subst. eapply wf_ds_app in H2. des.
+      exploit ultimate_slh_bcc_single_cycle_refactor; try eapply H9; eauto.
+      { admit. }
+      i. des.
+      exploit H; try eapply H10; eauto.
+      { lia. }
+      { admit. }
+      i. des. exists ic0. econs; eauto.
 Admitted.
 
  (** * Definition of Relative Secure *) 
@@ -2540,6 +2579,7 @@ Proof.
   inversion 1; inversion 1; subst; split; try reflexivity.
   all: try congruence.
 Qed.
+
 Lemma seq_pc_determines_obs_count p pc r1 r2 m1 m2 stk os1 os2 c1 c2:
   p |- <(( S_Running (pc, r1, m1, stk) ))> -->^ os1 <(( c1 ))> ->
   p |- <(( S_Running (pc, r2, m2, stk) ))> -->^ os2 <(( c2 ))> ->
@@ -2562,7 +2602,6 @@ Proof.
       eapply IHl1a. 1: eassumption.
       cbn in Hlen. now inv Hlen.
 Qed.
-      
 
 Lemma seq_steps_preserves_seq_same_obs p pc r1 r2 m1 m2 stk os1 os2 pc' r1' r2' m1' m2' stk':
     seq_same_obs p pc r1 r2 m1 m2 stk ->
