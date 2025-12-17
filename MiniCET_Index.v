@@ -212,7 +212,7 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), ms') ))>
   (* fault if attacker pc goes to non-proc block or into the middle of any block *)
   (* directives are always "well-formed": nth_error p (fst pc') = Some blk /\ nth_error blk (snd pc') = Some i always established. *)
-  | ISMI_Call_F : forall pc pc' r m sk e l (ms ms' : bool),
+  | ISMI_Call_F : forall pc pc' r m sk e l (ms : bool),
       p[[pc]] = Some <{{ call e }}> ->
       (if ms then Some 0 else to_fp (eval r e)) = Some l ->
       (* l' = (if ms then 0 else l) -> (* uslh masking *) *)
@@ -1372,6 +1372,20 @@ Proof.
   subst. rewrite app_nil_r. eapply src_inv_branch_blk; eauto.
 Qed.
 
+Lemma no_ct_prog_src p pc
+    (NCT: no_ct_prog p)
+    (INST: p[[pc]] = Some <{{ ctarget }}>) :
+  False.
+Proof.
+  unfold no_ct_prog in NCT.
+  destruct (split p) as (bs & bools) eqn:Hsplitp.
+  rewrite Forall_forall in NCT. destruct pc; ss. des_ifs.
+  exploit nth_error_In; try eapply Heq. i.
+  eapply in_split_l in x0. rewrite Hsplitp in x0. ss.
+  apply NCT in x0. unfold no_ct_blk in x0. rewrite Forall_forall in x0.
+  exploit nth_error_In; eauto. i. eapply x0 in x1. ss.
+Qed.
+
 Lemma src_inv p tp pc tpc i
     (NCT: no_ct_prog p)
     (TRP: uslh_prog p = tp)
@@ -1543,16 +1557,8 @@ Proof.
           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
         rewrite <- H. auto. }
   (* ctarget *)
-  - exists <{{ ctarget }}>. exfalso.
-    destruct blk' as [blk' prc_bool].
-    unfold no_ct_prog in NCT.
-    destruct (split p) as (bs & bools) eqn:Hsplitp.
-    rewrite Forall_forall in NCT. unfold blk_offset. simpl.
-    specialize (nth_error_In p l Heq). intros.
-    eapply in_split_l in H. rewrite Hsplitp in H. simpl in H.
-    apply NCT in H. unfold no_ct_blk in H. rewrite Forall_forall in H.
-    specialize (nth_error_In blk o Heq0). intros.
-    apply H in H0. destruct H0.
+  - exists <{{ ctarget }}>. exfalso. eapply (no_ct_prog_src p (l, o)); eauto.
+    ss. des_ifs.
 Qed.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
@@ -2680,11 +2686,7 @@ Proof.
       
     }
   (* ctarget *)
-  - exfalso. red in nct. ss. des_ifs_safe.
-    rewrite Forall_forall in nct. eapply nth_error_In in Heq.
-    eapply in_split_l in Heq. rewrite Heq1 in Heq. ss. eapply nct in Heq.
-    red in Heq. rewrite Forall_forall in Heq. eapply nth_error_In in Heq0.
-    eapply Heq in Heq0. ss.
+  - exfalso. eapply no_ct_prog_src; eauto.
   (* ret *)
   - assert (n = 1) by (ss; des_ifs). subst.
     inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
@@ -2729,29 +2731,33 @@ Proof.
     + destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
       des_ifs_safe. rename c into pc.
       inv H6. exploit src_inv; eauto. i. des.
+      exploit unused_prog_lookup; try eapply H3; eauto. intros UNUSED1.
+      exploit unused_prog_lookup; try eapply H4; eauto. intros UNUSED2.
       destruct i; ss; clarify; try lia.
+      (* brnach *)
       * inv x1; try (sfby (simpl in SIMPL; clarify)).
         des_ifs_safe. inv H7; clarify. inv H11; clarify.
-        esplits. econs.
-        { econs; cycle 2.
-          - eauto.
-          - eauto.
-          - eauto.
-          - eauto.
-          - simpl in H18. rewrite H5 in H18. simpl in H18.
-            destruct ms; ss. rewrite <- H18.
-            erewrite eval_regs_eq; eauto.
-            { admit. }
-            { admit. }
-            { admit. } }
-        admit.
+        ss. clarify.
+        exploit (ISMI_Branch p pc _ r m l ms); try eapply Heq; eauto.
+        { rewrite <- H18. rewrite H5. simpl. destruct ms; ss.
+          erewrite eval_regs_eq; eauto. inv REG0. eauto. }
+        instantiate (1:= b'). i. rewrite cons_app. rewrite cons_app with (a:= OBranch (not_zero n0)).
+        destruct b'.
+        { destruct n.
+          { inv H13. esplits. econs; eauto. econs. }
+          destruct n; [|lia].
+          inv H13. inv H12.
+          assert ((uslh_prog p) [[(l', 0)]] = Some <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>).
+          { ss. rewrite IN. ss. }
+          inv H7; clarify. esplits. econs; eauto. ss. econs. }
+        destruct n; [|lia].
+        inv H13. esplits. econs; eauto. econs.
+      (* call *)
       * inv x1; try (sfby (simpl in SIMPL; clarify)). clarify.
         destruct n.
         { inv H7. inv H13. inv H8; clarify. }
         des_ifs_safe. inv H7; clarify. inv H11; clarify.
         ss. subst. inv H13. inv H10; clarify.
-        (* assert (exists ic2', p |- <(( ic ))> -->i_ ds ^^ os  <(( ict ))> *)
-        (* { *)
         destruct (nth_error p (fst pc'0)) eqn:BSRC.
         2:{ exploit (ISMI_Call_F p pc pc'0 r m); eauto.
             2:{ ii. clarify. }
@@ -2759,12 +2765,8 @@ Proof.
               rewrite H5 in H19. rewrite <- H19. ss.
               rewrite t_update_neq; [|ii;clarify].
               rewrite H5. ss. destruct ms; ss.
-              rewrite eval_unused_update.
-              2:{ admit. }
-              erewrite eval_regs_eq; eauto.
-              { admit. }
-              { admit. }
-              { admit. } }
+              rewrite eval_unused_update; eauto.
+              erewrite eval_regs_eq; eauto. inv REG0; eauto. }
             instantiate (1:= l). i. ss. clarify. inv H12.
             { exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
               rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
@@ -2782,12 +2784,8 @@ Proof.
               rewrite H5 in H19. rewrite <- H19. ss.
               rewrite t_update_neq; [|ii;clarify].
               rewrite H5. ss. destruct ms; ss.
-              rewrite eval_unused_update.
-              2:{ admit. }
-              erewrite eval_regs_eq; eauto.
-              { admit. }
-              { admit. }
-              { admit. } }
+              rewrite eval_unused_update; eauto.
+              erewrite eval_regs_eq; eauto. inv REG0; eauto. }
             instantiate (1:= l). i. ss. clarify. inv H12.
             { exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
               rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
@@ -2804,12 +2802,8 @@ Proof.
               rewrite H5 in H19. rewrite <- H19. ss.
               rewrite t_update_neq; [|ii;clarify].
               rewrite H5. ss. destruct ms; ss.
-              rewrite eval_unused_update.
-              2:{ admit. }
-              erewrite eval_regs_eq; eauto.
-              { admit. }
-              { admit. }
-              { admit. } }
+              rewrite eval_unused_update; eauto.
+              erewrite eval_regs_eq; eauto. inv REG0; eauto. }
             instantiate (1:= l). i. ss. clarify. inv H12.
             { exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
               rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
@@ -2825,12 +2819,8 @@ Proof.
           rewrite H5 in H19. rewrite <- H19. ss.
           rewrite t_update_neq; [|ii;clarify].
           rewrite H5. ss. destruct ms; ss.
-          rewrite eval_unused_update.
-          2:{ admit. }
-          erewrite eval_regs_eq; eauto.
-          { admit. }
-          { admit. }
-          { admit. } }
+          rewrite eval_unused_update; eauto.
+          erewrite eval_regs_eq; eauto. inv REG0; eauto. }
         instantiate (1:= l). ii. ss. clarify. inv H12.
         { rewrite <- app_nil_r with (l:=[OCall l0]).
           rewrite <- app_nil_r with (l:=[DCall lo]). eexists. econs; eauto. econs. }
@@ -2916,7 +2906,7 @@ Proof.
         - assert (n0 = 1) by des_ifs. subst.
           unfold steps_to_sync_point'. rewrite Heq. des_ifs.
         - destruct i; simpl in NSIMPL; clarify.
-          3:{ admit. (* no ctarget in the source code *) }
+          3:{ exfalso. eapply no_ct_prog_src; eauto. }
           + inv IMATCH; [ss|]. destruct ds1.
             { ss. exfalso. inv H9; [lia|]. inv H13; clarify. }
             simpl in SYNCPT. des_ifs_safe. simpl. rewrite Heq. auto.
