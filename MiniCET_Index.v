@@ -2671,9 +2671,48 @@ Proof.
       rewrite t_update_neq with (x1:=callee) (x2:=msf); clarify.
       rewrite ms_msf in *. rewrite t_update_eq. 
       destruct (eval r' fp); clarify. cbn in H14. injection H14; i; subst. clear H14.
-      cbn. 
+      cbn. rewrite Nat.eqb_sym.
 
+      destruct (Nat.eqb (fst lo) l0) eqn:Hspec1; clarify.
+      { destruct (Nat.eqb (snd lo) 0) eqn:Hspec2; clarify.
+        { (* not initiating speculation *)
+          cbn. destruct lo as (al & ao). exists (al, ao, r, m, (l, (add o 1)) :: sk, false).
+          split.
+          { econs; eauto.
+            { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
+              eassumption.
+            }
+            { assert (to_fp (eval (callee !-> FP l0; r') fp) = Some l0).
+              { rewrite H1. auto. }
+              rewrite <- H2. f_equal. apply eval_regs_eq.
+              { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
+                eapply unused_prog_lookup in unused_p_msf; eauto.
+                simpl in unused_p_callee. eauto.
+              }
+              { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
+                eapply unused_prog_lookup in unused_p_callee; eauto.
+                simpl in unused_p_callee. eauto.
+              }
+              { inv REG0. i. dup H5. apply H3 in H5. unfold TotalMap.t_apply in H5.
+                rewrite H5. 
+                assert (eval (callee !-> FP l0; r') x = eval r' x).
+                { apply eval_unused_update. des. cbn. assumption. }
+                cbn in H7. unfold TotalMap.t_apply in H7. symmetry.
+                assumption.
+              }
+            }
+            { simpl in Hspec1 |- *. replace false with (negb true) by lia.
+              f_equal. symmetry. assumption.
+            }
+            { cbn in *. rewrite Nat.eqb_eq in Hspec1, Hspec2. (* this seems wrong? *)
+              admit. 
 
+            }
+
+          }
+
+        }
+      }
 
       (* to see if attacker initiates speculation, destruct (Nat.eqb l0 (fst lo)) (and (Nat.eqb (snd lo) 0) ?) 
          also need to destruct for faulting as above, I think.  
