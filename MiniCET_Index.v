@@ -139,6 +139,10 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Term : forall pc r m ms,
       p[[pc]] = Some <{{ ret }}> -> 
       p |- <(( S_Running ((pc, r, m, []), false, ms) ))> -->_[]^^[] <(( S_Term ))>
+  | SpecSMI_Fault : forall pc r m sk ms i,
+      i <> <{{ ctarget }}> ->
+      p[[pc]] = Some i ->
+      p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Fault ))>
 
   where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
     (spec_eval_small_step p sc sct ds os).
@@ -2541,6 +2545,7 @@ Proof.
     inv H5; clarify. simpl in H1.
     inv H7. inv H3; clarify. simpl in H6. clarify.
     inv H9. inv H2; clarify.
+    2:{ inv H7. inv H2. }
 
     assert (ITGT: (uslh_prog p)[[lo + 1]] = Some <{{ msf := (callee = (& (fst lo))) ? msf : 1 }}>).
     { admit. (* TODO: YH will make lemma for this case. *) }
@@ -2731,7 +2736,24 @@ Proof.
           i. des; eauto. rewrite <- app_nil_r with (l:=ds). rewrite <- app_nil_r with (l:=os).
           eexists. econs 2; eauto. econs.
         - admit. (* no step to S_Undef state *)
-        - inv H7. admit. (* contradiction *)
+        - destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
+          des_ifs_safe. rename c into pc.
+          inv H6. exploit src_inv; eauto.  i. des.
+          destruct i; ss; clarify; inv x1; try inv MATCH; ss;
+            try (sfby (inv H7; clarify; inv H13; inv H8; clarify; inv H13)).
+          + des_ifs_safe. inv H7. inv H12; ss; clarify.
+            destruct b'; clarify.
+            * inv H14.
+              assert ((uslh_prog p) [[(l', 0)]] = Some <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>).
+              { ss. rewrite IN. ss. }
+              inv H7; clarify.
+              inv H12; clarify. inv H13.
+              assert ((uslh_prog p) [[(l', 1)]] = Some <{{ jump l0 }}>).
+              { ss. rewrite IN. ss. }
+              inv H7; clarify.
+            * inv H14. inv H12. inv H7; clarify.
+          + des_ifs_safe. inv H7. inv H11; clarify. inv H13.
+            inv H8; clarify. inv H14. admit.
         - admit. (* ret. stack is empty *) }
       assert (exists sc1' ds1 ds2 os1 os2,
                uslh_prog p |- <(( S_Running sc1 ))> -->*_ ds1 ^^ os1 ^^ n0 <(( S_Running sc1' ))>
