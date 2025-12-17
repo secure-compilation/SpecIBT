@@ -2578,7 +2578,7 @@ Proof.
       }
       destruct (snd ablk) eqn:Hfault1; cycle 1.
       { (* Fault: attacker pc goes to non-call target block *)
-        admit.
+        admit. (* separate lemma to handle Fault cases? *)
       }
       { (* Not necessarily faulting yet. Steered to call target block *)
         destruct (Nat.eqb (snd lo) 0) eqn:Hfault2; cycle 1.
@@ -2587,10 +2587,6 @@ Proof.
         }
         (* Now, not faulting. Attacker pc goes to beginning of call target block *)
         rewrite Nat.eqb_eq in Hfault2.
-        (* in not yet speculating case remember to destruct here on whether speculation is initiated 
-           (that is, whether attacker pc label = intended label)
-           but here we're already speculating so it doesn't matter
-        *)
         specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
         exists (lo, r, m, ((l, (add o 1)) :: sk), true).
         split.
@@ -2617,13 +2613,50 @@ Proof.
               simpl. destruct (fst lo); clarify.
             }
           }
-          { clear H1. admit.
+          { clear H1. destruct sk; clarify.
+            { simpl in STK |- *. injection STK; i; subst. clear STK.
+              apply block_always_terminator_prog with (pc:=(l, o)) (i:=<{{ call fp }}>) in wfp0; eauto.
+              des. replace (l, (add o 1)) with ((l, o) + 1) by auto.
+              unfold pc_sync in SYNC |- *. 
+              unfold MiniCET.fetch in wfp0. cbn in wfp0, SYNC |- *.
+              destruct (nth_error p l); clarify. rewrite wfp0. rewrite ISRC in SYNC. 
+              injection SYNC; i. do 2 f_equal. rewrite <- H1.
+              replace (add o 1) with (S o) at 2 by lia. 
+              specialize (firstnth_error (fst p0) o <{{ call fp }}> ISRC); i.
+              rewrite H3. cbn. rewrite fold_left_app. cbn.
+              remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+              remember (firstn o (fst p0)) as lst.
+              remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
+              remember (fold_left f lst a) as y.
+              rewrite <- add_assoc with (n:=o) (m:=y) (p:=1).
+              rewrite add_assoc. rewrite <- add_assoc with (n:=o) (m:=1) (p:=y).
+              rewrite add_comm with (n:=1) (m:=y). auto.
+            }
+            { simpl in STK |- *.
+              apply block_always_terminator_prog with (pc:=(l, o)) (i:=<{{ call fp }}>) in wfp0; eauto.
+              des. replace (l, (add o 1)) with ((l, o) + 1) by auto.
+              destruct (pc_sync p c); clarify.
+              destruct (map_opt (pc_sync p) sk); clarify. 
+              unfold pc_sync in SYNC |- *.
+              unfold MiniCET.fetch in wfp0. cbn in wfp0, SYNC |- *.
+              destruct (nth_error p l); clarify. rewrite wfp0. rewrite ISRC in SYNC.
+              injection SYNC; i. do 2 f_equal. rewrite <- H1.
+              replace (add o 1) with (S o) at 2 by lia. 
+              specialize (firstnth_error (fst p0) o <{{ call fp }}> ISRC); i.
+              rewrite H3. cbn. rewrite fold_left_app. cbn.
+              remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+              remember (firstn o (fst p0)) as lst.
+              remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
+              remember (fold_left f lst a) as y.
+              rewrite <- add_assoc with (n:=o) (m:=y) (p:=1).
+              rewrite add_assoc. rewrite <- add_assoc with (n:=o) (m:=1) (p:=y).
+              rewrite add_comm with (n:=1) (m:=y). auto.
+            }
           }
         }  
       }
     }
     { (* not yet speculating *)
-      (* break this into initiating and not initiating speculation *)
       rewrite ms_msf in *. ss. des_ifs_safe.
       rewrite t_update_neq in Heq; clarify. rewrite ms_msf in Heq. cbn in Heq.
       injection Heq; i; subst. clear Heq. cbn in H14.
@@ -2634,54 +2667,18 @@ Proof.
         cbn in unused_p_callee |- *. assert (callee = "callee"). { auto. }
         eauto.
       } 
-      apply eval_unused_update with (x:=callee) (r:=r') (v:=(eval r' fp)) in H1.
-      rewrite H1 in H14. 
-     
+      apply eval_unused_update with (x:=callee) (r:=r') (v:=(eval r' fp)) in H1. rewrite H1 in H14. 
       rewrite t_update_neq with (x1:=callee) (x2:=msf); clarify.
       rewrite ms_msf in *. rewrite t_update_eq. 
       destruct (eval r' fp); clarify. cbn in H14. injection H14; i; subst. clear H14.
       cbn. 
 
-      (* Check ISMI_Call.
-        ISMI_Call
-     : forall (p : prog) (pc : cptr) (pc' : nat * nat) 
-         (r : reg) (m : mem) (sk : list cptr) (e : exp) 
-         (l : nat) (ms ms' : bool) (blk : list inst * bool),
-       p [[pc]] = Some <{{ call e }}> ->
-       (if ms then Some 0 else to_fp (eval r e)) = Some l ->
-       ms' = ms || negb (fst pc' =? l)%nat ->
-       nth_error p (fst pc') = Some blk ->
-       snd blk = true ->
-       snd pc' = 0 ->
-       p |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_ [
-       DCall pc'] ^^ [OCall l] <(( S_Running (pc', r, m, pc + 1 :: sk, ms')
-         ))> 
 
-         ISMI_Call_F
-     : forall (p : prog) (pc : cptr) (pc' : nat * nat) 
-         (r : reg) (m : mem) (sk : list cptr) (e : exp) 
-         (l : nat) (ms : bool),
-       bool ->
-       p [[pc]] = Some <{{ call e }}> ->
-       (if ms then Some 0 else to_fp (eval r e)) = Some l ->
-       (forall blk : list inst * bool,
-        nth_error p (fst pc') = Some blk -> snd blk = false \/ snd pc' <> 0) ->
-       p |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_ [
-       DCall pc'] ^^ [OCall l] <(( S_Fault ))>
 
-      SpecSMI_Call
-     : forall (p : prog) (pc : cptr) (pc' : nat * nat) 
-         (r : reg) (m : mem) (sk : list cptr) (e : exp) 
-         (l : nat) (ms ms' : bool),
-       p [[pc]] = Some <{{ call e }}> ->
-       to_fp (eval r e) = Some l ->
-       ms' = ms || negb ((fst pc' =? l)%nat && (snd pc' =? 0)%nat) ->
-       p |- <(( S_Running (pc, r, m, sk, false, ms) ))> -->_ [
-       DCall pc'] ^^ [OCall l] <((
-       S_Running (pc', r, m, pc + 1 :: sk, true, ms') ))>
-
+      (* to see if attacker initiates speculation, destruct (Nat.eqb l0 (fst lo)) (and (Nat.eqb (snd lo) 0) ?) 
+         also need to destruct for faulting as above, I think.  
       *)
-      
+
       admit.
       
     }
