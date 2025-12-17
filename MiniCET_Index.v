@@ -2726,7 +2726,121 @@ Proof.
         + inv H9; clarify. inv H14. inv H7; clarify. }
     assert (SZ: n0 > S n \/ n0 <= S n) by lia.
     destruct SZ as [SZ|SZ].
-    + destruct ic1. admit. (* induction does not needed *)
+    + destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
+      des_ifs_safe. rename c into pc.
+      inv H6. exploit src_inv; eauto. i. des.
+      destruct i; ss; clarify; try lia.
+      * inv x1; try (sfby (simpl in SIMPL; clarify)).
+        des_ifs_safe. inv H7; clarify. inv H11; clarify.
+        esplits. econs.
+        { econs; cycle 2.
+          - eauto.
+          - eauto.
+          - eauto.
+          - eauto.
+          - simpl in H18. rewrite H5 in H18. simpl in H18.
+            destruct ms; ss. rewrite <- H18.
+            erewrite eval_regs_eq; eauto.
+            { admit. }
+            { admit. }
+            { admit. } }
+        admit.
+      * inv x1; try (sfby (simpl in SIMPL; clarify)). clarify.
+        destruct n.
+        { inv H7. inv H13. inv H8; clarify. }
+        des_ifs_safe. inv H7; clarify. inv H11; clarify.
+        ss. subst. inv H13. inv H10; clarify.
+        (* assert (exists ic2', p |- <(( ic ))> -->i_ ds ^^ os  <(( ict ))> *)
+        (* { *)
+        destruct (nth_error p (fst pc'0)) eqn:BSRC.
+        2:{ exploit (ISMI_Call_F p pc pc'0 r m); eauto.
+            2:{ ii. clarify. }
+            { instantiate (2:=ms).
+              rewrite H5 in H19. rewrite <- H19. ss.
+              rewrite t_update_neq; [|ii;clarify].
+              rewrite H5. ss. destruct ms; ss.
+              rewrite eval_unused_update.
+              2:{ admit. }
+              erewrite eval_regs_eq; eauto.
+              { admit. }
+              { admit. }
+              { admit. } }
+            instantiate (1:= l). i. ss. clarify. inv H12.
+            { exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
+              rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
+            destruct n0; cycle 1.
+            { lia. }
+            inv H7. inv H6; clarify.
+            { ss. exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
+              rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
+            { ss. exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
+              rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. } }
+        destruct (snd p0) eqn:CT; cycle 1.
+        { exploit (ISMI_Call_F p pc pc'0 r m); eauto.
+          2:{ i. clarify. auto. }
+            { instantiate (2:=ms).
+              rewrite H5 in H19. rewrite <- H19. ss.
+              rewrite t_update_neq; [|ii;clarify].
+              rewrite H5. ss. destruct ms; ss.
+              rewrite eval_unused_update.
+              2:{ admit. }
+              erewrite eval_regs_eq; eauto.
+              { admit. }
+              { admit. }
+              { admit. } }
+            instantiate (1:= l). i. ss. clarify. inv H12.
+            { exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
+              rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
+            destruct n0; cycle 1.
+            { lia. }
+            inv H7. inv H6; clarify.
+            { ss. exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
+              rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
+            { ss. exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
+              rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. } }
+        destruct (eq_decidable (snd pc'0) 0); cycle 1.
+        { exploit (ISMI_Call_F p pc pc'0 r m); eauto.
+            { instantiate (2:=ms).
+              rewrite H5 in H19. rewrite <- H19. ss.
+              rewrite t_update_neq; [|ii;clarify].
+              rewrite H5. ss. destruct ms; ss.
+              rewrite eval_unused_update.
+              2:{ admit. }
+              erewrite eval_regs_eq; eauto.
+              { admit. }
+              { admit. }
+              { admit. } }
+            instantiate (1:= l). i. ss. clarify. inv H12.
+            { exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
+              rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
+            destruct n0; cycle 1.
+            { lia. }
+            inv H8. inv H6; clarify.
+            { ss. exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
+              rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
+            { ss. exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
+              rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. } }
+        exploit (ISMI_Call p pc pc'0 r m); eauto.
+        { instantiate (2:=ms).
+          rewrite H5 in H19. rewrite <- H19. ss.
+          rewrite t_update_neq; [|ii;clarify].
+          rewrite H5. ss. destruct ms; ss.
+          rewrite eval_unused_update.
+          2:{ admit. }
+          erewrite eval_regs_eq; eauto.
+          { admit. }
+          { admit. }
+          { admit. } }
+        instantiate (1:= l). ii. ss. clarify. inv H12.
+        { rewrite <- app_nil_r with (l:=[OCall l0]).
+          rewrite <- app_nil_r with (l:=[DCall lo]). eexists. econs; eauto. econs. }
+        destruct n0; cycle 1.
+        { lia. }
+        inv H8. inv H6; clarify.
+        { ss. rewrite <- app_nil_r with (l:=[OCall l0]).
+          rewrite <- app_nil_r with (l:=[DCall lo]). eexists. econs; eauto. econs. }
+        { ss. rewrite <- app_nil_r with (l:=[OCall l0]).
+          rewrite <- app_nil_r with (l:=[DCall lo]). eexists. econs; eauto. econs. }
     + assert (SZ': n0 > 0).
       { unfold steps_to_sync_point' in SYNCPT. des_ifs; lia. }
       destruct (eq_decidable (S n) n0).
@@ -2736,6 +2850,27 @@ Proof.
           i. des; eauto. rewrite <- app_nil_r with (l:=ds). rewrite <- app_nil_r with (l:=os).
           eexists. econs 2; eauto. econs.
         - admit. (* no step to S_Undef state *)
+        - destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
+          des_ifs_safe. rename c into pc.
+          inv H6. exploit src_inv; eauto. i. des.
+          destruct i; ss; clarify; inv x1; try inv MATCH; ss;
+            try (sfby (inv H7; clarify; inv H13; inv H8; clarify; inv H13)).
+          + des_ifs_safe. inv H7. inv H12; ss; clarify.
+            destruct b'; clarify.
+            * inv H14.
+              assert ((uslh_prog p) [[(l', 0)]] = Some <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>).
+              { ss. rewrite IN. ss. }
+              inv H7; clarify.
+              inv H12; clarify. inv H13.
+              assert ((uslh_prog p) [[(l', 1)]] = Some <{{ jump l0 }}>).
+              { ss. rewrite IN. ss. }
+              inv H7; clarify.
+            * inv H14. inv H12. inv H7; clarify.
+          + des_ifs_safe. inv H7. inv H11; clarify. inv H13.
+            inv H8; clarify. inv H14. ss. clarify. inv H8.
+            2:{ inv H13. inv H12. inv H7. }
+            inv H13. inv H12. inv H7.
+            admit. (* H16, H14 contradiction *)
         - destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
           des_ifs_safe. rename c into pc.
           inv H6. exploit src_inv; eauto.  i. des.
@@ -2753,8 +2888,15 @@ Proof.
               inv H7; clarify.
             * inv H14. inv H12. inv H7; clarify.
           + des_ifs_safe. inv H7. inv H11; clarify. inv H13.
-            inv H8; clarify. inv H14. admit.
-        - admit. (* ret. stack is empty *) }
+            inv H8; clarify. inv H14. ss. clarify. inv H8.
+            2:{ inv H13. inv H12. inv H7. }
+            inv H13. inv H12. inv H7.
+          (* ret. stack is empty *)
+          + inv H7. inv H13. inv H8; clarify. esplits.
+            econs 2; [|econs].
+            assert (l = []).
+            { clear -STK. destruct l; ss. des_ifs. }
+            subst. eapply ISMI_Term. eauto. }
       assert (exists sc1' ds1 ds2 os1 os2,
                uslh_prog p |- <(( S_Running sc1 ))> -->*_ ds1 ^^ os1 ^^ n0 <(( S_Running sc1' ))>
              /\ uslh_prog p |- <(( S_Running sc1' ))> -->*_ ds2 ^^ os2 ^^ (S n - n0) <(( sc2 ))>
