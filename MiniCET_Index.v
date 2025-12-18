@@ -607,6 +607,12 @@ Definition last_inst_terminator (blk: (list inst * bool)) : Prop :=
   | h::t => is_terminator h
   end.
 
+(* we need a wf property saying that if we look up an expression in a register or  
+   get it from memory, and it evaluates to a label, then that label is well-formed 
+   (currently we only have this for constants that occur in expressions that occur 
+   as the argument of the call instruction)
+*)
+
 Definition wf_lbl (p: prog) (is_proc: bool) (l: nat) : Prop :=
   match nth_error p l with
   | Some (_, b) => is_proc = b
@@ -2559,6 +2565,7 @@ Proof.
   - inv x1; try simpl in SIMPL; clarify.
     unfold steps_to_sync_point' in n_steps. rewrite ISRC in n_steps.
     des_ifs_safe. inv tgt_steps.
+
     inv H5; clarify. simpl in H1.
     inv H7. inv H3; clarify. simpl in H6. clarify.
     inv H9. inv H2; clarify.
@@ -2589,11 +2596,14 @@ Proof.
       }
       destruct (snd ablk) eqn:Hfault1; cycle 1.
       { (* Fault: attacker pc goes to non-call target block *)
+        (* contradiction derived from Hfault1 and Hlo and H11. *)
+
         admit. (* separate lemma to handle Fault cases? *)
       }
       { (* Not necessarily faulting yet. Steered to call target block *)
         destruct (Nat.eqb (snd lo) 0) eqn:Hfault2; cycle 1.
         { (* Fault: attacker pc goes to middle of block *)
+        (* contradiction derived from Hfault2 and Hlo and H11. *)
           admit.
         }
         (* Now, not faulting. Attacker pc goes to beginning of call target block *)
@@ -2730,16 +2740,15 @@ Proof.
             { cbn. rewrite Nat.eqb_refl. auto. }
             specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
             specialize (wf_prog_lookup p (l, o) <{{ call fp }}> wfp0 H3); i.
-            (* 
-            destruct fp eqn:Hfp; clarify.
-            { unfold wf_instr in H5. 
-               why is it not thinking that call <string> is a problem? H5 reduces to True.}
-            *) admit.
+            unfold wf_instr. simpl in H4.
+            admit.
+            
           }
           { econs; eauto.
             { unfold pc_sync in SYNC |- *. cbn in SYNC |- *.
               rewrite Hl0. destruct (fst blk); clarify. 
-              clear H2. admit.
+              clear H2. (* given H11, this should be true, but do I have enough info in ctx to show it? *)
+              admit.
             }
             { econs; eauto. inv REG0; i.
               { unfold TotalMap.t_apply, TotalMap.t_update, t_update. 
@@ -2791,12 +2800,29 @@ Proof.
             }
           }
         }
-        { (* attacker offset jumps to middle of block: fault *)
+        { (* initiating speculation *)
+          (* attacker offset jumps to middle of block: fault *)
+          cbn. rewrite Nat.eqb_eq in Hspec1. rewrite Nat.eqb_neq in Hspec2.
+          rewrite Hspec1 in *.
           admit.
         }
       }
       { (* attacker label doesn't match intended label (but this might not be fault; only if it's not proc block) *)
-        admit.
+        rewrite Nat.eqb_neq in Hspec1. cbn. 
+        destruct (nth_error p (fst lo)) as [ablk|] eqn:Hlo.
+        { (* Some *)
+          destruct (snd ablk) eqn:Hproc.
+          { (* attacker jumps to proc block *)
+            destruct lo as (al & ao) eqn:Hapc. simpl in *.
+            destruct ao as [|ao'] eqn:Hao.
+            { (* attacker goes to beginning of block, can step *)
+              exists (al, ao, r, m, (l, (add o 1)) :: sk, )
+
+            }
+
+          }
+        }
+        
       }
     }   
   (* ctarget *)
