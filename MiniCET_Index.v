@@ -64,7 +64,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
       to_fp (eval r e) = Some l ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
   | SSMI_Ret : forall pc r m sk pc',
-      p[[pc]] = Some <{{ ret }}> ->
+p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
   | SSMI_Term : forall pc r m,
       p[[pc]] = Some <{{ ret}}> ->
@@ -1616,6 +1616,17 @@ Proof.
   rewrite Forall_forall in x2. eapply nth_error_In in INST. eauto.
 Qed.
 
+Lemma src_tgt_length : forall p tp pc (bk bk': list inst * bool) e l (i: inst),
+  nth_error p (fst pc) = Some bk ->
+  nth_error (fst bk) (snd pc) = Some i ->
+  i <> <{{ branch e to l }}> ->
+  tp = uslh_prog p ->
+  nth_error tp (fst pc) = Some bk'.
+Proof.
+  i. rewrite H2 in *. unfold uslh_prog. 
+  destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as (p', newp) eqn:Htp.
+Admitted.
+
 (* BCC lemma for one single instruction *)
 (* Lemma ultimate_slh_bcc_single_cycle (p: prog) : forall ic1 sc1 sc2 n ds os, *)
 (*   no_ct_prog p -> *)
@@ -2672,19 +2683,34 @@ Proof.
       rewrite ms_msf in *. rewrite t_update_eq. 
       destruct (eval r' fp); clarify. cbn in H14. injection H14; i; subst. clear H14.
       cbn. rewrite Nat.eqb_sym.
-
+      
+      (* if either fst lo ≠ l0 or snd lo ≠ 0, speculation is being initiated *)
       destruct (Nat.eqb (fst lo) l0) eqn:Hspec1; clarify.
       { destruct (Nat.eqb (snd lo) 0) eqn:Hspec2; clarify.
         { (* not initiating speculation *)
-          cbn. destruct lo as (al & ao). exists (al, ao, r, m, (l, (add o 1)) :: sk, false).
+          cbn. destruct lo as (al & ao). cbn in Hspec1, Hspec2.
+          rewrite Nat.eqb_eq in Hspec1, Hspec2. rewrite Hspec1, Hspec2 in *.
+          exists (l0, 0, r, m, (l, (add o 1)) :: sk, false).
+          rewrite Forall_forall in wfds.
+            specialize wfds with (x:=(DCall (l0, 0))).
+            cbn in wfds.
+            assert (DCall (l0, 0) = DCall (l0, 0) \/ False). { left; auto. }
+            apply wfds in H2. unfold is_some in H2.
+            assert (exists blk, nth_error p l0 = Some blk).
+            { destruct (nth_error p l0) as [blk|]; clarify.
+              exists blk. auto.
+            } 
+            des. rename H3 into Hl0.
+            rewrite Hl0 in H2. 
           split.
-          { econs; eauto.
+          { 
+            econs; eauto.
             { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
               eassumption.
             }
             { assert (to_fp (eval (callee !-> FP l0; r') fp) = Some l0).
               { rewrite H1. auto. }
-              rewrite <- H2. f_equal. apply eval_regs_eq.
+              rewrite <- H3. f_equal. apply eval_regs_eq.
               { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
                 eapply unused_prog_lookup in unused_p_msf; eauto.
                 simpl in unused_p_callee. eauto.
@@ -2693,34 +2719,86 @@ Proof.
                 eapply unused_prog_lookup in unused_p_callee; eauto.
                 simpl in unused_p_callee. eauto.
               }
-              { inv REG0. i. dup H5. apply H3 in H5. unfold TotalMap.t_apply in H5.
-                rewrite H5. 
+              { inv REG0. i. dup H6. apply H4 in H6. unfold TotalMap.t_apply in H6.
+                rewrite H6. 
                 assert (eval (callee !-> FP l0; r') x = eval r' x).
                 { apply eval_unused_update. des. cbn. assumption. }
-                cbn in H7. unfold TotalMap.t_apply in H7. symmetry.
+                cbn in H8. unfold TotalMap.t_apply in H8. symmetry.
                 assumption.
               }
             }
-            { simpl in Hspec1 |- *. replace false with (negb true) by lia.
-              f_equal. symmetry. assumption.
-            }
-            { cbn in *. rewrite Nat.eqb_eq in Hspec1, Hspec2. (* this seems wrong? *)
-              admit. 
-
-            }
-
+            { cbn. rewrite Nat.eqb_refl. auto. }
+            specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
+            specialize (wf_prog_lookup p (l, o) <{{ call fp }}> wfp0 H3); i.
+            (* 
+            destruct fp eqn:Hfp; clarify.
+            { unfold wf_instr in H5. 
+               why is it not thinking that call <string> is a problem? H5 reduces to True.}
+            *) admit.
           }
-
+          { econs; eauto.
+            { unfold pc_sync in SYNC |- *. cbn in SYNC |- *.
+              rewrite Hl0. destruct (fst blk); clarify. 
+              clear H2. admit.
+            }
+            { econs; eauto. inv REG0; i.
+              { unfold TotalMap.t_apply, TotalMap.t_update, t_update. 
+                dup H5. destruct H6.
+                rewrite <- String.eqb_neq, String.eqb_sym in H6, H7. rewrite H6, H7.
+                eauto.
+              }
+            }
+            { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
+              destruct sk; clarify.
+              { simpl in STK |- *. injection STK; i; subst. clear STK.
+                apply block_always_terminator_prog with (pc:=(l, o)) (i:=<{{ call fp }}>) in wfp0; eauto.
+                  des. replace (l, (add o 1)) with ((l, o) + 1) by auto.
+                  unfold pc_sync in SYNC |- *. 
+                  unfold MiniCET.fetch in wfp0. cbn in wfp0, SYNC |- *.
+                  destruct (nth_error p l); clarify. rewrite wfp0. rewrite ISRC in SYNC. 
+                  injection SYNC; i. do 2 f_equal. rewrite <- H4.
+                  replace (add o 1) with (S o) at 2 by lia. 
+                  specialize (firstnth_error (fst p0) o <{{ call fp }}> ISRC); i.
+                  rewrite H5. cbn. rewrite fold_left_app. cbn.
+                  remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+                  remember (firstn o (fst p0)) as lst.
+                  remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
+                  remember (fold_left f lst a) as y.
+                  rewrite <- add_assoc with (n:=o) (m:=y) (p:=1).
+                  rewrite add_assoc. rewrite <- add_assoc with (n:=o) (m:=1) (p:=y).
+                  rewrite add_comm with (n:=1) (m:=y). auto.
+              }
+              { simpl in STK |- *.
+                apply block_always_terminator_prog with (pc:=(l, o)) (i:=<{{ call fp }}>) in wfp0; eauto.
+                  des. replace (l, (add o 1)) with ((l, o) + 1) by auto.
+                  destruct (pc_sync p c); clarify.
+                  destruct (map_opt (pc_sync p) sk); clarify. 
+                  unfold pc_sync in SYNC |- *.
+                  unfold MiniCET.fetch in wfp0. cbn in wfp0, SYNC |- *.
+                  destruct (nth_error p l); clarify. rewrite wfp0. rewrite ISRC in SYNC.
+                  injection SYNC; i. do 2 f_equal. rewrite <- H4.
+                  replace (add o 1) with (S o) at 2 by lia. 
+                  specialize (firstnth_error (fst p0) o <{{ call fp }}> ISRC); i.
+                  rewrite H5. cbn. rewrite fold_left_app. cbn.
+                  remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
+                  remember (firstn o (fst p0)) as lst.
+                  remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
+                  remember (fold_left f lst a) as y.
+                  rewrite <- add_assoc with (n:=o) (m:=y) (p:=1).
+                  rewrite add_assoc. rewrite <- add_assoc with (n:=o) (m:=1) (p:=y).
+                  rewrite add_comm with (n:=1) (m:=y). auto.
+              }
+            }
+          }
+        }
+        { (* attacker offset jumps to middle of block: fault *)
+          admit.
         }
       }
-
-      (* to see if attacker initiates speculation, destruct (Nat.eqb l0 (fst lo)) (and (Nat.eqb (snd lo) 0) ?) 
-         also need to destruct for faulting as above, I think.  
-      *)
-
-      admit.
-      
-    }
+      { (* attacker label doesn't match intended label (but this might not be fault; only if it's not proc block) *)
+        admit.
+      }
+    }   
   (* ctarget *)
   - exfalso. eapply no_ct_prog_src; eauto.
   (* ret *)
