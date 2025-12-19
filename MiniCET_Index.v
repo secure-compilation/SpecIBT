@@ -64,7 +64,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
       to_fp (eval r e) = Some l ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
   | SSMI_Ret : forall pc r m sk pc',
-p[[pc]] = Some <{{ ret }}> ->
+      p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
   | SSMI_Term : forall pc r m,
       p[[pc]] = Some <{{ ret}}> ->
@@ -125,7 +125,7 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
+      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) (* YH: (snd pc' =? 0) ??? *) ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
@@ -646,6 +646,22 @@ Definition wf_prog (p: prog) : Prop :=
 
 From SECF Require Import sflib.
 
+Definition wf_reg (p: prog) (r: reg) : Prop :=
+  forall x l, r ! x = (FP l) -> nth_error p l <> None.
+
+Definition wf_mem (p: prog) (m: mem) : Prop :=
+  forall i l, nth_error m i = Some (FP l) -> nth_error p l <> None.
+
+Definition wf_ic (p: prog) (ic: ideal_cfg) : Prop :=
+  let '(pc, r, m, stk, ms) := ic in
+  wf_reg p r /\ wf_mem p m.
+
+Lemma wf_ic_preserved p ic ds os ict
+    (WF: wf_ic p ic)
+    (STEP: p |- <(( S_Running ic ))> -->i_ ds ^^ os  <(( S_Running ict ))>):
+  wf_ic p ict.
+Proof.
+Admitted.
 
 (* Aux Lemmas *)
 
@@ -1622,16 +1638,36 @@ Proof.
   rewrite Forall_forall in x2. eapply nth_error_In in INST. eauto.
 Qed.
 
-Lemma src_tgt_length : forall p tp pc (bk bk': list inst * bool) e l (i: inst),
-  nth_error p (fst pc) = Some bk ->
-  nth_error (fst bk) (snd pc) = Some i ->
-  i <> <{{ branch e to l }}> ->
-  tp = uslh_prog p ->
-  nth_error tp (fst pc) = Some bk'.
+Lemma head_call_target p pc
+  (UNUSED: unused_prog callee p)
+  (NCT: no_ct_prog p)
+  (INST: (uslh_prog p)[[pc]] = Some <{{ ctarget }}>) :
+  exists l blk, pc = (l, 0)
+  /\ nth_error (uslh_prog p) l = Some (blk, true)
+  /\ (uslh_prog p)[[pc+1]] = Some <{{ msf := (callee = (& (fst pc))) ? msf : 1 }}>.
 Proof.
-  i. rewrite H2 in *. unfold uslh_prog. 
-  destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as (p', newp) eqn:Htp.
+  destruct pc as [l o]. exists l.
+  unfold uslh_prog in INST. des_ifs_safe.
+  assert (INST': l0[[(l, o)]] = Some <{{ ctarget }}>) by admit.
+  clear INST.
+  destruct (nth_error p l) eqn:LTH; cycle 1.
+  { admit. }
+  destruct p1 as [blk is_proc].
 Admitted.
+
+(* Lemma src_tgt_length : forall p tp pc (bk bk': list inst * bool) e l (i: inst), *)
+(*   nth_error p (fst pc) = Some bk -> *)
+(*   nth_error (fst bk) (snd pc) = Some i -> *)
+(*   i <> <{{ branch e to l }}> -> *)
+(*   tp = uslh_prog p -> *)
+(*   nth_error tp (fst pc) = Some bk'. *)
+(* Proof. *)
+(*   i. rewrite H2 in *. unfold uslh_prog.  *)
+(*   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as (p', newp) eqn:Htp. *)
+(* Admitted. *)
+
+
+(* YH: TODO: add memory & register wf *)
 
 Lemma ultimate_slh_bcc_single_cycle_refactor (p: prog) : forall ic1 sc1 sc2 n ds os,
   no_ct_prog p ->
@@ -2045,6 +2081,8 @@ Proof.
     inv H7. inv H8. inv H2; clarify.
     ss. destruct ms eqn:Hms.
     { (* already speculating *)
+      (* YH: If you already mis-speculated, callee block should be 0th.
+         And 0th block is always call target block. *)
       rewrite ms_msf in *. ss. des_ifs_safe.
       unfold TotalMap.t_apply, TotalMap.t_update, t_update in *. simpl in Heq.
       rewrite ms_msf in *. simpl in Heq. injection Heq; i; subst. 
@@ -2065,14 +2103,13 @@ Proof.
       destruct (snd ablk) eqn:Hfault1; cycle 1.
       { (* Fault: attacker pc goes to non-call target block *)
         (* contradiction derived from Hfault1 and Hlo and H11. *)
-
-        admit. (* separate lemma to handle Fault cases? *)
+        exfalso. admit. (* separate lemma to handle Fault cases? *)
       }
       { (* Not necessarily faulting yet. Steered to call target block *)
         destruct (Nat.eqb (snd lo) 0) eqn:Hfault2; cycle 1.
         { (* Fault: attacker pc goes to middle of block *)
-        (* contradiction derived from Hfault2 and Hlo and H11. *)
-          admit.
+          (* contradiction derived from Hfault2 and Hlo and H11. *)
+          exfalso. admit.
         }
         (* Now, not faulting. Attacker pc goes to beginning of call target block *)
         rewrite Nat.eqb_eq in Hfault2.
@@ -2470,6 +2507,9 @@ Proof.
             inv H8; clarify. inv H14. ss. clarify. inv H8.
             2:{ inv H13. inv H12. inv H7. }
             inv H13. inv H12. inv H7.
+            destruct lo as [l' o'].
+
+            assert (o' = 0 /\ nth_error (uslh_prog p) l' =  )
             admit. (* H16, H14 contradiction *)
         - destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
           des_ifs_safe. rename c into pc.
