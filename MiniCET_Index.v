@@ -2816,13 +2816,15 @@ Proof.
             destruct lo as (al & ao) eqn:Hapc. simpl in *.
             destruct ao as [|ao'] eqn:Hao.
             { (* attacker goes to beginning of block, can step *)
-              exists (al, ao, r, m, (l, (add o 1)) :: sk, )
+              (* exists (al, ao, r, m, (l, (add o 1)) :: sk, ) *)
+              admit.
 
             }
-
+            admit.
           }
+          admit.
         }
-        
+        admit.
       }
     }   
   (* ctarget *)
