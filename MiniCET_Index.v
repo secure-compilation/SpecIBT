@@ -2509,7 +2509,7 @@ Proof.
             inv H13. inv H12. inv H7.
             destruct lo as [l' o'].
 
-            assert (o' = 0 /\ nth_error (uslh_prog p) l' =  )
+            (* assert (o' = 0 /\ nth_error (uslh_prog p) l' =  ) *)
             admit. (* H16, H14 contradiction *)
         - destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
           des_ifs_safe. rename c into pc.
