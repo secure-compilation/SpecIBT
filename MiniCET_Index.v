@@ -689,10 +689,10 @@ Proof.
     { subst. rewrite app_assoc. auto. }
 Qed.
 
-Lemma wf_uslh : forall (p: prog),   
-  wf_prog p -> wf_prog (uslh_prog p).
-Proof.
-Admitted.
+(* Lemma wf_uslh : forall (p: prog),    *)
+(*   wf_prog p -> wf_prog (uslh_prog p). *)
+(* Proof. *)
+(* Admitted. *)
 
 (* Lemma multi_spec_msf_lookup_preserved p sc1 ds os n sc1' *)
 (* one more condition is needed : n steps of spec exec should be matched with single ideal steps *)
@@ -1740,7 +1740,7 @@ Admitted.
 Lemma ultimate_slh_bcc_single_cycle_refactor (p: prog) : forall ic1 sc1 sc2 n ds os,
   no_ct_prog p ->
   wf_prog p ->
-  wf_ds' p ds ->
+  wf_ds' (uslh_prog p) ds ->
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) -> (* YH: I think this premise contained in mathc_cfgs. *)
@@ -2144,7 +2144,7 @@ Proof.
     2:{ inv H7. inv H2. }
 
     assert (ITGT: (uslh_prog p)[[lo + 1]] = Some <{{ msf := (callee = (& (fst lo))) ? msf : 1 }}>).
-    { admit. (* TODO: YH will make lemma for this case. *) }
+    { exploit head_call_target; try eapply H11; eauto. i. des. subst. eauto. }
 
     inv H7. inv H8. inv H2; clarify.
     ss. destruct ms eqn:Hms.
@@ -2168,6 +2168,7 @@ Proof.
         apply wfds in H2. unfold is_some in H2. unfold fetch in H2. cbn in H2.
         destruct lo as (al & ao). simpl in H2, Hlo.
         destruct (nth_error p al); clarify.
+        admit.
       }
       destruct (snd ablk) eqn:Hfault1; cycle 1.
       { (* Fault: attacker pc goes to non-call target block *)
@@ -2281,8 +2282,8 @@ Proof.
         cbn in wfds.
         assert (DCall (l0, 0) = DCall (l0, 0) \/ False). { left; auto. }
         apply wfds in H3. unfold is_some in H3.
-        assert (exists blk, nth_error p l0 = Some blk).
-        { destruct (nth_error p l0) as [blk|]; clarify.
+        assert (exists blk, nth_error (uslh_prog p) l0 = Some blk).
+        { destruct (nth_error (uslh_prog p) l0) as [blk|]; clarify.
           exists blk. auto.
         } 
         des. rename H4 into Hl0.
@@ -2311,6 +2312,7 @@ Proof.
             }
           }
           { cbn. rewrite Nat.eqb_refl. auto. }
+          { admit. }
           specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
           specialize (wf_prog_lookup p (l, o) <{{ call fp }}> wfp0 H4); i.
           unfold wf_instr. simpl in H5. (* need to show all ctarget blks in tgt correspond to src procedure blocks *)
@@ -2319,8 +2321,8 @@ Proof.
         }
         { econs; eauto.
           { unfold pc_sync in SYNC |- *. cbn in SYNC |- *.
-            rewrite Hl0. destruct (fst blk); clarify. 
-            clear H3. 
+            (* rewrite Hl0. destruct (fst blk); clarify.  *)
+            (* clear H3.  *)
             admit. (* need to show all ctarget blks in tgt correspond to src procedure blocks *)
           }
           { econs; eauto. inv REG0; i.
@@ -2486,7 +2488,7 @@ Admitted.
 Lemma ultimate_slh_bcc (p: prog) : forall n ic1 sc1 sc2 ds os,
   no_ct_prog p ->
   wf_prog p ->
-  wf_ds' p ds ->
+  wf_ds' (uslh_prog p) ds ->
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
