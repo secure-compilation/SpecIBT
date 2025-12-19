@@ -1638,6 +1638,22 @@ Proof.
   rewrite Forall_forall in x2. eapply nth_error_In in INST. eauto.
 Qed.
 
+Lemma no_ct_prog_cons b p
+    (NCT: no_ct_prog (b::p)) :
+  no_ct_blk (fst b) /\ no_ct_prog p.
+Proof.
+  destruct b. ss. unfold no_ct_prog in *. des_ifs.
+  assert (l2 = l::l0 /\ l3 = b::l1).
+  { clear -Heq0 Heq. ginduction p; ss; ii; clarify.
+    des_ifs. }
+  des; subst. inv NCT. eauto.
+Qed.
+
+Lemma no_ct_prog_app l1 l2:
+  no_ct_prog (l1 ++ l2) <-> (no_ct_prog l1 /\ no_ct_prog l2).
+Proof.
+Admitted.
+
 Lemma head_call_target p pc
   (UNUSED: unused_prog callee p)
   (NCT: no_ct_prog p)
@@ -1647,16 +1663,64 @@ Lemma head_call_target p pc
   /\ (uslh_prog p)[[pc+1]] = Some <{{ msf := (callee = (& (fst pc))) ? msf : 1 }}>.
 Proof.
   destruct pc as [l o]. exists l.
-  unfold uslh_prog in INST. des_ifs_safe.
-  assert (INST': l0[[(l, o)]] = Some <{{ ctarget }}>) by admit.
+  unfold uslh_prog in *. des_ifs_safe.
+  assert (no_ct_prog p0).
+  (* YH: TODO: make lemmas *)
+  { clear - NCT Heq. remember (Datatypes.length p). clear Heqn.
+    unfold add_index in Heq. remember 0. clear Heqn0.
+    ginduction p; ss; ii.
+    - unfold mapM in *. ss. unfold MiniCET.uslh_ret in Heq. clarify.
+    - eapply no_ct_prog_cons in NCT. des.
+      exploit mapM_cons_inv; eauto. i. des. subst.
+      exploit IHp; eauto. i.
+      assert (no_ct_prog np_hd).
+      { clear -NCT x0. unfold uslh_blk in x0. des_ifs_safe.
+        eapply bind_inv in x0. des. subst. unfold concatM in x0.
+        eapply bind_inv in x0. des. subst. ss. unfold MiniCET.uslh_ret in *. clarify.
+        assert (no_ct_prog pm0).
+        { clear -NCT x0. ginduction l; ss; ii.
+          - unfold mapM in *. ss. unfold MiniCET.uslh_ret in *. clarify.
+          - eapply mapM_cons_inv in x0. des. subst. inv NCT.
+            exploit IHl; eauto. i. destruct a; ss; unfold MiniCET.uslh_ret in *; clarify. ss.
+            eapply bind_inv in x0. des. ss. subst. clarify.
+            unfold add_block_M, add_block in x0.
+            rewrite app_nil_r. rewrite no_ct_prog_app. split; auto. clarify.
+            red. des_ifs. ss. clarify. econs; eauto. repeat econs. }
+        rewrite app_nil_r. rewrite no_ct_prog_app. split; auto. des_ifs; ss. }
+      rewrite no_ct_prog_app. auto. }
+  assert (INST': l0[[(l, o)]] = Some <{{ ctarget }}>).
+  { ss. des_ifs_safe.
+    assert (l < Datatypes.length l0 \/ Datatypes.length l0 <= l) by lia.
+    des.
+    - rewrite nth_error_app1 in Heq0; eauto. rewrite Heq0; auto.
+    - exfalso. rewrite nth_error_app2 in Heq0; auto.
+      eapply nth_error_In in Heq0, INST. red in H. des_ifs.
+      eapply in_split_l in Heq0. rewrite Heq1 in Heq0. ss.
+      rewrite Forall_forall in H. eapply H in Heq0. red in Heq0.
+      rewrite Forall_forall in Heq0. eapply Heq0 in INST. ss. }
   clear INST.
   destruct (nth_error p l) eqn:LTH; cycle 1.
-  { admit. }
+  { exfalso. exploit mapM_perserve_len; eauto. i.
+    rewrite length_add_index in x0. ss. des_ifs_safe.
+    rewrite nth_error_None, x0, <- nth_error_None in LTH. clarify. }
   destruct p1 as [blk is_proc].
   exploit nth_error_add_index; eauto. i.
   exploit mapM_nth_error_strong; eauto. i. des.
   destruct is_proc; cycle 1.
   { exfalso. admit. (* no call-target block -> no ctarget instruction *) }
+  unfold uslh_blk in x2.
+  eapply bind_inv in x2. des. subst.
+  assert (no_ct_blk a).
+  { admit. }
+  ss. unfold MiniCET.uslh_ret in x4. clarify.
+  exists (<{{ ctarget }}> :: <{{ msf := (callee = (& l)) ? msf : 1 }}> :: a).
+  rewrite nth_error_app1.
+  2:{ rewrite <- nth_error_Some. ii; clarify. }
+  destruct (eq_decidable o 0); subst; auto; cycle 1.
+  { des_ifs_safe. ss.
+    clear - H0 H INST'. destruct o; ss. destruct o; ss.
+    eapply nth_error_In in INST'. eapply Forall_forall in H0; eauto. ss. }
+  des_ifs.
 Admitted.
 
 (* Lemma src_tgt_length : forall p tp pc (bk bk': list inst * bool) e l (i: inst), *)
@@ -2512,8 +2576,7 @@ Proof.
             2:{ inv H13. inv H12. inv H7. }
             inv H13. inv H12. inv H7.
             destruct lo as [l' o'].
-            (* assert (o' = 0 /\ nth_error (uslh_prog p) l' =  ) *)
-            admit. (* H16, H14 contradiction *)
+            exploit head_call_target; try eapply H16; eauto. i. des. clarify.
         - destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
           des_ifs_safe. rename c into pc.
           inv H6. exploit src_inv; eauto.  i. des.
