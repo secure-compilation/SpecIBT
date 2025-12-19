@@ -125,7 +125,7 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) (* YH: (snd pc' =? 0) ??? *) ->
+      ms' = ms || negb ((fst pc' =? l) (* && (snd pc' =? 0) *)) (* YH: (snd pc' =? 0) ??? *) ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
@@ -1653,6 +1653,10 @@ Proof.
   destruct (nth_error p l) eqn:LTH; cycle 1.
   { admit. }
   destruct p1 as [blk is_proc].
+  exploit nth_error_add_index; eauto. i.
+  exploit mapM_nth_error_strong; eauto. i. des.
+  destruct is_proc; cycle 1.
+  { exfalso. admit. (* no call-target block -> no ctarget instruction *) }
 Admitted.
 
 (* Lemma src_tgt_length : forall p tp pc (bk bk': list inst * bool) e l (i: inst), *)
@@ -2508,8 +2512,7 @@ Proof.
             2:{ inv H13. inv H12. inv H7. }
             inv H13. inv H12. inv H7.
             destruct lo as [l' o'].
-
-            assert (o' = 0 /\ nth_error (uslh_prog p) l' =  )
+            (* assert (o' = 0 /\ nth_error (uslh_prog p) l' =  ) *)
             admit. (* H16, H14 contradiction *)
         - destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
           des_ifs_safe. rename c into pc.
