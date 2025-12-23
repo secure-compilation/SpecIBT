@@ -1649,15 +1649,112 @@ Proof.
   des; subst. inv NCT. eauto.
 Qed.
 
+Lemma no_ct_prog_In blk is_ct p
+    (IN: In (blk, is_ct) p)
+    (NCT: no_ct_prog p) :
+  no_ct_blk blk.
+Proof.
+  ginduction p; ss; ii. eapply no_ct_prog_cons in NCT.
+  des; subst; eauto.
+Qed.
+
 Lemma no_ct_prog_app l1 l2:
   no_ct_prog (l1 ++ l2) <-> (no_ct_prog l1 /\ no_ct_prog l2).
 Proof.
 Admitted.
 
+Lemma new_prog_no_ct_blk blk n c res np
+    (USLH: uslh_blk (n, blk) c = (res, np)):
+  no_ct_prog np.
+Proof.
+  unfold uslh_blk in USLH. des_ifs_safe.
+  eapply bind_inv in USLH. des. subst. unfold concatM in USLH.
+  eapply bind_inv in USLH. des. subst. ss. unfold MiniCET.uslh_ret in *. clarify.
+  assert (no_ct_prog pm0).
+  { clear -USLH. ginduction l; ss; ii.
+    - unfold mapM in *. ss. unfold MiniCET.uslh_ret in *. clarify.
+    - eapply mapM_cons_inv in USLH. des. subst.
+      exploit IHl; eauto. i. destruct a; ss; unfold MiniCET.uslh_ret in *; clarify. ss.
+      eapply bind_inv in USLH. des. ss. subst. clarify.
+      unfold add_block_M, add_block in USLH.
+      rewrite app_nil_r. rewrite no_ct_prog_app. split; auto. clarify.
+      red. des_ifs. ss. clarify. econs; eauto. repeat econs. }
+  rewrite app_nil_r. rewrite no_ct_prog_app. split; auto. des_ifs; ss.
+Qed.
+
+Lemma new_prog_no_ct p c p' np
+    (USLH: mapM uslh_blk (add_index p) c = (p', np)):
+  no_ct_prog np.
+Proof.
+  unfold add_index in USLH. remember 0. clear Heqn.
+  ginduction p; ss; ii.
+  - unfold mapM in *. ss. unfold MiniCET.uslh_ret in USLH. clarify.
+  - exploit mapM_cons_inv; eauto. i. des. subst.
+    exploit IHp; eauto. i.
+    assert (no_ct_prog np_hd).
+    { eapply new_prog_no_ct_blk; eauto. }
+    rewrite no_ct_prog_app. auto.
+Qed.
+
+Lemma new_prog_ct_cut p c p' np l o
+    (USLH: mapM uslh_blk (add_index p) c = (p', np))
+    (INST: (p' ++ np) [[(l, o)]] = Some <{{ ctarget }}>)
+    (NCT: no_ct_prog np):
+  p'[[(l, o)]] = Some <{{ ctarget }}>.
+Proof.
+  ss. des_ifs_safe.
+  assert (l < Datatypes.length p' \/ Datatypes.length p' <= l) by lia.
+  des.
+  - rewrite nth_error_app1 in Heq; eauto. rewrite Heq; auto.
+  - exfalso. rewrite nth_error_app2 in Heq; auto.
+    eapply nth_error_In in Heq, INST. red in NCT. des_ifs.
+    eapply in_split_l in Heq. rewrite Heq0 in Heq. ss.
+    rewrite Forall_forall in NCT. eapply NCT in Heq. red in Heq.
+    rewrite Forall_forall in Heq. eapply Heq in INST. ss.
+Qed.
+
+Lemma no_ctarget_exists_blk blk l c blk' np'
+    (NCT: no_ct_blk blk)
+    (USLH: uslh_blk (l, (blk, false)) c = (blk', np')) :
+  no_ct_blk (fst blk') /\ snd blk' = false.
+Proof.
+  unfold uslh_blk in USLH. eapply bind_inv in USLH. des. subst.
+  ss. unfold MiniCET.uslh_ret in USLH0. clarify. simpl. split; auto.
+  unfold concatM in USLH. eapply bind_inv in USLH. des. ss.
+  unfold MiniCET.uslh_ret in *. clarify.
+  red. rewrite Forall_concat. ginduction blk; ii.
+  - unfold mapM in USLH. ss. unfold MiniCET.uslh_ret in USLH. clarify.
+  - exploit mapM_cons_inv; eauto. i. des; subst.
+    inv NCT. eapply IHblk in H2; try eapply x1; eauto.
+    econs; eauto. clear - x0 H1.
+    destruct a; ss; unfold MiniCET.uslh_ret in *; clarify; repeat econs.
+    eapply bind_inv in x0. des. clarify. repeat econs.
+Qed.
+
+Lemma no_ctarget_exists p l blk
+    (NCT : no_ct_prog p)
+    (LTH: nth_error p l = Some (blk, false)) :
+  forall o, (uslh_prog p)[[(l, o)]] <> Some <{{ ctarget }}>.
+Proof.
+  unfold uslh_prog. des_ifs. ii.
+  (* unfold uslh_prog, add_index in CT. des_ifs. *)
+  assert (NCT0: no_ct_prog p0).
+  { eapply new_prog_no_ct; eauto. }
+  eapply new_prog_ct_cut in H; eauto.
+  des. exploit mapM_nth_error_strong; eauto.
+  { eapply nth_error_add_index; eauto. }
+  i. des.
+  assert (no_ct_blk (fst blk') /\ snd blk' = false).
+  { eapply no_ctarget_exists_blk; eauto. eapply no_ct_prog_In in NCT; eauto.
+    eapply nth_error_In; eauto. }
+  des. ss. des_ifs. eapply nth_error_In in H.
+  red in H0. rewrite Forall_forall in H0. eapply H0 in H. ss.
+Qed.
+
 Lemma head_call_target p pc
-  (UNUSED: unused_prog callee p)
-  (NCT: no_ct_prog p)
-  (INST: (uslh_prog p)[[pc]] = Some <{{ ctarget }}>) :
+    (UNUSED: unused_prog callee p)
+    (NCT: no_ct_prog p)
+    (INST: (uslh_prog p)[[pc]] = Some <{{ ctarget }}>) :
   exists l blk, pc = (l, 0)
   /\ nth_error (uslh_prog p) l = Some (blk, true)
   /\ (uslh_prog p)[[pc+1]] = Some <{{ msf := (callee = (& (fst pc))) ? msf : 1 }}>.
@@ -1665,39 +1762,9 @@ Proof.
   destruct pc as [l o]. exists l.
   unfold uslh_prog in *. des_ifs_safe.
   assert (no_ct_prog p0).
-  (* YH: TODO: make lemmas *)
-  { clear - NCT Heq. remember (Datatypes.length p). clear Heqn.
-    unfold add_index in Heq. remember 0. clear Heqn0.
-    ginduction p; ss; ii.
-    - unfold mapM in *. ss. unfold MiniCET.uslh_ret in Heq. clarify.
-    - eapply no_ct_prog_cons in NCT. des.
-      exploit mapM_cons_inv; eauto. i. des. subst.
-      exploit IHp; eauto. i.
-      assert (no_ct_prog np_hd).
-      { clear -NCT x0. unfold uslh_blk in x0. des_ifs_safe.
-        eapply bind_inv in x0. des. subst. unfold concatM in x0.
-        eapply bind_inv in x0. des. subst. ss. unfold MiniCET.uslh_ret in *. clarify.
-        assert (no_ct_prog pm0).
-        { clear -NCT x0. ginduction l; ss; ii.
-          - unfold mapM in *. ss. unfold MiniCET.uslh_ret in *. clarify.
-          - eapply mapM_cons_inv in x0. des. subst. inv NCT.
-            exploit IHl; eauto. i. destruct a; ss; unfold MiniCET.uslh_ret in *; clarify. ss.
-            eapply bind_inv in x0. des. ss. subst. clarify.
-            unfold add_block_M, add_block in x0.
-            rewrite app_nil_r. rewrite no_ct_prog_app. split; auto. clarify.
-            red. des_ifs. ss. clarify. econs; eauto. repeat econs. }
-        rewrite app_nil_r. rewrite no_ct_prog_app. split; auto. des_ifs; ss. }
-      rewrite no_ct_prog_app. auto. }
+  { eapply new_prog_no_ct; eauto. }
   assert (INST': l0[[(l, o)]] = Some <{{ ctarget }}>).
-  { ss. des_ifs_safe.
-    assert (l < Datatypes.length l0 \/ Datatypes.length l0 <= l) by lia.
-    des.
-    - rewrite nth_error_app1 in Heq0; eauto. rewrite Heq0; auto.
-    - exfalso. rewrite nth_error_app2 in Heq0; auto.
-      eapply nth_error_In in Heq0, INST. red in H. des_ifs.
-      eapply in_split_l in Heq0. rewrite Heq1 in Heq0. ss.
-      rewrite Forall_forall in H. eapply H in Heq0. red in Heq0.
-      rewrite Forall_forall in Heq0. eapply Heq0 in INST. ss. }
+  { eapply new_prog_ct_cut; eauto. }
   clear INST.
   destruct (nth_error p l) eqn:LTH; cycle 1.
   { exfalso. exploit mapM_perserve_len; eauto. i.
@@ -1707,11 +1774,31 @@ Proof.
   exploit nth_error_add_index; eauto. i.
   exploit mapM_nth_error_strong; eauto. i. des.
   destruct is_proc; cycle 1.
-  { exfalso. admit. (* no call-target block -> no ctarget instruction *) }
+  { exfalso. hexploit no_ctarget_exists; try eapply NCT; eauto.
+    instantiate (1:=o). ii. unfold uslh_prog in H0. des_ifs_safe.
+    assert (nth_error (l0 ++ p0) l = Some blk').
+    { erewrite nth_error_app1; eauto.
+      rewrite <- nth_error_Some. ii; clarify. }
+    ss. des_ifs. }
   unfold uslh_blk in x2.
   eapply bind_inv in x2. des. subst.
+  assert (NCTS: no_ct_blk blk).
+  { eapply nth_error_In in LTH. eapply no_ct_prog_In; eauto. }
+  (* YH: TODO: make lemma *)
   assert (no_ct_blk a).
-  { admit. }
+  { clear - x2 NCTS. unfold concatM in x2. eapply bind_inv in x2. des; subst.
+    ss. unfold MiniCET.uslh_ret in x0. clarify.
+    remember (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p)).
+    clear Heqn. clear -x2 NCTS.
+    ginduction blk; ss; ii.
+    - unfold mapM in x2. ss. unfold MiniCET.uslh_ret in x2. clarify.
+    - inv NCTS. eapply mapM_cons_inv in x2. des; subst.
+      exploit IHblk; try eapply x0; eauto. i.
+      unfold no_ct_blk in *. rewrite Forall_concat in *. econs; eauto.
+      clear - H1 x2.
+      destruct a; ss; unfold MiniCET.uslh_ret in *; clarify; try econs; ss.
+      + eapply bind_inv in x2. des. clarify. econs; eauto.
+      + econs; eauto. }
   ss. unfold MiniCET.uslh_ret in x4. clarify.
   exists (<{{ ctarget }}> :: <{{ msf := (callee = (& l)) ? msf : 1 }}> :: a).
   rewrite nth_error_app1.
@@ -1721,7 +1808,7 @@ Proof.
     clear - H0 H INST'. destruct o; ss. destruct o; ss.
     eapply nth_error_In in INST'. eapply Forall_forall in H0; eauto. ss. }
   des_ifs.
-Admitted.
+Qed.
 
 (* Lemma src_tgt_length : forall p tp pc (bk bk': list inst * bool) e l (i: inst), *)
 (*   nth_error p (fst pc) = Some bk -> *)
