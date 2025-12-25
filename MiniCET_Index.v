@@ -2234,328 +2234,70 @@ Proof.
     { exploit head_call_target; try eapply H11; eauto. i. des. subst. eauto. }
 
     inv H7. inv H8. inv H2; clarify.
-    ss. destruct ms eqn:Hms.
-    { (* already speculating *)
-      (* YH: If you already mis-speculated, callee block should be 0th.
-         And 0th block is always call target block. *)
-      
-      rewrite ms_msf in *. ss. des_ifs_safe.
-      unfold TotalMap.t_apply, TotalMap.t_update, t_update in *. simpl in Heq.
-      rewrite ms_msf in *. simpl in Heq. injection Heq; i; subst. 
-      dup H14. simpl in H14.
-      injection H14; i; subst. clear H14. clear Heq. 
-      replace (callee =? msf) with false by auto. 
+    dup H11. destruct lo as [l' o']. simpl in H1. des_ifs_safe.
 
-      (* now, in the ideal semantics, are we faulting or not *)
-      (* First: does attacker pc go to a block in the program at all? *)
-      destruct (nth_error p (fst lo)) as [ablk|] eqn:Hlo; cycle 1.
-      { rewrite Forall_forall in wfds. specialize wfds with (x:=(DCall lo)). 
-        simpl in wfds. assert (DCall lo = DCall lo \/ False).
-        { left; auto. }
-        apply wfds in H2. unfold is_some in H2. unfold fetch in H2. cbn in H2.
-        destruct lo as (al & ao). simpl in H2, Hlo.
-        destruct (nth_error p al); clarify.
-        admit.
-      }
-      destruct (snd ablk) eqn:Hfault1; cycle 1.
-      { (* Fault: attacker pc goes to non-call target block *)
-        (* contradiction derived from Hfault1 and Hlo and H11. *)
-        exfalso. assert ((snd ablk) = true) by admit. clarify.
-      }
-      { (* Not necessarily faulting yet. Steered to call target block *)
-        destruct (Nat.eqb (snd lo) 0) eqn:Hfault2; cycle 1.
-        { (* Fault: attacker pc goes to middle of block *)
-          (* contradiction derived from Hfault2 and Hlo and H11. *)
-          exfalso. admit.
-        }
-        (* Now, not faulting. Attacker pc goes to beginning of call target block *)
-        rewrite Nat.eqb_eq in Hfault2.
-        specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
-        exists (lo, r, m, ((l, (add o 1)) :: sk), true).
-        split.
-        { econs; eauto. }
-        { econs; eauto. 
-          { exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
-            unfold pc_sync in SYNC |- *. ss. des_ifs_safe. 
-            rewrite Hfault2. clear H1. clear Heq1.
-            specialize (nth_error_In p (fst lo) Heq); i.
-            rewrite Forall_forall in H0. apply H0 in H1.
-            red in H1. des. apply blk_not_empty_list in H1. 
-            destruct (fst ablk); clarify. cbn. unfold cptr.
-            f_equal. destruct lo as (al & ao). 
-            simpl in Hfault2. rewrite Hfault2. simpl.
-            auto.
-          }
-          { econs; eauto; inv REG0; i.
-            { unfold TotalMap.t_apply, TotalMap.t_update, t_update. 
-              dup H5. destruct H6.
-              rewrite <- String.eqb_neq, String.eqb_sym in H6, H7. rewrite H6, H7.
-              eauto.
-            }
-            { unfold TotalMap.t_apply, TotalMap.t_update, t_update.
-              simpl. destruct (fst lo); clarify.
-            }
-          }
-          { clear H1. destruct sk; clarify.
-            { simpl in STK |- *. injection STK; i; subst. clear STK.
-              apply block_always_terminator_prog with (pc:=(l, o)) (i:=<{{ call fp }}>) in wfp0; eauto.
-              des. replace (l, (add o 1)) with ((l, o) + 1) by auto.
-              unfold pc_sync in SYNC |- *. 
-              unfold MiniCET.fetch in wfp0. cbn in wfp0, SYNC |- *.
-              destruct (nth_error p l); clarify. rewrite wfp0. rewrite ISRC in SYNC. 
-              injection SYNC; i. do 2 f_equal. rewrite <- H1.
-              replace (add o 1) with (S o) at 2 by lia. 
-              specialize (firstnth_error (fst p0) o <{{ call fp }}> ISRC); i.
-              rewrite H3. cbn. rewrite fold_left_app. cbn.
-              remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
-              remember (firstn o (fst p0)) as lst.
-              remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
-              remember (fold_left f lst a) as y.
-              rewrite <- add_assoc with (n:=o) (m:=y) (p:=1).
-              rewrite add_assoc. rewrite <- add_assoc with (n:=o) (m:=1) (p:=y).
-              rewrite add_comm with (n:=1) (m:=y). auto.
-            }
-            { simpl in STK |- *.
-              apply block_always_terminator_prog with (pc:=(l, o)) (i:=<{{ call fp }}>) in wfp0; eauto.
-              des. replace (l, (add o 1)) with ((l, o) + 1) by auto.
-              destruct (pc_sync p c); clarify.
-              destruct (map_opt (pc_sync p) sk); clarify. 
-              unfold pc_sync in SYNC |- *.
-              unfold MiniCET.fetch in wfp0. cbn in wfp0, SYNC |- *.
-              destruct (nth_error p l); clarify. rewrite wfp0. rewrite ISRC in SYNC.
-              injection SYNC; i. do 2 f_equal. rewrite <- H1.
-              replace (add o 1) with (S o) at 2 by lia. 
-              specialize (firstnth_error (fst p0) o <{{ call fp }}> ISRC); i.
-              rewrite H3. cbn. rewrite fold_left_app. cbn.
-              remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
-              remember (firstn o (fst p0)) as lst.
-              remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
-              remember (fold_left f lst a) as y.
-              rewrite <- add_assoc with (n:=o) (m:=y) (p:=1).
-              rewrite add_assoc. rewrite <- add_assoc with (n:=o) (m:=1) (p:=y).
-              rewrite add_comm with (n:=1) (m:=y). auto.
-            }
-          }
-        }  
-      }
-    }
-    { (* not yet speculating *)
-      rewrite ms_msf in *. ss. des_ifs_safe.
-      rewrite t_update_neq in Heq; clarify. rewrite ms_msf in Heq. cbn in Heq.
-      injection Heq; i; subst. clear Heq. cbn in H14.
+    assert (DLEN: l' < Datatypes.length p \/ Datatypes.length p <= l') by lia.
 
-      assert (e_unused callee fp).
-      { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
-        eapply unused_prog_lookup in unused_p_callee; eauto.
-        cbn in unused_p_callee |- *. assert (callee = "callee"). { auto. }
-        eauto.
-      } 
-      apply eval_unused_update with (x:=callee) (r:=r') (v:=(eval r' fp)) in H1. rewrite H1 in H14. 
-      rewrite t_update_neq with (x1:=callee) (x2:=msf); clarify.
-      rewrite ms_msf in *. rewrite t_update_eq. 
-      destruct (eval r' fp); clarify. cbn in H14. injection H14; i; subst. clear H14.
-      cbn. rewrite Nat.eqb_sym.
-      
-      (* if fst lo ≠ l0, speculation is being initiated *)
-      destruct (Nat.eqb (fst lo) l0) eqn:Hspec1; clarify.
-      { (* not initiating speculation *)
-        cbn. destruct lo as (al & ao). cbn in Hspec1.
-        rewrite Nat.eqb_eq in Hspec1. rewrite Hspec1 in *.
-        (* ao must be 0 because the instruction it fetches is ctarget *)
-        assert (ao = 0) by admit. rewrite H2 in *.
-        exists (l0, 0, r, m, (l, (add o 1)) :: sk, false).
-        rewrite Forall_forall in wfds.
-        specialize wfds with (x:=(DCall (l0, 0))).
-        cbn in wfds.
-        assert (DCall (l0, 0) = DCall (l0, 0) \/ False). { left; auto. }
-        apply wfds in H3. unfold is_some in H3.
-        assert (exists blk, nth_error (uslh_prog p) l0 = Some blk).
-        { destruct (nth_error (uslh_prog p) l0) as [blk|]; clarify.
-          exists blk. auto.
-        } 
-        des. rename H4 into Hl0.
-        rewrite Hl0 in H3. 
-        split.
-        { econs; eauto.
-          { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
-            eassumption.
-          }
-          { assert (to_fp (eval (callee !-> FP l0; r') fp) = Some l0).
-            { rewrite H1. auto. }
-            rewrite <- H4. f_equal. apply eval_regs_eq.
-            { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
-              eapply unused_prog_lookup in unused_p_msf; eauto.
-              simpl in unused_p_callee. eauto.
-            }
-            { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
-              eapply unused_prog_lookup in unused_p_callee; eauto.
-              simpl in unused_p_callee. eauto.
-            }
-            { inv REG0. i. dup H2. apply H5 in H2. unfold TotalMap.t_apply in H2. rewrite H2. 
-              assert (eval (callee !-> FP l0; r') x = eval r' x).
-              { apply eval_unused_update. des. cbn. assumption. }
-              cbn in H8. unfold TotalMap.t_apply in H8. symmetry.
-              assumption.
-            }
-          }
-          { cbn. rewrite Nat.eqb_refl. auto. }
-          { admit. }
-          specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
-          specialize (wf_prog_lookup p (l, o) <{{ call fp }}> wfp0 H4); i.
-          unfold wf_instr. simpl in H5. (* need to show all ctarget blks in tgt correspond to src procedure blocks *)
-          admit.
-          
-        }
-        { econs; eauto.
-          { unfold pc_sync in SYNC |- *. cbn in SYNC |- *.
-            (* rewrite Hl0. destruct (fst blk); clarify.  *)
-            (* clear H3.  *)
-            admit. (* need to show all ctarget blks in tgt correspond to src procedure blocks *)
-          }
-          { econs; eauto. inv REG0; i.
-            { unfold TotalMap.t_apply, TotalMap.t_update, t_update. 
-              dup H2. destruct H6.
-              rewrite <- String.eqb_neq, String.eqb_sym in H6, H7. rewrite H6, H7.
-              eauto.
-            }
-          }
-          { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
-            destruct sk; clarify.
-            { simpl in STK |- *. injection STK; i; subst. clear STK.
-              apply block_always_terminator_prog with (pc:=(l, o)) (i:=<{{ call fp }}>) in wfp0; eauto.
-                des. replace (l, (add o 1)) with ((l, o) + 1) by auto.
-                unfold pc_sync in SYNC |- *. 
-                unfold MiniCET.fetch in wfp0. cbn in wfp0, SYNC |- *.
-                destruct (nth_error p l); clarify. rewrite wfp0. rewrite ISRC in SYNC. 
-                injection SYNC; i. do 2 f_equal. rewrite <- H2.
-                replace (add o 1) with (S o) at 2 by lia. 
-                specialize (firstnth_error (fst p0) o <{{ call fp }}> ISRC); i.
-                rewrite H5. cbn. rewrite fold_left_app. cbn.
-                remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
-                remember (firstn o (fst p0)) as lst.
-                remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
-                remember (fold_left f lst a) as y.
-                rewrite <- add_assoc with (n:=o) (m:=y) (p:=1).
-                rewrite add_assoc. rewrite <- add_assoc with (n:=o) (m:=1) (p:=y).
-                rewrite add_comm with (n:=1) (m:=y). auto.
-            }
-            { simpl in STK |- *.
-              apply block_always_terminator_prog with (pc:=(l, o)) (i:=<{{ call fp }}>) in wfp0; eauto.
-                des. replace (l, (add o 1)) with ((l, o) + 1) by auto.
-                destruct (pc_sync p c); clarify.
-                destruct (map_opt (pc_sync p) sk); clarify. 
-                unfold pc_sync in SYNC |- *.
-                unfold MiniCET.fetch in wfp0. cbn in wfp0, SYNC |- *.
-                destruct (nth_error p l); clarify. rewrite wfp0. rewrite ISRC in SYNC.
-                injection SYNC; i. do 2 f_equal. rewrite <- H2.
-                replace (add o 1) with (S o) at 2 by lia. 
-                specialize (firstnth_error (fst p0) o <{{ call fp }}> ISRC); i.
-                rewrite H5. cbn. rewrite fold_left_app. cbn.
-                remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
-                remember (firstn o (fst p0)) as lst.
-                remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
-                remember (fold_left f lst a) as y.
-                rewrite <- add_assoc with (n:=o) (m:=y) (p:=1).
-                rewrite add_assoc. rewrite <- add_assoc with (n:=o) (m:=1) (p:=y).
-                rewrite add_comm with (n:=1) (m:=y). auto.
-            }
-          }
-        }
-      }
-      { (* initiating speculation (attacker label ≠ intended label) *)
-        cbn. destruct lo as (al & ao). cbn in Hspec1.
-        rewrite Nat.eqb_neq in Hspec1. 
-        (* since indexing into tp with attacker pc gets ctarget, attacker label must go to src call target block 
-          and attacker offset must be 0 *)
-        assert (exists ablk, nth_error p al = Some ablk /\ (snd ablk) = true /\ ao = 0) by admit.
-        des. rewrite H4 in *. replace (fst (al, 0)) with al in * by auto. 
+    destruct DLEN as [DLEN|DLEN]; cycle 1.
+    { admit. (* l' no ctarget in the extended part.
+                The target code must make fault. *) }
 
-        exists (al, 0, r, m, (l, (add o 1)) :: sk, true).
-        split.
-        { econs; eauto.
-          { unfold MiniCET.fetch. cbn. rewrite Heq0. eapply ISRC. }
-          { assert (to_fp (eval (callee !-> FP l0; r') fp) = Some l0).
-            { rewrite H1. auto. }
-            rewrite <- H5. f_equal. apply eval_regs_eq.
-            { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
-              eapply unused_prog_lookup in unused_p_msf; eauto.
-              simpl in unused_p_callee. eauto.
-            }
-            { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
-              eapply unused_prog_lookup in unused_p_callee; eauto.
-              simpl in unused_p_callee. eauto.
-            }
-            { inv REG0. i. dup H4. apply H6 in H4. unfold TotalMap.t_apply in H4. rewrite H4. 
-              assert (eval (callee !-> FP l0; r') x = eval r' x).
-              { apply eval_unused_update. des. cbn. assumption. }
-              cbn in H9. unfold TotalMap.t_apply in H9. symmetry.
-              assumption.
-            }
-          }
-          { cbn. replace true with (negb false) by auto. f_equal. 
-            rewrite <- Nat.eqb_neq in Hspec1. symmetry. assumption.
-          }
-        }
-        { econs; eauto.
-          { cbn. unfold pc_sync in SYNC |- *. cbn in SYNC |- *.
-            rewrite H2. rewrite Heq0 in SYNC. rewrite ISRC in SYNC. 
-            injection SYNC; i. destruct pc' as (l' & o'). injection H5; i.
-            rewrite <- H7, <- H6 in *. clear H7. clear H6. clear H5.
-            rewrite Forall_forall in H0. specialize (nth_error_In p al H2); i.
-            apply H0 in H5. unfold wf_block in H5. des. 
-            apply blk_not_empty_list in H5. destruct (fst ablk); clarify.
-          }
-          { econs; eauto. inv REG0; i.
-            { unfold TotalMap.t_apply, TotalMap.t_update, t_update. 
-              dup H4. destruct H7.
-              rewrite <- String.eqb_neq, String.eqb_sym in H8, H7. rewrite H8, H7.
-              eauto.
-            }
-          }
-          { specialize (rev_fetch p (l, o) p0 <{{ call fp }}> Heq0 ISRC); i.
-            destruct sk; clarify.
-            { simpl in STK |- *. injection STK; i; subst. clear STK.
-              apply block_always_terminator_prog with (pc:=(l, o)) (i:=<{{ call fp }}>) in wfp0; eauto.
-                des. replace (l, (add o 1)) with ((l, o) + 1) by auto.
-                unfold pc_sync in SYNC |- *. 
-                unfold MiniCET.fetch in wfp0. cbn in wfp0, SYNC |- *.
-                destruct (nth_error p l); clarify. rewrite wfp0. rewrite ISRC in SYNC. 
-                injection SYNC; i. do 2 f_equal. rewrite <- H4.
-                replace (add o 1) with (S o) at 2 by lia. 
-                specialize (firstnth_error (fst p0) o <{{ call fp }}> ISRC); i.
-                rewrite H6. cbn. rewrite fold_left_app. cbn.
-                remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
-                remember (firstn o (fst p0)) as lst.
-                remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
-                remember (fold_left f lst a) as y.
-                rewrite <- add_assoc with (n:=o) (m:=y) (p:=1).
-                rewrite add_assoc. rewrite <- add_assoc with (n:=o) (m:=1) (p:=y).
-                rewrite add_comm with (n:=1) (m:=y). auto.
-            }
-            { simpl in STK |- *.
-              apply block_always_terminator_prog with (pc:=(l, o)) (i:=<{{ call fp }}>) in wfp0; eauto.
-                des. replace (l, (add o 1)) with ((l, o) + 1) by auto.
-                destruct (pc_sync p c); clarify.
-                destruct (map_opt (pc_sync p) sk); clarify. 
-                unfold pc_sync in SYNC |- *.
-                unfold MiniCET.fetch in wfp0. cbn in wfp0, SYNC |- *.
-                destruct (nth_error p l); clarify. rewrite wfp0. rewrite ISRC in SYNC.
-                injection SYNC; i. do 2 f_equal. rewrite <- H4.
-                replace (add o 1) with (S o) at 2 by lia. 
-                specialize (firstnth_error (fst p0) o <{{ call fp }}> ISRC); i.
-                rewrite H6. cbn. rewrite fold_left_app. cbn.
-                remember (fun (acc : nat) (i : inst) => if is_br_or_call i then (add acc 1) else acc) as f.
-                remember (firstn o (fst p0)) as lst.
-                remember (if Bool.eqb (snd p0) true then 2 else 0) as a.
-                remember (fold_left f lst a) as y.
-                rewrite <- add_assoc with (n:=o) (m:=y) (p:=1).
-                rewrite add_assoc. rewrite <- add_assoc with (n:=o) (m:=1) (p:=y).
-                rewrite add_comm with (n:=1) (m:=y). auto.
-            }
-          }
-        }
-      }
-    }
+    assert (CESRC: exists b_src', nth_error p l' = Some b_src').
+    { rewrite <- nth_error_Some in DLEN. destruct (nth_error p l'); eauto.
+      exfalso. eauto. }
+    des.
+    assert (CTSRC: snd b_src' = true).
+    { destruct b_src'. simpl. destruct b; auto.
+      hexploit no_ctarget_exists; try eapply CESRC; eauto. }
+
+    hexploit head_call_target; try eapply H11; eauto.
+    intros (l1 & b_tgt' & PC & BLKTGT & ITGT'). clarify.
+
+    esplits.
+    + simpl. eapply ISMI_Call; try eapply ISRC.
+      { inv REG0. rewrite H3 in H14. ss. rewrite BLKTGT in *.
+        ss. des_ifs_safe.
+        rewrite t_update_neq in Heq; [|ii; clarify].
+        rewrite H3 in Heq. ss. clarify. destruct ms; ss.
+        unfold to_fp in H14. des_ifs. rewrite eval_unused_update in Heq.
+        2:{ admit. (* no callee in fp *) }
+        rewrite eval_regs_eq with (r' := r'); eauto.
+        2:{ admit. (* no msf in fp *) }
+        2:{ admit. (* no callee in fp *) }
+        rewrite Heq. auto. }
+      { eauto. }
+      { simpl. eauto. }
+      { eauto. }
+      { simpl. auto. }
+    + econs.
+      * simpl. unfold pc_sync. simpl.
+        rewrite CESRC. destruct b_src' as [b_src' is_proc']. ss; clarify.
+        rewrite eqb_reflx.
+        destruct b_src' eqn:BSRC; auto.
+        admit. (* b_src' is empty -> nonempty prog: See CESRC *)
+      * econs; ss; i.
+        { des. rewrite ms_msf. rewrite t_update_eq.
+          rewrite t_update_neq; eauto. rewrite t_update_neq; eauto.
+          inv REG0; eauto. }
+        { des. rewrite ms_msf. repeat rewrite t_update_eq. ss.
+          rewrite t_update_neq; [|ii;clarify]. rewrite ms_msf in *. ss.
+          rewrite t_update_neq in H14; [|ii;clarify].
+          rewrite ms_msf in H14. ss.
+          rewrite eval_unused_update in H14.
+          2:{ admit. (* no callee in fp *) }
+          clear - H14. destruct ms; ss; clarify.
+          - des_ifs.
+          - unfold to_fp in H14. des_ifs_safe. ss. clarify.
+            destruct ((l0 =? l1)%nat) eqn: X; ss.
+            + rewrite Nat.eqb_sym in X. rewrite X. ss.
+            + rewrite Nat.eqb_sym in X. rewrite X. ss. }
+      * simpl. rewrite STK.
+        exploit block_always_terminator_prog; try eapply ISRC; eauto.
+        intros (i' & ITGT'').
+        unfold pc_sync in *. ss. des_ifs_safe. replace (add o 1) with (S o) by lia.
+        erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
+        rewrite add_1_r. f_equal. f_equal.
+        rewrite pair_equal_spec. split; auto. lia.
   (* ctarget *)
   - exfalso. eapply no_ct_prog_src; eauto.
   (* ret *)
