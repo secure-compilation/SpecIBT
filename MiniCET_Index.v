@@ -2239,8 +2239,16 @@ Proof.
     assert (DLEN: l' < Datatypes.length p \/ Datatypes.length p <= l') by lia.
 
     destruct DLEN as [DLEN|DLEN]; cycle 1.
-    { admit. (* l' no ctarget in the extended part.
-                The target code must make fault. *) }
+    { exfalso.
+      unfold uslh_prog in H11. des_ifs_safe.
+      exploit new_prog_ct_cut.
+      { eapply Heq0. }
+      { eapply H11. }
+      { eapply new_prog_no_ct. eauto. }
+      i. eapply mapM_perserve_len in Heq0. rewrite length_add_index in Heq0.
+      ss. des_ifs_safe. clear -Heq1 DLEN Heq0.
+      assert (nth_error l1 l' <> None) by (ii; clarify).
+      rewrite nth_error_Some in H. lia. }
 
     assert (CESRC: exists b_src', nth_error p l' = Some b_src').
     { rewrite <- nth_error_Some in DLEN. destruct (nth_error p l'); eauto.
@@ -2255,15 +2263,17 @@ Proof.
 
     esplits.
     + simpl. eapply ISMI_Call; try eapply ISRC.
-      { inv REG0. rewrite H3 in H14. ss. rewrite BLKTGT in *.
+      { inv REG0. rewrite H3 in H14.
+        exploit unused_prog_lookup; try eapply unused_p_msf; eauto.
+        exploit unused_prog_lookup; try eapply unused_p_callee; eauto.
+        intros UNUSE1 UNUSE2.
+
+        ss. rewrite BLKTGT in *.
         ss. des_ifs_safe.
         rewrite t_update_neq in Heq; [|ii; clarify].
         rewrite H3 in Heq. ss. clarify. destruct ms; ss.
-        unfold to_fp in H14. des_ifs. rewrite eval_unused_update in Heq.
-        2:{ admit. (* no callee in fp *) }
+        unfold to_fp in H14. des_ifs. rewrite eval_unused_update in Heq; eauto.
         rewrite eval_regs_eq with (r' := r'); eauto.
-        2:{ admit. (* no msf in fp *) }
-        2:{ admit. (* no callee in fp *) }
         rewrite Heq. auto. }
       { eauto. }
       { simpl. eauto. }
@@ -2274,8 +2284,11 @@ Proof.
         rewrite CESRC. destruct b_src' as [b_src' is_proc']. ss; clarify.
         rewrite eqb_reflx.
         destruct b_src' eqn:BSRC; auto.
-        admit. (* b_src' is empty -> nonempty prog: See CESRC *)
-      * econs; ss; i.
+        exfalso. clear - H0 CESRC.
+        eapply nth_error_In in CESRC. eapply Forall_forall in H0; eauto.
+        red in H0. des. ss.
+      * exploit unused_prog_lookup; try eapply unused_p_callee; eauto.
+        intros UNUSED. econs; ss; i.
         { des. rewrite ms_msf. rewrite t_update_eq.
           rewrite t_update_neq; eauto. rewrite t_update_neq; eauto.
           inv REG0; eauto. }
@@ -2283,8 +2296,7 @@ Proof.
           rewrite t_update_neq; [|ii;clarify]. rewrite ms_msf in *. ss.
           rewrite t_update_neq in H14; [|ii;clarify].
           rewrite ms_msf in H14. ss.
-          rewrite eval_unused_update in H14.
-          2:{ admit. (* no callee in fp *) }
+          rewrite eval_unused_update in H14; auto.
           clear - H14. destruct ms; ss; clarify.
           - des_ifs.
           - unfold to_fp in H14. des_ifs_safe. ss. clarify.
@@ -2310,7 +2322,7 @@ Proof.
     exists (c, r, m, sk, ms). simpl. split.
     + eapply ISMI_Ret; eauto.
     + econs; eauto; simpl in STK; des_ifs.
-Admitted.
+Qed.
 
 (* End BCC. *)
 
@@ -2452,7 +2464,11 @@ Proof.
           exploit ultimate_slh_bcc_single_cycle_refactor; try eapply H7; eauto.
           i. des; eauto. rewrite <- app_nil_r with (l:=ds). rewrite <- app_nil_r with (l:=os).
           eexists. econs 2; eauto. econs.
-        - admit. (* no step to S_Undef state *)
+        - exfalso. clear - H7. ginduction n; ii.
+          { inv H7. inv H5. inv H0. }
+          { inv H7. destruct sc2; eauto; try sfby inv H0.
+            - inv H5. inv H1.
+            - inv H5. inv H1. }
         - destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
           des_ifs_safe. rename c into pc.
           inv H6. exploit src_inv; eauto. i. des.
@@ -2533,7 +2549,7 @@ Proof.
       { lia. }
       { inv x1. inv REG0. ss. }
       i. des. exists ic0. econs; eauto.
-Admitted.
+Qed.
 
  (** * Definition of Relative Secure *) 
 
