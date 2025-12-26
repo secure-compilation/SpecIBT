@@ -656,12 +656,11 @@ Definition wf_ic (p: prog) (ic: ideal_cfg) : Prop :=
   let '(pc, r, m, stk, ms) := ic in
   wf_reg p r /\ wf_mem p m.
 
-Lemma wf_ic_preserved p ic ds os ict
-    (WF: wf_ic p ic)
-    (STEP: p |- <(( S_Running ic ))> -->i_ ds ^^ os  <(( S_Running ict ))>):
-  wf_ic p ict.
-Proof.
-Admitted.
+(* Lemma wf_ic_preserved p ic ds os ict *)
+(*     (WF: wf_ic p ic) *)
+(*     (STEP: p |- <(( S_Running ic ))> -->i_ ds ^^ os  <(( S_Running ict ))>): *)
+(*   wf_ic p ict. *)
+(* Proof. *)
 
 (* Aux Lemmas *)
 
@@ -692,7 +691,6 @@ Qed.
 (* Lemma wf_uslh : forall (p: prog),    *)
 (*   wf_prog p -> wf_prog (uslh_prog p). *)
 (* Proof. *)
-(* Admitted. *)
 
 (* Lemma multi_spec_msf_lookup_preserved p sc1 ds os n sc1' *)
 (* one more condition is needed : n steps of spec exec should be matched with single ideal steps *)
@@ -700,7 +698,6 @@ Qed.
 (*     (STEPS: p |- <(( S_Running sc1 ))> -->*_ ds ^^ os ^^ n <(( S_Running sc1' ))>) : *)
 (*   msf_lookup_sc sc1' = N (if ms_true_sc sc1' then 1 else 0). *)
 (* Proof. *)
-(* Admitted. *)
 
 (* Tactics *)
 
@@ -1658,10 +1655,27 @@ Proof.
   des; subst; eauto.
 Qed.
 
+Lemma split_app
+    {A B} (l1 l2: list (A * B))
+    sl sl' sl1 sl1' sl2 sl2'
+    (SP1: split (l1 ++ l2) = (sl, sl'))
+    (SP2: split l1 = (sl1, sl1'))
+    (SP3: split l2 = (sl2, sl2')) :
+  sl = sl1 ++ sl2 /\ sl' = sl1' ++ sl2'.
+Proof.
+  ginduction l1; ii.
+  { ss. clarify. rewrite SP1 in SP3. clarify. }
+  destruct a as [a b]. ss. des_ifs_safe.
+  exploit IHl1; eauto. i. des. subst; auto.
+Qed.
+
 Lemma no_ct_prog_app l1 l2:
   no_ct_prog (l1 ++ l2) <-> (no_ct_prog l1 /\ no_ct_prog l2).
 Proof.
-Admitted.
+  unfold no_ct_prog. des_ifs.
+  exploit split_app; try eapply Heq; eauto. i. des; subst.
+  rewrite Forall_app. auto.
+Qed.
 
 Lemma new_prog_no_ct_blk blk n c res np
     (USLH: uslh_blk (n, blk) c = (res, np)):
@@ -1819,8 +1833,6 @@ Qed.
 (* Proof. *)
 (*   i. rewrite H2 in *. unfold uslh_prog.  *)
 (*   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as (p', newp) eqn:Htp. *)
-(* Admitted. *)
-
 
 (* YH: TODO: add memory & register wf *)
 
