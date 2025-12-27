@@ -141,24 +141,20 @@ Lemma pc_inj_total p pc i
     (INBDD: fetch p pc = Some i) :
   exists pc', pc_inj p pc = Some pc'.
 Proof.
-  unfold pc_inj. ginduction p; ss; ii; clarify.
-  - unfold MiniCET.fetch in INBDD. simpl in INBDD.
-    destruct pc. rewrite nth_error_nil in INBDD.
-    discriminate.
-  - unfold MiniCET.fetch in INBDD. simpl in INBDD.
-    destruct pc as (l & o). destruct l as [|l'] eqn:Hl.
-    + rewrite nth_error_cons_0 in INBDD.
-      assert (nth_error (fst a) o <> None) by (unfold not; i; clarify).
+  unfold pc_inj, MiniCET.fetch in *. destruct pc as (l & o).
+  ginduction p; ss; ii; clarify.
+  - rewrite nth_error_nil in INBDD; clarify.
+  - rewrite nth_error_cons in INBDD.
+    destruct l as [|l'] eqn:Hl.
+    + assert (nth_error (fst a) o <> None) by (unfold not; i; clarify).
       rewrite nth_error_Some in H. 
-      rewrite <- ltb_lt in H. rewrite H. 
+      rewrite <- ltb_lt in H. rewrite H.
       exists o. auto.
-    + destruct (nth_error (a :: p) (S l')) as [bk|] eqn:HSl; clarify. 
-      Check nth_error_cons_succ. rewrite nth_error_cons_succ in HSl.
-      specialize IHp with (pc:=(l', o)) (i:=i).
-      unfold MiniCET.fetch in IHp. rewrite HSl in IHp.
-      ss. apply IHp in INBDD. des. rewrite INBDD. 
+    + specialize IHp with (l:=l') (o:=o) (i:=i).
+      unfold MiniCET.fetch in IHp. ss. 
+      apply IHp in INBDD. des. rewrite INBDD.
       exists (Datatypes.length (fst a) + pc'). auto.
-Qed. 
+Qed.
 
 Inductive direction : Type :=
 | DBranch (b':bool)
