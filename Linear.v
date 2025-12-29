@@ -141,7 +141,20 @@ Lemma pc_inj_total p pc i
     (INBDD: fetch p pc = Some i) :
   exists pc', pc_inj p pc = Some pc'.
 Proof.
-Admitted.
+  unfold pc_inj, MiniCET.fetch in *. destruct pc as (l & o).
+  ginduction p; ss; ii; clarify.
+  - rewrite nth_error_nil in INBDD; clarify.
+  - rewrite nth_error_cons in INBDD.
+    destruct l as [|l'] eqn:Hl.
+    + assert (nth_error (fst a) o <> None) by (unfold not; i; clarify).
+      rewrite nth_error_Some in H. 
+      rewrite <- ltb_lt in H. rewrite H.
+      exists o. auto.
+    + specialize IHp with (l:=l') (o:=o) (i:=i).
+      unfold MiniCET.fetch in IHp. ss. 
+      apply IHp in INBDD. des. rewrite INBDD.
+      exists (Datatypes.length (fst a) + pc'). auto.
+Qed.
 
 Inductive direction : Type :=
 | DBranch (b':bool)
