@@ -2336,8 +2336,6 @@ Proof.
     + econs; eauto; simpl in STK; des_ifs.
 Qed.
 
-(* End BCC. *)
-
 Lemma ultimate_slh_bcc (p: prog) : forall n ic1 sc1 sc2 ds os,
   no_ct_prog p ->
   wf_prog p ->
@@ -3144,5 +3142,76 @@ Proof.
       + right. destruct H. exists x. rewrite <- app_assoc. f_equal. cbn. f_equal. assumption.
 Qed.
 
+Lemma spec_eval_relative_secure_aux
+  p pc r1 r2 m1 m2 stk ic1 ic2
+  (ICFG1: ic1 = (pc, r1, m1, stk, false))
+  (ICFG2: ic2 = (pc, r2, m2, stk, false))
+  (SEQ: seq_same_obs p pc r1 r2 m1 m2 stk)
+  (NCT: no_ct_prog p)
+  (WFP: wf_prog p)
+  (UNUSED1: unused_prog msf p)
+  (UNUSED2: unused_prog callee p)
+  pc' r1' r2' m1' m2' stk' sc1 sc2
+  (SCFG1: sc1 = (pc', r1', m1', stk', false, false))
+  (SCFG2: sc2 = (pc', r2', m2', stk', false, false))
+  (LK1: msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0))
+  (LK2: msf_lookup_sc sc2 = N (if (ms_true_sc sc2) then 1 else 0))
+  (MATCH1: match_cfgs p ic1 sc1)
+  (MATCH2: match_cfgs p ic2 sc2)
+  ds os1 os2 n c1 c2
+  (WFDS: wf_ds' (uslh_prog p) ds)
+  (SSTEP1: (uslh_prog p) |- <(( S_Running sc1 ))> -->*_ds^^os1^^n <(( c1 ))>)
+  (SSTEP2: (uslh_prog p) |- <(( S_Running sc2 ))> -->*_ds^^ os2^^n <(( c2 ))>):
+  (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
+Proof.
+  eapply ultimate_slh_bcc in SSTEP1; eauto. des.
+  eapply ultimate_slh_bcc in SSTEP2; eauto. des. subst.
+  eapply ideal_eval_relative_secure; eauto.
+Qed.
 
+(** * Safety Presevation *)
+
+(* YH: This could be merge. *)
+Definition seq_nostep (p: prog) (st: state cfg) : Prop :=
+  ~ (exists os stt, p |- <(( st ))> -->^ os <(( stt ))>).
+
+Definition ideal_nostep (p: prog) (st: state ideal_cfg) : Prop :=
+  ~ (exists ds os stt, p |- <(( st ))> -->i_ ds ^^ os  <(( stt ))>).
+
+Definition spec_nostep (p: prog) (st: state spec_cfg) : Prop :=
+  ~ (exists ds os stt, p |- <(( st ))> -->_ ds ^^ os  <(( stt ))>).
+
+Definition seq_ub (p: prog) (st: state cfg) : Prop :=
+  match st with
+  | S_Running c => seq_nostep p st
+  | S_Undef => True
+  | _ => False
+  end.
+
+Definition ideal_ub (p: prog) (st: state ideal_cfg) : Prop :=
+  match st with
+  | S_Running c => ideal_nostep p st
+  | S_Undef => True
+  | _ => False
+  end.
+
+Definition spec_ub (p: prog) (st: state spec_cfg) : Prop :=
+  match st with
+  | S_Running c => spec_nostep p st
+  | S_Undef => True
+  | _ => False
+  end.
+
+Definition nonempty_mem (m: mem) : Prop :=
+  Datatypes.length m > 0.
+
+(* TODO: YH: revising the statements  *)
+Lemma no_ub_msf_spec_single p pc r m stk ct i
+  (MEM: nonempty_mem m)
+  (WFP: nonempty_program p)
+  (NCT: no_ct_prog p)
+  (INST: (uslh_prog p)[[pc]] = Some i) :
+  ~ spec_ub (uslh_prog p) (S_Running (pc, r, m, stk, ct, true)).
+Proof.
+Admitted.
 
