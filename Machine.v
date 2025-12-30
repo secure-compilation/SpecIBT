@@ -39,28 +39,6 @@ From SECF Require Import sflib.
 
 (* Aux function : move to Utils.v *)
 
-Definition val_injectb (p: prog) (vsrc vtgt: val) : bool :=
-  match vsrc, vtgt with
-  | FP l, N n => match pc_inj p (l, 0) with
-                | Some n' => Nat.eqb n n'
-                | None => false
-                end
-  | N n, N n' => Nat.eqb n n'
-  | UV, _ => true
-  | _, _ => false
-  end.
-
-Definition val_inject (p: prog) (vsrc vtgt: val) : Prop :=
-  match vsrc, vtgt with
-  | FP l, N n => match pc_inj p (l, 0) with
-                | Some n' => (n = n')%nat
-                | None => False
-                end
-  | N n, N n' => (n = n')
-  | UV, _ => True
-  | _, _ => False
-  end.
-
 (** Block-based machine level semantics *)
 
 Definition val_injectb_s (p: prog) (vsrc vtgt: val) : bool :=
@@ -109,7 +87,7 @@ Module MachineCommon (M: TMap).
 
 Definition cfg : Type := ((cptr*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
 
-  Definition spec_cfg : Type := ((cfg * bool) * bool).
+Definition spec_cfg : Type := ((cfg * bool) * bool).
 
 (* ret with empty stackframe *)
 Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
@@ -131,8 +109,6 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
   Definition DIRS := dirs.
   Definition PC := nat.
   Definition REG := reg.
-
-  Definition fetch := flat_fetch.
 
   Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
     match sc with
@@ -329,7 +305,7 @@ Admitted.
 Lemma eval_inject p r1 r2 e1 e2
   (INJ: reg_inject p r1 r2)
   (TRANS: machine_exp e1 = e2) :
-  val_inject p (MiniC.eval r1 e1) (MachineC.eval r2 e2).
+  val_inject_s p (MiniC.eval r1 e1) (MachineC.eval r2 e2).
 Proof.
 Admitted.
 

@@ -51,12 +51,9 @@ Import MCC.
 (* Check every branches and jumps jump to the head of some block (If, machine program is generated from MiniCET program) *)
 
 Definition wf_jmp_label (p:prog) (l:nat) : bool :=
-  match pc_inj_inv p l with
-  | Some (b, 0) => match nth_error p b with
-                  | Some (_,is_proc) => negb is_proc
-                  | None => false
-                  end
-  | _ => false
+  match nth_error p l with
+  | Some (_,is_proc) => negb is_proc
+  | None => false
   end.
 
 Definition wf_jmp_inst (p:prog) (i : inst) : bool :=
