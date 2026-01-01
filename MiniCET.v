@@ -680,22 +680,28 @@ Proof.
     + apply S_Term.
 Defined.
 
-Module Type Semantics.
-  Parameter PC : Type.
-  Parameter REG : Type.
-  Parameter DIRS : Type.
-  Definition cfg : Type := ((PC * REG) * mem) * list PC.
+Module Type Semantics(M : TMap).
+  Parameter pc : Type.
+  Definition reg := M.t val.
+  Definition cfg : Type := ((pc * reg) * mem) * list pc.
   Definition spec_cfg : Type := (cfg * bool) * bool.
 
-  Parameter eval : REG -> exp -> val.
-  Parameter fetch : prog -> PC -> option inst.
+  Parameter dir : Type.
+  Definition dirs := list dir.
+
+  Parameter ipc : pc.
+  Parameter istk : list pc.
+  Parameter icfg : pc -> reg -> mem -> list pc -> cfg.
+
+  Parameter eval : reg -> exp -> val.
+  Parameter fetch : prog -> pc -> option inst.
   Parameter step : prog -> state cfg -> state cfg * obs.
   Parameter steps : nat -> prog -> state cfg -> state cfg * obs.
-  Parameter spec_step : prog -> state spec_cfg -> DIRS -> state spec_cfg * DIRS * obs.
-  Parameter spec_steps : nat -> prog -> state spec_cfg -> DIRS -> state spec_cfg * DIRS * obs.
+  Parameter spec_step : prog -> state spec_cfg -> dirs -> state spec_cfg * dirs * obs.
+  Parameter spec_steps : nat -> prog -> state spec_cfg -> dirs -> state spec_cfg * dirs * obs.
 End Semantics.
 
-Module MiniCETCommon (M: TMap) <: Semantics.
+Module MiniCETCommon (M: TMap) <: Semantics M.
 
 Notation "'_' '!->' v" := (M.init v)
     (at level 100, right associativity).
@@ -728,7 +734,6 @@ Fixpoint eval (st : reg) (e: exp) : val :=
   end.
 
 Definition cfg : Type := ((cptr*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
-
 Definition spec_cfg : Type := ((cfg * bool) * bool).
 
 (* ret with empty stackframe *)
@@ -748,9 +753,14 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
 
 Definition ideal_cfg : Type := cfg * bool.
 
-Definition PC := cptr.
-Definition REG := reg.
-Definition DIRS := dirs.
+Definition pc := cptr.
+Definition ipc : cptr := (0, 0).
+Definition istk : list cptr := [].
+Definition icfg (ipc : pc) (ireg : reg) (mem : mem) (istk : list pc): cfg := 
+  (ipc, ireg, mem, istk).
+
+Definition dir := direction.
+Definition dirs := dirs.
 Definition fetch := fetch.
 
 Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
@@ -811,7 +821,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
     | s => (s, [])
     end.
 
-  Definition spec_step (p:prog) (ssc: state spec_cfg) (ds: DIRS) : (state spec_cfg * DIRS * obs) :=
+  Definition spec_step (p:prog) (ssc: state spec_cfg) (ds: dirs) : (state spec_cfg * dirs * obs) :=
     match ssc with
     | S_Running sc =>
         let '(c, ct, ms) := sc in
@@ -880,8 +890,8 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
     | s => (s, ds, [])
     end.
 
-  Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds: DIRS)
-    : (state spec_cfg * DIRS * obs) :=
+  Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds: dirs)
+    : (state spec_cfg * dirs * obs) :=
     match f with
     | S f' =>
         match sc with
@@ -912,4 +922,3 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
     end.
 
 End MiniCETCommon.
-
