@@ -69,19 +69,10 @@ Definition wf_jmp_blk (p:prog) (blb : list inst * bool) : bool :=
 Definition wf_jmp (p:prog) : bool :=
   forallb (wf_jmp_blk p) p.
 
-(* YH: machine_prog is a total function. *)
-(* Definition test_machine_prog_total_from_minicet := *)
-(*   (forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) => *)
-(*   let p' := transform_load_store_prog c tm p in *)
-(*   let harden := uslh_prog p' in *)
-(*   is_some (machine_prog harden))). *)
-
 Definition test_machine_branch_from_wf_minicet :=
   (forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   let p' := transform_load_store_prog c tm p in
   let harden := uslh_prog p' in
   wf_jmp (machine_prog harden))).
-
-(*! QuickChick test_machine_prog_total_from_minicet. *)
 
 (*! QuickChick test_machine_branch_from_wf_minicet. *)

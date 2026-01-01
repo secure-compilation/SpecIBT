@@ -12,28 +12,40 @@ Set Default Goal Selector "!".
 
 From QuickChick Require Import QuickChick Tactics.
 Import QcNotation QcDefaultNotation. Open Scope qc_scope.
+Import MonadNotation.
 From SECF Require Import TestingLib.
-From SECF Require Import MiniCET TaintTrackingMiniCET.
+From SECF Require Import MiniCET TaintTrackingMiniCET MapsFunctor.
 
-Import TestingStrategies.
+Module MCC := MiniCETCommon(ListTotalMap).
+Module TS := TestingStrategies(MCC).
+Module TT := TaintTracking(MCC).
+Import MCC TS TT.
+
+Definition gen_dbr : G direction :=
+  b <- arbitrary;; ret (DBranch b).
+
+Definition gen_dcall (pst: list nat) : G direction :=
+  l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
+
+Derive Show for direction.
 
 (* Extract Constant defNumTests => "1000000". *)
 
 (* check 0: load/store transformation creates basic blocks *)
 
-Definition load_store_trans_basic_blk := TestingStrategies.load_store_trans_basic_blk.
+Definition load_store_trans_basic_blk := TS.load_store_trans_basic_blk.
 
 (*! QuickChick load_store_trans_basic_blk. *)
 
 (* check 1: generated program is stuck-free. *)
 
-Definition load_store_trans_stuck_free := TestingStrategies.load_store_trans_stuck_free.
+Definition load_store_trans_stuck_free := TS.load_store_trans_stuck_free.
 
 (*! QuickChick load_store_trans_stuck_free. *)
 
 (* +++ Passed 10000 tests (6173 discards) *)
 
-Definition no_obs_prog_no_obs := TestingStrategies.no_obs_prog_no_obs.
+Definition no_obs_prog_no_obs := TS.no_obs_prog_no_obs.
 
 (*! QuickChick no_obs_prog_no_obs. *)
 
@@ -63,27 +75,27 @@ Definition unused_var_no_leak_transform_load_store :=
 
 (* check 5: gen_pub_equiv_same_ty works *)
 
-Definition gen_pub_equiv_same_ty := TestingStrategies.gen_pub_equiv_same_ty.
+Definition gen_pub_equiv_same_ty := TS.gen_pub_equiv_same_ty.
 
 (* check 6: generated register set is well-typed. *)
 
-Definition gen_pub_equiv_is_pub_equiv := TestingStrategies.gen_pub_equiv_is_pub_equiv.
+Definition gen_pub_equiv_is_pub_equiv := TS.gen_pub_equiv_is_pub_equiv.
 
 (*! QuickChick gen_pub_equiv_is_pub_equiv. *)
 
-Definition gen_reg_wt_is_wt := TestingStrategies.gen_reg_wt_is_wt.
+Definition gen_reg_wt_is_wt := TS.gen_reg_wt_is_wt.
 
 (*! QuickChick gen_reg_wt_is_wt. *)
 
 (* check 5: gen_pub_mem_equiv_same_ty works *)
 
-Definition gen_pub_mem_equiv_is_pub_equiv := TestingStrategies.gen_pub_mem_equiv_is_pub_equiv.
+Definition gen_pub_mem_equiv_is_pub_equiv := TS.gen_pub_mem_equiv_is_pub_equiv.
 
 (*! QuickChick gen_pub_mem_equiv_is_pub_equiv. *)
 
 (* check 7: generated memory is well-typed. *)
 
-Definition gen_mem_wt_is_wt := TestingStrategies.gen_mem_wt_is_wt.
+Definition gen_mem_wt_is_wt := TS.gen_mem_wt_is_wt.
 
 (*! QuickChick gen_mem_wt_is_wt. *)
 
@@ -98,7 +110,7 @@ Definition test_ni_transform_load_store :=
 (* +++ Passed 1000000 tests (639813 discards) *)
 (* Time Elapsed: 152.683837s *)
 
-Definition test_safety_preservation_uslh := test_safety_preservation uslh_prog.
+Definition test_safety_preservation_uslh := test_safety_preservation uslh_prog gen_dbr gen_dcall.
 
 (*! QuickChick test_safety_preservation_uslh. *)
 
@@ -107,7 +119,7 @@ Definition test_safety_preservation_uslh := test_safety_preservation uslh_prog.
 
 (** Testing Relative Security *)
 
-Definition test_relative_security_uslh := test_relative_security uslh_prog.
+Definition test_relative_security_uslh := test_relative_security uslh_prog gen_dbr gen_dcall.
 
 (*! QuickChick test_relative_security_uslh. *)
 
