@@ -15,7 +15,7 @@ Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Data.List.
 Import MonadNotation.
 From Stdlib Require Import String.
-From SECF Require Import ListMaps MapsFunctor MiniCET Utils TaintTrackingMiniCET.
+From SECF Require Import ListMaps MapsFunctor MiniCET Utils TaintTracking.
 Require Import Stdlib.Classes.EquivDec.
 
 (** ** Type system for cryptographic constant-time programming *)

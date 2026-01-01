@@ -753,7 +753,7 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
 
 Definition ideal_cfg : Type := cfg * bool.
 
-Definition pc := cptr.
+Local Definition pc := cptr.
 Definition ipc : cptr := (0, 0).
 Definition istk : list cptr := [].
 Definition icfg (ipc : pc) (ireg : reg) (mem : mem) (istk : list pc): cfg := 

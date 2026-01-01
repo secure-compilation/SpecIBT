@@ -14,7 +14,7 @@ From QuickChick Require Import QuickChick Tactics.
 Import QcNotation QcDefaultNotation. Open Scope qc_scope.
 Import MonadNotation.
 From SECF Require Import TestingLib.
-From SECF Require Import MiniCET TaintTrackingMiniCET MapsFunctor.
+From SECF Require Import MiniCET TaintTracking MapsFunctor.
 
 Module MCC := MiniCETCommon(ListTotalMap).
 Module TS := TestingStrategies(MCC).

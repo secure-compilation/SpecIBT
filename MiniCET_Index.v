@@ -3,7 +3,6 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
-From SECF Require Import TestingLib.
 From SECF Require Import Utils.
 From SECF Require Import MiniCET.
 From Stdlib Require Import Bool.Bool.
@@ -1885,7 +1884,7 @@ Proof.
       rewrite add_1_r. auto.
     + eapply unused_prog_lookup in unused_p_msf; eauto.
       eapply unused_prog_lookup in unused_p_callee; eauto. ss; des.
-      inv REG0. econs.
+      inv REG. econs.
       * i. destruct (string_dec x x2); subst.
         { do 2 rewrite t_update_eq. apply eval_regs_eq; eauto. }
         { rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
@@ -1939,7 +1938,7 @@ Proof.
             unfold wf_instr in H1. des. unfold wf_lbl in H2. unfold fetch. cbn.  
             rewrite Hl0 in H2. destruct p0. rewrite <- H2. simpl. auto.
           }
-          { econs; eauto; i. inv REG0. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
+          { econs; eauto; i. inv REG. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
             des. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2.
             apply H3. rewrite String.eqb_sym, String.eqb_neq in H2. 
             split; auto.
@@ -1980,7 +1979,7 @@ Proof.
               apply eval_regs_eq.
               + eapply unused_prog_lookup with (x:=msf) in H3; eauto.
               + eapply unused_prog_lookup with (x:=callee) in H3; eauto.
-              + inv REG0. unfold TotalMap.t_apply in H4.
+              + inv REG. unfold TotalMap.t_apply in H4.
                 assumption.
             - destruct n0; clarify.
           }
@@ -1996,7 +1995,7 @@ Proof.
               unfold wf_lbl in H7.
               destruct (nth_error p l0) eqn:Hl0; clarify.
               destruct p0. rewrite <- H7. cbn. destruct l1; clarify.
-            - econs; eauto. i. inv REG0.
+            - econs; eauto. i. inv REG.
               unfold TotalMap.t_apply, TotalMap.t_update, t_update.
               des. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2.
               apply H3. rewrite String.eqb_sym, String.eqb_neq in H2. 
@@ -2032,7 +2031,7 @@ Proof.
               apply eval_regs_eq.
               + eapply unused_prog_lookup with (x:=msf) in H3; eauto.
               + eapply unused_prog_lookup with (x:=callee) in H3; eauto.
-              + inv REG0. unfold TotalMap.t_apply in H4.
+              + inv REG. unfold TotalMap.t_apply in H4.
                 assumption.
             - destruct n0; clarify.
           }
@@ -2048,7 +2047,7 @@ Proof.
               unfold wf_lbl in H7.
               destruct (nth_error p l0) eqn:Hl0; clarify.
               destruct p0. rewrite <- H7. cbn. destruct l1; clarify.
-            - econs; eauto. i. inv REG0.
+            - econs; eauto. i. inv REG.
               unfold TotalMap.t_apply, TotalMap.t_update, t_update.
               des. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2.
               apply H3. rewrite String.eqb_sym, String.eqb_neq in H2. 
@@ -2087,7 +2086,7 @@ Proof.
           }
           { econs; eauto; i. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
             dup H1. destruct H2. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2. 
-            inv REG0. apply H4 in H1. unfold TotalMap.t_apply, TotalMap.t_update, t_update in H1.
+            inv REG. apply H4 in H1. unfold TotalMap.t_apply, TotalMap.t_update, t_update in H1.
             assumption.
           }
         }
@@ -2108,7 +2107,7 @@ Proof.
               apply eval_regs_eq.
               - eapply unused_prog_lookup with (i:=<{{ branch e to l0 }}>) (x:=msf) in unused_p_msf; eauto.
               - eapply unused_prog_lookup with (i:=<{{ branch e to l0 }}>) (x:=callee) in unused_p_callee; eauto.
-              - inv REG0. i. eauto.
+              - inv REG. i. eauto.
             }
           }
           { econs; eauto.
@@ -2128,7 +2127,7 @@ Proof.
               rewrite <- H5. rewrite add_assoc. auto.
             }
             { econs; eauto.
-              { inv REG0. i. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
+              { inv REG. i. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
                 dup H3. destruct H4. rewrite <- String.eqb_neq, String.eqb_sym in H4. rewrite H4.
                 eauto.
               }
@@ -2147,7 +2146,7 @@ Proof.
               apply eval_regs_eq.
               - eapply unused_prog_lookup with (i:=<{{ branch e to l0 }}>) (x:=msf) in unused_p_msf; eauto.
               - eapply unused_prog_lookup with (i:=<{{ branch e to l0 }}>) (x:=callee) in unused_p_callee; eauto.
-              - inv REG0. i. eauto.
+              - inv REG. i. eauto.
             }
           }
           { econs; eauto.
@@ -2167,7 +2166,7 @@ Proof.
               rewrite <- H5. rewrite add_assoc. auto.
             }
             { econs; eauto.
-              { inv REG0. i. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
+              { inv REG. i. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
                 dup H4. destruct H5. rewrite <- String.eqb_neq, String.eqb_sym in H5. rewrite H5.
                 eauto.
               }
@@ -2198,8 +2197,8 @@ Proof.
     eapply unused_prog_lookup in unused_p_callee; eauto.
 
     split; econs; eauto.
-    + clear - H11 REG0 unused_p_msf unused_p_callee.
-      inv REG0. ss. rewrite H0 in H11. ss. des.
+    + clear - H11 REG unused_p_msf unused_p_callee.
+      inv REG. ss. rewrite H0 in H11. ss. des.
       des_ifs. rewrite <- H11. f_equal. eapply eval_regs_eq; eauto.
     + exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
       unfold pc_sync in *. ss. des_ifs_safe. replace (add o 1) with (S o) by lia.
@@ -2209,7 +2208,7 @@ Proof.
       * destruct (string_dec x x2); subst.
         { do 2 rewrite t_update_eq; eauto. }
         { rewrite t_update_neq; eauto. rewrite t_update_neq; eauto.
-          inv REG0. eauto. }
+          inv REG. eauto. }
       * ss. des. rewrite t_update_neq; eauto.
   (* store *)
   - assert (n = 1) by (ss; des_ifs). subst.
@@ -2222,10 +2221,10 @@ Proof.
     exists (((l, o) + 1), r, (upd n m (eval r e')), sk, ms).
     simpl. split.
     + eapply ISMI_Store; eauto.
-      clear - H11 REG0 unused_p_msf unused_p_callee.
-      inv REG0. ss. rewrite H0 in H11. ss. des.
+      clear - H11 REG unused_p_msf unused_p_callee.
+      inv REG. ss. rewrite H0 in H11. ss. des.
       des_ifs. rewrite <- H11. f_equal. eapply eval_regs_eq; eauto.
-    + simpl in unused_p_callee, unused_p_msf. des. dup REG0. inv REG0.
+    + simpl in unused_p_callee, unused_p_msf. des. dup REG. inv REG.
       erewrite <- eval_regs_eq with (r := r) (r' := r'); eauto.
       econs; eauto.
       exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
@@ -2275,7 +2274,7 @@ Proof.
 
     esplits.
     + simpl. eapply ISMI_Call; try eapply ISRC.
-      { inv REG0. rewrite H3 in H14.
+      { inv REG. rewrite H3 in H14.
         exploit unused_prog_lookup; try eapply unused_p_msf; eauto.
         exploit unused_prog_lookup; try eapply unused_p_callee; eauto.
         intros UNUSE1 UNUSE2.
@@ -2303,7 +2302,7 @@ Proof.
         intros UNUSED. econs; ss; i.
         { des. rewrite ms_msf. rewrite t_update_eq.
           rewrite t_update_neq; eauto. rewrite t_update_neq; eauto.
-          inv REG0; eauto. }
+          inv REG; eauto. }
         { des. rewrite ms_msf. repeat rewrite t_update_eq. ss.
           rewrite t_update_neq; [|ii;clarify]. rewrite ms_msf in *. ss.
           rewrite t_update_neq in H14; [|ii;clarify].
@@ -2353,7 +2352,7 @@ Proof.
     { inv H7. inv H6. destruct pc as [l o].
       unfold steps_to_sync_point' in SYNCPT.
       destruct (p[[(l, o)]]) eqn: ISRC; cycle 1.
-      { (* by PC *) unfold pc_sync in PC0. ss. des_ifs. }
+      { (* by PC *) unfold pc_sync in PC. ss. des_ifs. }
       destruct i; clarify.
       - exploit src_inv; eauto. i. des. inv x1; ss; clarify.
         inv H9; clarify.
@@ -2375,7 +2374,7 @@ Proof.
         ss. clarify.
         exploit (ISMI_Branch p pc _ r m l ms); try eapply Heq; eauto.
         { rewrite <- H18. rewrite H5. simpl. destruct ms; ss.
-          erewrite eval_regs_eq; eauto. inv REG0. eauto. }
+          erewrite eval_regs_eq; eauto. inv REG. eauto. }
         instantiate (1:= b'). i. rewrite cons_app. rewrite cons_app with (a:= OBranch (not_zero n0)).
         destruct b'.
         { destruct n.
@@ -2401,7 +2400,7 @@ Proof.
               rewrite t_update_neq; [|ii;clarify].
               rewrite H5. ss. destruct ms; ss.
               rewrite eval_unused_update; eauto.
-              erewrite eval_regs_eq; eauto. inv REG0; eauto. }
+              erewrite eval_regs_eq; eauto. inv REG; eauto. }
             instantiate (1:= l). i. ss. clarify. inv H12.
             { exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
               rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
@@ -2420,7 +2419,7 @@ Proof.
               rewrite t_update_neq; [|ii;clarify].
               rewrite H5. ss. destruct ms; ss.
               rewrite eval_unused_update; eauto.
-              erewrite eval_regs_eq; eauto. inv REG0; eauto. }
+              erewrite eval_regs_eq; eauto. inv REG; eauto. }
             instantiate (1:= l). i. ss. clarify. inv H12.
             { exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
               rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
@@ -2438,7 +2437,7 @@ Proof.
               rewrite t_update_neq; [|ii;clarify].
               rewrite H5. ss. destruct ms; ss.
               rewrite eval_unused_update; eauto.
-              erewrite eval_regs_eq; eauto. inv REG0; eauto. }
+              erewrite eval_regs_eq; eauto. inv REG; eauto. }
             instantiate (1:= l). i. ss. clarify. inv H12.
             { exists S_Fault. rewrite <- app_nil_r with (l:=[OCall l0]).
               rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. }
@@ -2455,7 +2454,7 @@ Proof.
           rewrite t_update_neq; [|ii;clarify].
           rewrite H5. ss. destruct ms; ss.
           rewrite eval_unused_update; eauto.
-          erewrite eval_regs_eq; eauto. inv REG0; eauto. }
+          erewrite eval_regs_eq; eauto. inv REG; eauto. }
         instantiate (1:= l). ii. ss. clarify. inv H12.
         { rewrite <- app_nil_r with (l:=[OCall l0]).
           rewrite <- app_nil_r with (l:=[DCall lo]). eexists. econs; eauto. econs. }
@@ -2557,7 +2556,7 @@ Proof.
       exploit ultimate_slh_bcc_single_cycle_refactor; try eapply H9; eauto. i. des.
       exploit H; try eapply H10; eauto.
       { lia. }
-      { inv x1. inv REG0. ss. }
+      { inv x1. inv REG. ss. }
       i. des. exists ic0. econs; eauto.
 Qed.
 
