@@ -40,6 +40,14 @@ From SECF Require Import sflib.
 (* Aux function : move to Utils.v *)
 
 (** Block-based machine level semantics *)
+Inductive ty : Type := TNum.
+
+Derive (Arbitrary, Shrink) for ty.
+Derive Show for ty.
+
+Definition ty_eqb (x y: ty) := match x, y with
+                               | TNum, TNum => true
+                               end.
 
 Definition val_injectb_s (p: prog) (vsrc vtgt: val) : bool :=
   match vsrc, vtgt with
@@ -72,8 +80,8 @@ Definition pc := cptr.
 Definition cfg : Type := ((pc * reg)* mem) * list pc. (* (pc, register set, memory, stack frame) *)
 Definition spec_cfg : Type := ((cfg * bool) * bool).
 Definition ideal_cfg : Type := (cfg * bool)%type.
-Definition ipc := MCC.ipc.
-Definition istk := MCC.istk.
+Definition ipc: pc := (0, 0).
+Definition istk: list pc := [].
 Definition icfg (ipc : pc) (ireg : reg) (mem : mem) (istk : list pc): cfg := 
   (ipc, ireg, mem, istk).
 
@@ -131,7 +139,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
               | None => (S_Undef, [])
               end
           | <{{jump l}}> =>
-            (S_Running (l, 0, r, m, sk), [])
+            (S_Running ((l, 0), r, m, sk), [])
           | <{{x<-load[e]}}> =>
               match to_nat (eval r e) with
               | Some n => match nth_error m n with
@@ -286,32 +294,23 @@ Definition machine_prog (p: prog) : prog :=
 
 Module SimCommon (M: TMap).
 
-Module MiniC := MiniCETCommon(M).
-Import MiniC.
+Module Export MiniC := MiniCETCommon(M).
 
-Module MachineC := MachineCommon(M).
-Import MachineC.
+Module Export MachineC := MachineCommon(M).
+
+Definition minicet_val_to_machine (v : val) := match v with
+  | N x => N x
+  | FP x => N x
+  | UV => UV
+  end.
 
 Definition regs := MiniC.reg.
 Definition regt := MachineC.reg.
 
-Definition reg_inject (p: prog) (r1: regs) (r2: regt) : Prop :=
-  forall x, val_inject_s p (r1 ! x) (r2 ! x).
+Definition machine_rctx (r : MiniC.reg) : MachineC.reg :=
+  M.t_map_values minicet_val_to_machine r.
 
-Lemma eval_binop_inject p o v1 v1' v2 v2'
-    (INJ1: val_inject_s p v1 v1')
-    (INJ2: val_inject_s p v2 v2') :
-  val_inject_s p (eval_binop o v1 v2) (eval_binop o v1' v2').
-Proof.
-Admitted.
-
-Lemma eval_inject p r1 r2 e1 e2
-  (INJ: reg_inject p r1 r2)
-  (TRANS: machine_exp e1 = e2) :
-  val_inject_s p (MiniC.eval r1 e1) (MachineC.eval r2 e2).
-Proof.
-Admitted.
-
-(* common simulation *)
+Definition machine_mem (m : mem) : mem :=
+  map minicet_val_to_machine m.
 
 End SimCommon.
