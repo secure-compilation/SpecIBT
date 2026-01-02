@@ -16,10 +16,9 @@ Import MonadNotation.
 From SECF Require Import TestingLib.
 From SECF Require Import MiniCET TaintTracking MapsFunctor.
 
-Module MCC := MiniCETCommon(ListTotalMap).
-Module TS := TestingStrategies(MCC).
-Module TT := TaintTracking(MCC).
-Import MCC TS TT.
+Module Import MCC := MiniCETCommon(ListTotalMap).
+Module Import TS := TestingStrategies(MCC).
+Module Import TT := TaintTracking(MCC).
 
 Definition gen_dbr : G direction :=
   b <- arbitrary;; ret (DBranch b).

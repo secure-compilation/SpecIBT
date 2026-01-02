@@ -454,8 +454,7 @@ Fixpoint max n m := match n, m with
                    end.
 
 
-Module MCC := MiniCETCommon(ListTotalMap).
-Import MCC.
+#[local] Module Import MCC := MiniCETCommon(ListTotalMap).
 
 (*! Section testing_ETE *)
 
@@ -1365,12 +1364,14 @@ Definition gen_prog_and_unused_var : G (rctx * tmem * list nat * prog * string) 
     x <- elems_ "X0"%string unused_vars;;
     ret (c, tm, pst, p, x).
 
-Definition unused_var_no_leak (transform : rctx -> tmem -> prog -> prog) := (
+(* TODO YF: I think we need a TransformSemantics type class  *)
+Definition unused_var_no_leak 
+  (transform_prog : rctx -> tmem -> prog -> prog) := (
   forAll gen_prog_and_unused_var (fun '(c, tm, pst, p, unused_var) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
-  let p' := transform c tm p in
+  let p' := transform_prog c tm p in
   match stuck_free 100 p' icfg with
   | ETerm (_, _, tobs) os =>
       let (ids, mems) := split_sum_list tobs in

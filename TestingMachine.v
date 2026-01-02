@@ -68,8 +68,6 @@ Definition test_machine_branch_from_wf_minicet :=
 
 (*! QuickChick test_machine_branch_from_wf_minicet. *)
 
-Print cfg.
-
 Class Transform (A : Type) := mkTransform {
   transform : A -> A
 }.
@@ -87,7 +85,7 @@ Instance MachineReg : Transform reg := {
 }.
 
 Instance TransformPair {A B : Type} `{Transform A} `{Transform B}: Transform (A * B) := {
-  transform x := let '(a, b) := x in (transform a, transform b)
+  transform '(a, b) := (transform a, transform b)
 }.
 
 Instance TransformTuple {A B C : Type} `{Transform A} `{Transform B} `{Transform C}: Transform (A * B * C) := {
