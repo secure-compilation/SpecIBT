@@ -23,6 +23,7 @@ Require Import Stdlib.Classes.EquivDec.
 (* Imported straight from TestingStateIFC.v, so don't bother testing them. *)
 
 (* TERSE: HIDEFROMHTML *)
+
 Definition label := bool.
 
 Definition public : label := true.

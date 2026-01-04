@@ -37,6 +37,16 @@ From SECF Require Import sflib.
 (* 0 ~ length m - 1 : data area *)
 (* length m ~ length m + length p : code area *)
 
+(** Linearized machine level semantics *)
+Inductive ty : Type := TNum.
+
+Derive (Arbitrary, Shrink) for ty.
+Derive Show for ty.
+
+Definition ty_eqb (x y: ty) := match x, y with
+                               | TNum, TNum => true
+                               end.
+
 (* Aux function : move to Utils.v *)
 Fixpoint coord_to_flat_idx {X} (ll: list (list X)) (c: nat * nat) : option nat :=
   let '(a, b) := c in
@@ -95,7 +105,7 @@ Proof.
   - eapply IHll in Heq0. clarify.
 Qed.
 
-Definition pc_inj (p: prog) (pc: cptr) : option nat :=
+Definition pc_inj (p: MiniCET.prog) (pc: MiniCET.cptr) : option nat :=
   let fstp := map fst p in
   coord_to_flat_idx fstp pc.
 
@@ -125,11 +135,11 @@ Proof.
   eapply coord_to_flat_idx_inject; eauto.
 Qed.
 
-Definition pc_inj_inv (p: prog) (pc: nat) : option cptr :=
+Definition pc_inj_inv (p: MiniCET.prog) (pc: nat) : option cptr :=
   let fstp := map fst p in
   flat_idx_to_coord fstp pc.
 
-Definition flat_fetch (p: prog) (pc: nat) : option inst :=
+Definition flat_fetch (p: MiniCET.prog) (pc: nat) : option inst :=
   match pc_inj_inv p pc with
   | Some pc' => fetch p pc'
   | _ => None (* out-of-bound code access *)
@@ -138,7 +148,7 @@ Definition flat_fetch (p: prog) (pc: nat) : option inst :=
 (* Sanity Check *)
 (* lemma -> if pc is inbound -> pc_inj is a total function. *)
 Lemma pc_inj_total p pc i
-    (INBDD: fetch p pc = Some i) :
+  (INBDD: fetch p pc = Some i) :
   exists pc', pc_inj p pc = Some pc'.
 Proof.
   unfold pc_inj, MiniCET.fetch in *. destruct pc as (l & o).
@@ -155,6 +165,11 @@ Proof.
       apply IHp in INBDD. des. rewrite INBDD.
       exists (Datatypes.length (fst a) + pc'). auto.
 Qed.
+
+Definition prog := list inst.
+
+Definition fetch (p: prog) (pc: nat) : option inst :=
+  nth_error p pc.
 
 Inductive direction : Type :=
 | DBranch (b':bool)
@@ -174,7 +189,7 @@ Definition is_dcall (d:direction) : option nat :=
   | _ => None
   end.
 
-Definition val_injectb (p: prog) (vsrc vtgt: val) : bool :=
+Definition val_injectb (p: MiniCET.prog) (vsrc vtgt: val) : bool :=
   match vsrc, vtgt with
   | FP l, N n => match pc_inj p (l, 0) with
                 | Some n' => Nat.eqb n n'
@@ -185,7 +200,7 @@ Definition val_injectb (p: prog) (vsrc vtgt: val) : bool :=
   | _, _ => false
   end.
 
-Definition val_inject (p: prog) (vsrc vtgt: val) : Prop :=
+Definition val_inject (p: MiniCET.prog) (vsrc vtgt: val) : Prop :=
   match vsrc, vtgt with
   | FP l, N n => match pc_inj p (l, 0) with
                 | Some n' => (n = n')%nat
@@ -196,7 +211,14 @@ Definition val_inject (p: prog) (vsrc vtgt: val) : Prop :=
   | _, _ => False
   end.
 
-Module MachineCommon (M: TMap).
+(* To use common testing framework, we need to follow then common
+   semantics for testing (defined in MiniCET.v). But before that,
+   we need to parameterize the program in the common semantics.
+
+   I expect some troubleshooting will be needed, but to handle all
+   all the related issues at once, I've just defined the semantics for now. *)
+
+Module LinearCommon (M: TMap).
 
 Notation "'_' '!->' v" := (M.init v)
     (at level 100, right associativity).
@@ -207,6 +229,18 @@ Notation "m '!' x" := (M.t_apply m x)
 
 Definition reg := M.t val.
 Definition reg_init := M.init UV.
+Definition dir := direction.
+Definition dirs := dirs.
+Definition pc := nat.
+Definition cfg : Type := ((pc * reg)* mem) * list pc. (* (pc, register set, memory, stack frame) *)
+Definition spec_cfg : Type := ((cfg * bool) * bool).
+Definition ideal_cfg : Type := (cfg * bool)%type.
+Definition ipc: pc := 0.
+Definition istk: list pc := [].
+Definition icfg (ipc : pc) (ireg : reg) (mem : mem) (istk : list pc): cfg := 
+  (ipc, ireg, mem, istk).
+
+Definition fetch := Linear.fetch.
 
 Definition no_fp (r: reg) : Prop :=
   forall x, match (to_fp (r ! x)) with
@@ -227,15 +261,11 @@ Fixpoint eval (st : reg) (e: exp) : val :=
   | <{&l}> => N l
   end.
 
-Definition cfg : Type := ((nat*reg)*mem)*list nat. (* (pc, register set, memory, stack frame) *)
-
-Definition spec_cfg : Type := ((cfg * bool) * bool).
-
 (* ret with empty stackframe *)
 Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
   let '(c, ct, ms) := sc in
   let '(pc, rs, m, stk) := c in
-  match flat_fetch p pc with
+  match fetch p pc with
   | Some i => match i with
              | IRet => if seq.nilp stk then true else false (* Normal Termination *)
              | ICTarget => if ct
@@ -246,13 +276,155 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
   | None => false
   end.
 
-Definition ideal_cfg : Type := (cfg * bool)%type.
+Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
+  match sc with
+  | S_Running c =>
+      let '(pc, r, m, sk) := c in
+      match fetch p pc with
+      | Some i =>
+          match i with
+          | <{{skip}}> | <{{ctarget}}> =>
+              (S_Running (add pc 1, r, m, sk), [])
+          | <{{x:=e}}> =>
+              (S_Running (add pc 1, (x !-> eval r e; r), m, sk), [])
+          | <{{branch e to l}}> =>
+              match to_nat (eval r e) with
+              | Some n => let b := not_zero n in
+                         (S_Running (if b then l else add pc 1, r, m, sk), [OBranch b])
+              | None => (S_Undef, [])
+              end
+          | <{{jump l}}> =>
+              (S_Running (l, r, m, sk), [])
+          | <{{x<-load[e]}}> =>
+              match to_nat (eval r e) with
+              | Some n => match nth_error m n with
+                         | Some v' => (S_Running (add pc 1, (x !-> v'; r), m, sk), [OLoad n])
+                         | None => (S_Undef, [])
+                         end
+              | None => (S_Undef, [])
+              end
+          | <{{store[e]<-e'}}> =>
+              match to_nat (eval r e) with
+              | Some n => (S_Running (add pc 1, r, (upd n m (eval r e')), sk), [OStore n])
+              | None => (S_Undef, [])
+              end
+          | <{{call e}}> =>
+              match to_nat (eval r e) with
+              | Some l => (S_Running (l, r, m, (add pc 1)::sk), [OCall l]) (* Checking needed *)
+              | None => (S_Undef, [])
+              end
+          | <{{ret}}> =>
+              match sk with
+              | [] => (S_Term, [])
+              | pc'::stk' => (S_Running (pc', r, m, stk'), [])
+              end
+          end
+      | None => (S_Fault, [])
+      end
+  | s => (s, [])
+  end.
 
-End MachineCommon.
+(* Morally state+output monad hidden in here: step p >> steps f' p  *)
+Fixpoint steps (f:nat) (p:prog) (sc: state cfg) : (state cfg * obs) :=
+  match f with
+  | S f' =>
+      match sc with
+      | S_Running c =>
+          let '(c1, o1) := step p sc in
+          let '(c2, o2) := steps f' p c1 in
+          (c2, o1++o2)
+      | s => (s, [])
+      end
+  | 0 => (sc, [])
+  end.
+
+Definition spec_step (p:prog) (ssc: state spec_cfg) (ds: dirs) : (state spec_cfg * dirs * obs) :=
+  match ssc with
+  | S_Running sc =>
+      let '(c, ct, ms) := sc in
+      let '(pc, r, m, sk) := c in
+      match fetch p pc with
+      | None => untrace "lookup fail" (S_Undef, ds, [])
+      | Some i =>
+          match i with
+          | <{{branch e to l}}> =>
+              if ct
+              then (*untrace "ct set at branch"*) (S_Fault, ds, [])
+              else
+                match
+                  if seq.nilp ds then
+                    untrace "Branch: Directions are empty!" None
+                  else
+                    d <- hd_error ds;;
+                    b' <- is_dbranch d;;
+                    n <- to_nat (eval r e);;
+                    let b := not_zero n in
+                    let ms' := ms || negb (Bool.eqb b b') in
+                    let pc' := if b' then l else (add pc 1) in
+                    ret ((S_Running ((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
+                with
+                | None => untrace "branch fail" (S_Undef, ds, [])
+                | Some (c, ds, os) => (c, ds, os)
+                end
+          | <{{call e}}> =>
+              if ct
+              then (*untrace "ct set at call"*) (S_Fault, ds, [])
+              else
+                match
+                  if seq.nilp ds then
+                    untrace "Call: Directions are empty!" None
+                  else
+                    d <- hd_error ds;;
+                    pc' <- is_dcall d;;
+                    l <- to_nat (eval r e);;
+                    let ms' := ms || negb ((pc' =? l)%nat) in
+                    ret ((S_Running ((pc', r, m, (add pc 1)::sk), true, ms'), tl ds), [OCall l])
+                with
+                | None => untrace "call fail" (S_Undef, ds, [])
+                | Some (c, ds, os) => (c, ds, os)
+                end
+          | <{{ctarget}}> =>
+              match
+                is_true ct;;
+                (ret (S_Running ((add pc 1, r, m, sk), false, ms), ds, []))
+              with
+              | None => untrace "ctarget fail!" (S_Fault, ds, [])
+              | Some (c, ds, os) => (c, ds, os)
+              end
+          | _ =>
+              if ct then (*untrace ("ct set at " ++ show i)*) (S_Fault, ds, [])
+              else
+                match step p (S_Running c) with
+                | (S_Running c', o) => (S_Running (c', false, ms), ds, o)
+                | (S_Undef, o) => (S_Undef, ds, o)
+                | (S_Fault, o) => (S_Fault, ds, o)
+                | (S_Term, o) => (S_Term, ds, o)
+                end
+          end
+      end
+  | s => (s, ds, [])
+  end.
+
+Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds:dirs)
+  : (state spec_cfg * dirs * obs) :=
+  match f with
+  | S f' =>
+      match sc with
+      | S_Running c =>
+          let '(c1,ds1,o1) := spec_step p sc ds in
+          let '(c2,ds2,o2) := spec_steps f' p c1 ds1 in
+          (c2,ds2,o1++o2)
+      | s => (s, ds, [])
+      end
+  | 0 => (sc, ds, []) (* JB: executing for 0 steps should be just the identity... *)
+          (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
+    end.
+
+End LinearCommon.
 
 (* transformation *)
 
-Fixpoint machine_exp (p: prog) (e: exp) : option exp :=
+Fixpoint machine_exp (p: MiniCET.prog) (e: exp) : option exp :=
   match e with
   | ANum _ | AId _ => Some e
   | FPtr l => match pc_inj p (l, 0) with
@@ -269,7 +441,7 @@ Fixpoint machine_exp (p: prog) (e: exp) : option exp :=
                      end
   end.
 
-Definition machine_inst (p: prog) (i: inst) : option inst :=
+Definition machine_inst (p: MiniCET.prog) (i: inst) : option inst :=
   match i with
   | <{{branch e to l}}> =>
     match machine_exp p e, pc_inj p (l, 0) with
@@ -311,29 +483,30 @@ Definition transpose {X : Type} (l : list (option X)) : option (list X) :=
                 | _, _ => None
                 end) (Some nil) l.
 
-Definition machine_blk (p: prog) (blk: (list inst * bool)) : option (list inst * bool) :=
+Definition machine_blk (p: MiniCET.prog) (blk: (list inst * bool)) : option (list inst) :=
   let ob := map (machine_inst p) (fst blk) in
-  match transpose ob with
-  | Some ob' => Some (ob', snd blk)
+  transpose ob.
+
+Definition machine_prog (p: MiniCET.prog) : option prog :=
+  let op := map (machine_blk p) p in
+  let op' := transpose op in
+  match op' with
+  | Some lp => Some (List.concat lp)
   | _ => None
   end.
-
-Definition machine_prog (p: prog) : option prog :=
-  let op := map (machine_blk p) p in
-  transpose op.
 
 Module SimCommon (M: TMap).
 
 Module MiniC := MiniCETCommon(M).
 Import MiniC.
 
-Module MachineC := MachineCommon(M).
-Import MachineC.
+Module LinearC := LinearCommon(M).
+Import LinearC.
 
 Definition regs := MiniC.reg.
-Definition regt := MachineC.reg.
+Definition regt := LinearC.reg.
 
-Definition reg_inject (p: prog) (r1: regs) (r2: regt) : Prop :=
+Definition reg_inject (p: MiniCET.prog) (r1: regs) (r2: regt) : Prop :=
   forall x, val_inject p (r1 ! x) (r2 ! x).
 
 Lemma eval_binop_inject p o v1 v1' v2 v2'
@@ -353,7 +526,7 @@ Qed.
 Lemma eval_inject p r1 r2 e1 e2
   (INJ: reg_inject p r1 r2)
   (TRANS: machine_exp p e1 = Some e2) :
-  val_inject p (MiniC.eval r1 e1) (MachineC.eval r2 e2).
+  val_inject p (MiniC.eval r1 e1) (LinearC.eval r2 e2).
 Proof.
   ginduction e1; ss; ii; clarify.
   - des_ifs. ss.

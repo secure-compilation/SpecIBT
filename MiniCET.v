@@ -687,6 +687,7 @@ Module Type Semantics(M : TMap).
          I think we discussed separating this part as common
          code in the previous meeting. This can be applied to
          all languages in our project, not just for MiniCET testing. *)
+  (* Parameter prog: Type. *)
   Parameter pc : Type.
   Definition reg := M.t val.
   Definition cfg : Type := ((pc * reg) * mem) * list pc.
@@ -719,6 +720,7 @@ Notation "x '!->' v ';' m" := (M.t_update m x v)
 Notation "m '!' x" := (M.t_apply m x)
     (at level 20, left associativity).
 
+(* Definition prog := prog. *)
 Definition reg := M.t val.
 Definition reg_init := M.init UV.
 

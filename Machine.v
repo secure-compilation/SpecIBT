@@ -71,6 +71,7 @@ Notation "x '!->' v ';' m" := (M.t_update m x v)
 Notation "m '!' x" := (M.t_apply m x)
     (at level 20, left associativity).
 
+(* Definition prog := MiniCET.prog. *)
 Definition reg := M.t val.
 Definition reg_init := M.init UV.
 
