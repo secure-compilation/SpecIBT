@@ -681,6 +681,12 @@ Proof.
 Defined.
 
 Module Type Semantics(M : TMap).
+
+  (* YH: This part is the common code that all semantics share.
+         This means it can be used for both testing and proofs.
+         I think we discussed separating this part as common
+         code in the previous meeting. This can be applied to
+         all languages in our project, not just for MiniCET testing. *)
   Parameter pc : Type.
   Definition reg := M.t val.
   Definition cfg : Type := ((pc * reg) * mem) * list pc.
@@ -695,6 +701,9 @@ Module Type Semantics(M : TMap).
 
   Parameter eval : reg -> exp -> val.
   Parameter fetch : prog -> pc -> option inst.
+
+  (* YH: This part is only for testing. This part can also be used for
+         testing all languages, not just for MiniCET testing. *)
   Parameter step : prog -> state cfg -> state cfg * obs.
   Parameter steps : nat -> prog -> state cfg -> state cfg * obs.
   Parameter spec_step : prog -> state spec_cfg -> dirs -> state spec_cfg * dirs * obs.
