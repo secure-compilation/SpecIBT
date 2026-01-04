@@ -133,7 +133,7 @@ Proof.
     + unfold pc_sync. simpl. rewrite CT. destruct blk.
       { admit. (* nonempty *) }
       simpl. eauto.
-    + red in REG0. econs.
+    + red in REG. econs.
       * i. des. admit.
       * rewrite t_update_eq. eauto.
   (* call *)
@@ -153,13 +153,13 @@ Proof.
       { admit. }
       des. esplits.
       * do 2 econs; eauto.
-        inv REG0.
+        inv REG.
         rewrite <- H8. simpl. rewrite H2. destruct ms; ss.
         admit.
       * eapply match_cfgs_ext_ct1; eauto.
-        { red. inv REG0. eauto. }
-        { inv REG0. admit. }
-        inv REG0. simpl. rewrite MS. ss. rewrite H2.
+        { red. inv REG. eauto. }
+        { inv REG. admit. }
+        inv REG. simpl. rewrite MS. ss. rewrite H2.
         destruct ms; ss.
         { des_ifs. }
         { rewrite H2 in H8. ss. unfold to_fp in H8. des_ifs_safe.
