@@ -14,6 +14,7 @@ Module Type TMap.
   Parameter init: forall {A: Type}, A -> t A.
   Parameter t_apply: forall {A: Type}, t A -> string -> A.
   Parameter t_update: forall {A: Type}, t A -> string -> A -> t A.
+  Parameter t_map_values : forall {A B : Type}, (A -> B) -> t A -> t B.
 
   Axiom t_update_eq : forall {A : Type} (m : t A) x v,
     t_apply (t_update m x v) x = v.
@@ -30,6 +31,8 @@ Module TotalMap <: TMap.
   Definition init := @Maps.t_empty.
   Definition t_apply {A: Type} (m: t A) (i: string) : A := m i.
   Definition t_update {A: Type} (m: t A) (i: string) (v: A) := Maps.t_update m i v.
+  Definition t_map_values {A B : Type} (f : A -> B) (m : t A) : t B := 
+    fun k => f (m k).
 
   Lemma t_update_eq : forall {A : Type} (m : t A) x v,
     t_apply (t_update m x v) x = v.
@@ -48,6 +51,9 @@ Module ListTotalMap <: TMap.
   Definition init := @ListMaps.t_empty.
   Definition t_apply {A: Type} (m: t A) (i: string) : A := ListMaps.apply m i.
   Definition t_update {A: Type} (m: t A) (i: string) (v: A) := ListMaps.t_update m i v.
+  Definition t_map_values {A B : Type} (f : A -> B) (m : t A) : t B := 
+    let '(d, m) := m in
+    (f d, map (fun '(k, v) => (k, f v)) m).
 
   Lemma t_update_eq : forall {A : Type} (m : t A) x v,
     t_apply (t_update m x v) x = v.
@@ -59,4 +65,3 @@ Module ListTotalMap <: TMap.
   Proof. intros. rewrite ListMaps.t_update_neq; auto. Qed.
 
 End ListTotalMap.
-

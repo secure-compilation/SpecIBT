@@ -44,7 +44,7 @@ Definition sum_eqb (s1 s2 : (reg_id + mem_addr)) : bool :=
 
 Definition join_taints t1 t2 := remove_dupes sum_eqb (t1 ++ t2).
 
-Module TaintTracking (ST: Semantics).
+Module TaintTracking (Import ST: Semantics ListTotalMap).
 
 Definition tcptr := taint.
 Definition treg := ListTotalMap.t taint.
@@ -176,7 +176,7 @@ Definition taint_step (i: inst) (c: ST.cfg) (tc: tcfg) (tobs: taint) (tctx: tain
       end
   end.
 
-Definition get_ctx (rs: ST.REG) (i: inst) : option taint_ctx  :=
+Definition get_ctx (rs: ST.reg) (i: inst) : option taint_ctx  :=
   match i with
   | <{ x <- load[e] }> => n <- to_nat (ST.eval rs e);;
                         Some (CMem n)
@@ -241,5 +241,24 @@ Fixpoint _init_taint_mem (m: mem) (n: nat) : tamem :=
 
 Definition init_taint_mem (m: mem) : tamem :=
   _init_taint_mem m 0.
+
+Definition taint_tracking (f : nat) (p : prog) (c: cfg)
+  : option (obs * list string * list nat) :=
+  let '(pc, rs, m, ts) := c in
+  let tpc := [] in
+  let trs := ([], map (fun x => (x,[@inl reg_id mem_addr x])) (map_dom (snd rs))) in
+  let tm := init_taint_mem m in
+  let ts := [] in
+  let tc := (tpc, trs, tm, ts) in
+  let ist := (c, tc, []) in
+  match (steps_taint_track f p ist []) with
+    (* JB: also return the (partial) trace in the oof case, even if the taint tracking won't be sound in this case. *)
+    (* This should be fine if the speculative execution does not get more fuel than the sequential one *)
+  | ETerm (_, _, tobs) os | EOutOfFuel (_, _, tobs) os =>
+      let (ids, mems) := split_sum_list tobs in
+      Some (os, remove_dupes String.eqb ids,
+                remove_dupes Nat.eqb mems)
+  | _ => None
+  end.
 
 End TaintTracking.

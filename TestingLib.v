@@ -15,7 +15,7 @@ Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Data.List.
 Import MonadNotation.
 From Stdlib Require Import String.
-From SECF Require Import ListMaps MapsFunctor MiniCET Utils TaintTrackingMiniCET.
+From SECF Require Import ListMaps MapsFunctor MiniCET Utils TaintTracking.
 Require Import Stdlib.Classes.EquivDec.
 
 (** ** Type system for cryptographic constant-time programming *)
@@ -454,8 +454,7 @@ Fixpoint max n m := match n, m with
                    end.
 
 
-Module MCC := MiniCETCommon(ListTotalMap).
-Import MCC.
+#[local] Module Import MCC := MiniCETCommon(ListTotalMap).
 
 (*! Section testing_ETE *)
 
@@ -1078,8 +1077,6 @@ Definition gen_wt_mem (tm: tmem) (pst: list nat) : G mem :=
 
 (** Some common definitions *)
 
-Definition ipc : cptr := (0 , 0).
-Definition istk : list cptr := [].
 Definition all_possible_vars : list string := (["X0"%string; "X1"%string; "X2"%string; "X3"%string; "X4"%string; "X5"%string]).
 
 Fixpoint member (n: nat) (l: list nat) : bool :=
@@ -1192,25 +1189,32 @@ Definition empty_rs : reg := t_empty (FP 0).
 
 (** Tests for Speculative Execution *)
 
-Derive Show for direction.
 Derive Show for observation.
 
 Definition spec_rs (rs: reg) := (callee !-> (FP 0); (msf !-> (N 0); rs)).
 
-(* ** Direction generators *)
+(** * Reusable testing strategies, which are based on generators from this library.  *)
 
+Module TestingStrategies(Import ST : Semantics ListTotalMap).
+(* Extract Constant defNumTests => "1000000". *)
+
+Module Import MTT := TaintTracking(ST).
+
+(* ** Direction generators *)
+(* 
 Definition gen_dbr : G direction :=
   b <- arbitrary;; ret (DBranch b).
 
 Definition gen_dcall (pst: list nat) : G direction :=
-  l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
+  l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)). *)
 
 Variant sc_output_st : Type :=
   | SRStep : obs -> dirs -> spec_cfg -> sc_output_st
   | SRError : obs -> dirs -> spec_cfg -> sc_output_st
   | SRTerm : obs -> dirs -> spec_cfg -> sc_output_st.
 
-Definition gen_step_direction (i: inst) (c: cfg) (pst: list nat) : G dirs :=
+Definition gen_step_direction (i: inst) (c: cfg) (pst: list nat)
+  (gen_dbr : G dir) (gen_dcall : list nat -> G dir) : G dirs :=
   let '(pc, rs, m, s) := c in
   match i with
   | <{ branch e to l }> => db <- gen_dbr;; ret [db]
@@ -1218,10 +1222,11 @@ Definition gen_step_direction (i: inst) (c: cfg) (pst: list nat) : G dirs :=
   | _ => ret []
   end.
 
-Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) : G sc_output_st :=
+Definition gen_spec_step (p:prog) (sc:spec_cfg) (pst: list nat) 
+  (gen_dbr : G dir) (gen_dcall : list nat -> G dir): G sc_output_st :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
-  match p[[pc]] with
+  match fetch p pc with
   | Some i =>
       match i with
       | <{{branch e to l}}> =>
@@ -1256,7 +1261,7 @@ Variant spec_exec_result : Type :=
   | SEError (sc: spec_cfg) (os: obs) (ds: dirs)
   | SEOutOfFuel (sc: spec_cfg) (os: obs) (ds: dirs).
 
-#[export] Instance showSER : Show spec_exec_result :=
+#[export] Instance showSER `{Show dir} : Show spec_exec_result :=
   {show :=fun ser => 
       match ser with
       | SETerm sc os ds => show ds
@@ -1265,14 +1270,15 @@ Variant spec_exec_result : Type :=
       end
   }.
 
-Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) (os: obs) (ds: dirs) : G (spec_exec_result) :=
+Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc: spec_cfg) (os: obs) (ds: dirs) 
+  (gen_dbr : G dir) (gen_dcall : list nat -> G dir) : G (spec_exec_result) :=
   match f with
   | 0 => ret (SEOutOfFuel sc os ds)
   | S f' =>
-      sr <- gen_spec_step p sc pst;;
+      sr <- gen_spec_step p sc pst gen_dbr gen_dcall;;
       match sr with
       | SRStep os1 ds1 sc1 =>
-          _gen_spec_steps_sized f' p pst sc1 (os ++ os1) (ds ++ ds1)
+          _gen_spec_steps_sized f' p pst sc1 (os ++ os1) (ds ++ ds1) gen_dbr gen_dcall
       | SRError os1 ds1 sc1 =>
           (* trace ("ERROR STATE: " ++ show sc1)%string *)
           (ret (SEError sc1 (os ++ os1) (ds ++ ds1)))
@@ -1281,8 +1287,9 @@ Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) 
       end
   end.
 
-Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) : G (spec_exec_result) :=
-  _gen_spec_steps_sized f p pst sc [] [].
+Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) 
+  (gen_dbr : G dir) (gen_dcall : list nat -> G dir) : G (spec_exec_result) :=
+  _gen_spec_steps_sized f p pst sc [] [] gen_dbr gen_dcall.
 
 (* Speculative Step functions *)
 Definition spec_step_acc (p:prog) (sc:spec_cfg) (ds: dirs) : sc_output_st :=
@@ -1308,16 +1315,6 @@ Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (os: obs) (ds: dirs) :
 
 Definition spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (ds: dirs) : spec_exec_result :=
   _spec_steps_acc f p sc [] ds.
-
-(* Extract Constant defNumTests => "1000000". *)
-
-(** * Reusable testing strategies, which are based on generators from this library.  *)
-
-Module TestingStrategies.
-
-Module MCC := MiniCETCommon(ListTotalMap).
-Module MTT := TaintTracking(MCC).
-Import MCC MTT.
 
 Definition load_store_trans_basic_blk := (
     forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
@@ -1347,25 +1344,6 @@ Definition load_store_trans_stuck_free := (
   | EError st os => printTestCase (show p' ++ nl) (checker false)
   end)))).
 
-Definition taint_tracking (f : nat) (p : prog) (c: cfg)
-  : option (obs * list string * list nat) :=
-  let '(pc, rs, m, ts) := c in
-  let tpc := [] in
-  let trs := ([], map (fun x => (x,[@inl reg_id mem_addr x])) (map_dom (snd rs))) in
-  let tm := init_taint_mem m in
-  let ts := [] in
-  let tc := (tpc, trs, tm, ts) in
-  let ist := (c, tc, []) in
-  match (steps_taint_track f p ist []) with
-    (* JB: also return the (partial) trace in the oof case, even if the taint tracking won't be sound in this case. *)
-    (* This should be fine if the speculative execution does not get more fuel than the sequential one *)
-  | ETerm (_, _, tobs) os | EOutOfFuel (_, _, tobs) os =>
-      let (ids, mems) := split_sum_list tobs in
-      Some (os, remove_dupes String.eqb ids,
-                remove_dupes Nat.eqb mems)
-  | _ => None
-  end.
-
 Definition no_obs_prog_no_obs := (
   forAll gen_no_obs_prog (fun p =>
   let icfg := (ipc, empty_rs, empty_mem, istk) in
@@ -1386,12 +1364,14 @@ Definition gen_prog_and_unused_var : G (rctx * tmem * list nat * prog * string) 
     x <- elems_ "X0"%string unused_vars;;
     ret (c, tm, pst, p, x).
 
-Definition unused_var_no_leak (transform : rctx -> tmem -> prog -> prog) := (
+(* TODO YF: I think we need a TransformSemantics type class  *)
+Definition unused_var_no_leak 
+  (transform_prog : rctx -> tmem -> prog -> prog) := (
   forAll gen_prog_and_unused_var (fun '(c, tm, pst, p, unused_var) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
-  let p' := transform c tm p in
+  let p' := transform_prog c tm p in
   match stuck_free 100 p' icfg with
   | ETerm (_, _, tobs) os =>
       let (ids, mems) := split_sum_list tobs in
@@ -1425,7 +1405,6 @@ Definition gen_reg_wt_is_wt := (
   forAll (gen_prog_ty_ctx_wt' 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs => rs_wtb rs c))).
 
-
 Definition gen_pub_mem_equiv_is_pub_equiv := (forAll gen_pub_mem (fun P =>
     forAll gen_mem (fun s1 =>
     forAll (gen_pub_mem_equiv_same_ty P s1) (fun s2 =>
@@ -1458,7 +1437,9 @@ Definition test_ni (transform : rctx -> tmem -> prog -> prog) := (
    | None => checker tt (* discard *)
   end)))).
 
-Definition test_safety_preservation (harden : prog -> prog) := (
+Definition test_safety_preservation `{Show dir} 
+  (harden : prog -> prog) 
+  (gen_dbr : G dir) (gen_dcall : list nat -> G dir) := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
@@ -1469,7 +1450,7 @@ Definition test_safety_preservation (harden : prog -> prog) := (
   let icfg' := (ipc, rs', m, istk) in
   let iscfg := (icfg', true, false) in
   let h_pst := pst_calc harden in
-  forAll (gen_spec_steps_sized 200 harden h_pst iscfg) (fun ods =>
+  forAll (gen_spec_steps_sized 200 harden h_pst iscfg gen_dbr gen_dcall) (fun ods =>
   (match ods with
    | SETerm sc os ds => checker true
    | SEError (c', _, _) _ ds => checker false
@@ -1477,7 +1458,9 @@ Definition test_safety_preservation (harden : prog -> prog) := (
    end))
   )))).
 
-Definition test_relative_security (harden : prog -> prog) := (
+Definition test_relative_security `{Show dir} 
+  (harden : prog -> prog) 
+  (gen_dbr : G dir) (gen_dcall : list nat -> G dir) := (
   (* TODO: should make sure shrink indeed satisfies invariants of generator;
            or define a better shrinker *)
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
@@ -1502,7 +1485,7 @@ Definition test_relative_security (harden : prog -> prog) := (
                 let icfg1' := (ipc, rs1', m1, istk) in
                 let iscfg1' := (icfg1', true, false) in
                 let h_pst := pst_calc harden in
-                forAll (gen_spec_steps_sized 1000 harden h_pst iscfg1') (fun ods1 =>
+                forAll (gen_spec_steps_sized 1000 harden h_pst iscfg1' gen_dbr gen_dcall) (fun ods1 =>
                 (match ods1 with
                  | SETerm _ os1 ds =>
                      (* checker true *)
@@ -1533,6 +1516,5 @@ Definition test_relative_security (harden : prog -> prog) := (
       end))
    | None => collect "tt1 failed"%string (checker tt) (* discard *)
   end)))).
-
 
 End TestingStrategies.
