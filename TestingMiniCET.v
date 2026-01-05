@@ -13,20 +13,24 @@ Set Default Goal Selector "!".
 From QuickChick Require Import QuickChick Tactics.
 Import QcNotation QcDefaultNotation. Open Scope qc_scope.
 Import MonadNotation.
-From SECF Require Import TestingLib.
-From SECF Require Import MiniCET TaintTracking MapsFunctor.
+From SECF Require Import MiniCET TaintTracking MapsFunctor TestingLib TestingSemantics.
 
-Module Import MCC := MiniCETCommon(ListTotalMap).
+Module Import MCC := MiniCETSemantics(ListTotalMap).
 Module Import TS := TestingStrategies(MCC).
 Module Import TT := TaintTracking(MCC).
 
-Definition gen_dbr : G direction :=
+Definition gen_dbr : G dir :=
   b <- arbitrary;; ret (DBranch b).
 
-Definition gen_dcall (pst: list nat) : G direction :=
+Definition gen_dcall (pst: list nat) : G dir :=
   l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
 
-Derive Show for direction.
+Instance ShowDirection : Show dir := {
+  show dir := match dir with 
+    | DBranch b => ("DBranch " ++ show b)%string
+    | DCall cptr => ("DCall " ++ show cptr)%string 
+  end
+}.
 
 (* Extract Constant defNumTests => "1000000". *)
 

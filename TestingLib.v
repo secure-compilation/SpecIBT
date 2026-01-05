@@ -15,7 +15,7 @@ Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Data.List.
 Import MonadNotation.
 From Stdlib Require Import String.
-From SECF Require Import ListMaps MapsFunctor MiniCET Utils TaintTracking.
+From SECF Require Import ListMaps MapsFunctor MiniCET Utils TaintTracking TestingSemantics.
 Require Import Stdlib.Classes.EquivDec.
 
 (** ** Type system for cryptographic constant-time programming *)
@@ -455,7 +455,7 @@ Fixpoint max n m := match n, m with
                    end.
 
 
-#[local] Module Import MCC := MiniCETCommon(ListTotalMap).
+Local Module Import MCC := MiniCETCommon(ListTotalMap).
 
 (*! Section testing_ETE *)
 

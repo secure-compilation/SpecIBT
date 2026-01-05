@@ -5,26 +5,21 @@ Import QcNotation QcDefaultNotation. Open Scope qc_scope.
 
 From Stdlib Require Import List. Import ListNotations.
 
-Require Export ExtLib.Structures.Monads.
-Require Import ExtLib.Structures.Traversable.
-Require Import ExtLib.Data.List.
-Require Import ExtLib.Data.Monads.OptionMonad.
-Import MonadNotation. Open Scope monad_scope.
-
 From SECF Require Import 
   Utils
-  ListMaps
-  MapsFunctor
-  MiniCET
   Machine
+  MiniCET
+  ListMaps
   TaintTracking
-  TestingLib.
+  TestingLib
+  MapsFunctor
+  TestingSemantics.
 
 Import MonadNotation.
 Local Open Scope monad_scope.
 (* Executable Semantics for testing *)
 
-Module Import MCC := MachineCommon(ListTotalMap).
+Module Import MCC := MachineSemantics(ListTotalMap).
 Module Import TS := TestingStrategies(MCC).
 Module Import TT := TaintTracking(MCC).
 Module Import SC := SimCommon(ListTotalMap).
@@ -32,10 +27,15 @@ Module Import SC := SimCommon(ListTotalMap).
 Definition gen_dbr : G dir :=
   b <- arbitrary;; ret (DBranch b).
 
-Definition gen_dcall (pst: list nat) : G direction :=
+Definition gen_dcall (pst: list nat) : G dir :=
   l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
 
-Derive Show for direction.
+Instance ShowDirection : Show dir := {
+  show dir := match dir with 
+    | DBranch b => ("DBranch " ++ show b)%string
+    | DCall cptr => ("DCall " ++ show cptr)%string 
+  end
+}.
 
 (* Find the condition that make machine_prog total function. I guess its wf. *)
 (* Port existing tests from TestingMiniCET and Define some sanity checks for machine langauge. *)
@@ -68,28 +68,28 @@ Definition test_machine_branch_from_wf_minicet :=
 
 (*! QuickChick test_machine_branch_from_wf_minicet. *)
 
-Class Transform (A : Type) := mkTransform {
-  transform : A -> A
+Class Injection (A : Type) := mkInjection {
+  inject : A -> A
 }.
 
-Instance MachineProg : Transform prog := {
-  transform p := machine_prog p
+Instance MachineProg : Injection prog := {
+  inject p := machine_prog p
 }.
 
-Instance MachineMem : Transform mem := {
-  transform m := machine_mem m
+Instance MachineMem : Injection mem := {
+  inject m := machine_mem m
 }.
 
-Instance MachineReg : Transform reg := {
-  transform r := machine_rctx r
+Instance MachineReg : Injection reg := {
+  inject r := machine_rctx r
 }.
 
-Instance TransformPair {A B : Type} `{Transform A} `{Transform B}: Transform (A * B) := {
-  transform '(a, b) := (transform a, transform b)
+Instance TransformPair {A B : Type} `{Injection A} `{Injection B}: Injection (A * B) := {
+  inject '(a, b) := (inject a, inject b)
 }.
 
-Instance TransformTuple {A B C : Type} `{Transform A} `{Transform B} `{Transform C}: Transform (A * B * C) := {
-  transform '(a, b, c) := (transform a, transform b, transform c)
+Instance TransformTuple {A B C : Type} `{Injection A} `{Injection B} `{Injection C}: Injection (A * B * C) := {
+  inject '(a, b, c) := (inject a, inject b, inject c)
 }.
 
 Definition stuck_free (f : nat) (p : prog) (c: cfg) : exec_result :=
@@ -102,12 +102,12 @@ Definition stuck_free (f : nat) (p : prog) (c: cfg) : exec_result :=
   let ist := (c, tc, []) in
   steps_taint_track f p ist [].
 
-Definition load_store_trans_stuck_free `{Transform (prog * mem * reg)} := (
+Definition load_store_trans_stuck_free `{Injection (prog * mem * reg)} := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let p := transform_load_store_prog c tm p in
-  let '(p, m, rs)  := transform (p, m, rs) in 
+  let '(p, m, rs)  := inject (p, m, rs) in 
   let icfg := (ipc, rs, m, istk) in
   let r1 := stuck_free 1000 (machine_prog p) icfg in
   match r1 with
@@ -116,15 +116,15 @@ Definition load_store_trans_stuck_free `{Transform (prog * mem * reg)} := (
   | EError st os => printTestCase (show p ++ nl) (checker false)
   end)))).
 
-QuickChick load_store_trans_stuck_free.
+(*! QuickChick load_store_trans_stuck_free. *)
 (* +++ Passed 10000 tests (6286 discards) *)
 
-Definition unused_var_no_leak `{Transform (prog * mem * reg)} := (
+Definition unused_var_no_leak `{Injection (prog * mem * reg)} := (
   forAll gen_prog_and_unused_var (fun '(c, tm, pst, p, unused_var) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let p := transform_load_store_prog c tm p in
-  let '(p, m, rs) := transform (p, m, rs) in
+  let '(p, m, rs) := inject (p, m, rs) in
   let icfg := (ipc, rs, m, istk) in
   match stuck_free 100 p icfg with
   | ETerm (_, _, tobs) os =>
@@ -135,15 +135,15 @@ Definition unused_var_no_leak `{Transform (prog * mem * reg)} := (
   | EError st os => checker false
   end)))).
 
-QuickChick unused_var_no_leak.
+(*! QuickChick unused_var_no_leak. *)
 (* +++ Passed 10000 tests (8072 discards) *)
 
-Definition test_ni `{Transform (prog * mem * reg)} := (
+Definition test_ni `{Injection (prog * mem * reg)} := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let p := transform_load_store_prog c tm p in
-  let '(p, m, rs) := transform (p, m, rs) in
+  let '(p, m, rs) := inject (p, m, rs) in
   let icfg := (ipc, rs, m, istk) in
   let r1 := taint_tracking 100 p icfg in
   match r1 with
@@ -152,7 +152,7 @@ Definition test_ni `{Transform (prog * mem * reg)} := (
       let PM := tms_to_pm (Datatypes.length m) tms in
       forAll (gen_pub_equiv_same_ty P rs) (fun rs' =>
       forAll (gen_pub_mem_equiv_same_ty PM m) (fun m' =>
-      let (m', rs') := transform (m', rs') in
+      let (m', rs') := inject (m', rs') in
       let icfg' := (ipc, rs', m', istk) in
       let r2 := taint_tracking 100 p icfg' in
       match r2 with
@@ -162,7 +162,7 @@ Definition test_ni `{Transform (prog * mem * reg)} := (
    | None => checker tt (* discard *)
   end)))).
 
-QuickChick test_ni.
+(*! QuickChick test_ni. *)
 (* +++ Passed 10000 tests (0 discards) *)
 
 (* 
@@ -172,18 +172,33 @@ QuickChick test_ni.
   * runs speculative step on block-based Machine program
 *)
 
-Definition test_safety_preservation `{Show dir} `{Transform (prog * mem * reg)}
-  (gen_dbr : G dir) (gen_dcall : list nat -> G dir) := (
+Class SmartGen (A : Type) := mkSmartGen {
+  sgen : list nat -> G A
+}.
+
+Instance CallDirGen : SmartGen dir := {
+  sgen := gen_dcall
+}.
+
+Instance BranchDirGen : Gen dir := {
+  arbitrary := gen_dbr
+}.
+
+Definition test_safety_preservation 
+  `{Show dir} 
+  `{Injection (prog * mem * reg)} 
+  `{SmartGen dir} 
+  `{Gen dir} := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let p := transform_load_store_prog c tm p in
   let harden := uslh_prog p in
-  let '(harden, m, rs) := transform (harden, m, spec_rs rs) in
+  let '(harden, m, rs) := inject (harden, m, spec_rs rs) in
   let icfg := (ipc, rs, m, istk) in
   let iscfg := (icfg, true, false) in
   let h_pst := pst_calc harden in
-  forAll (gen_spec_steps_sized 200 harden h_pst iscfg gen_dbr gen_dcall) (fun ods =>
+  forAll (gen_spec_steps_sized 200 harden h_pst iscfg (@arbitrary dir _) (@sgen dir _)) (fun ods =>
   (match ods with
    | SETerm sc os ds => checker true
    | SEError (c', _, _) _ ds => checker false
@@ -191,7 +206,7 @@ Definition test_safety_preservation `{Show dir} `{Transform (prog * mem * reg)}
    end))
   )))).
 
-QuickChick (test_safety_preservation gen_dbr gen_dcall).
+(*! QuickChick test_safety_preservation. *)
 (* +++ Passed 10000 tests (4236 discards) *)
 
 (* 
@@ -201,13 +216,16 @@ QuickChick (test_safety_preservation gen_dbr gen_dcall).
   * runs speculative step on block-based Machine program
 *)
 
-Definition test_relative_security `{Show dir} `{Transform (prog * mem * reg)}
-  (gen_dbr : G dir) (gen_dcall : list nat -> G dir) := (
+Definition test_relative_security 
+  `{Show dir} 
+  `{Injection (prog * mem * reg)}
+  `{SmartGen dir} 
+  `{Gen dir} := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 =>
   forAll (gen_wt_mem tm pst) (fun m1 =>
   let p := transform_load_store_prog c tm p in
-  let '(p, m1, rs1) := transform (p, m1, rs1) in
+  let '(p, m1, rs1) := inject (p, m1, rs1) in
   let icfg1 := (ipc, rs1, m1, istk) in
   let r1 := taint_tracking 1000 p icfg1 in
   match r1 with
@@ -222,15 +240,15 @@ Definition test_relative_security `{Show dir} `{Transform (prog * mem * reg)}
       | Some (os2', _, _) =>
           if (obs_eqb os1' os2') (* The source program produces the same leakage for a pair of inputs. *)
           then (let harden := uslh_prog p in
-                let rs1' := transform (spec_rs rs1) in
+                let rs1' := inject (spec_rs rs1) in
                 let icfg1' := (ipc, rs1', m1, istk) in
                 let iscfg1' := (icfg1', true, false) in
                 let h_pst := pst_calc harden in
-                forAll (gen_spec_steps_sized 1000 harden h_pst iscfg1' gen_dbr gen_dcall) (fun ods1 =>
+                forAll (gen_spec_steps_sized 1000 harden h_pst iscfg1' arbitrary sgen) (fun ods1 =>
                 (match ods1 with
                  | SETerm _ os1 ds =>
                      (* checker true *)
-                     let rs2' := transform (spec_rs rs2) in
+                     let rs2' := inject (spec_rs rs2) in
                      let icfg2' := (ipc, rs2', m2, istk) in
                      let iscfg2' := (icfg2', true, false) in
                      let sc_r2 := spec_steps_acc 1000 harden iscfg2' ds in
@@ -240,7 +258,7 @@ Definition test_relative_security `{Show dir} `{Transform (prog * mem * reg)}
                      | _ => collect "2nd speculative execution fails!"%string (checker tt) (* discard -- doesn't seem to happen *)
                      end
                  | SEOutOfFuel _ os1 ds => 
-                     let rs2' := transform (spec_rs rs2) in
+                     let rs2' := inject (spec_rs rs2) in
                      let icfg2' := (ipc, rs2', m2, istk) in
                      let iscfg2' := (icfg2', true, false) in
                      let sc_r2 := spec_steps_acc 1000 harden iscfg2' ds in
@@ -258,5 +276,5 @@ Definition test_relative_security `{Show dir} `{Transform (prog * mem * reg)}
    | None => collect "tt1 failed"%string (checker tt) (* discard *)
   end)))).
 
-QuickChick (test_relative_security gen_dbr gen_dcall).
+(*! QuickChick test_relative_security. *)
 (* +++ Passed 10000 tests (0 discards) *)
