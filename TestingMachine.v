@@ -13,7 +13,8 @@ From SECF Require Import
   TaintTracking
   TestingLib
   MapsFunctor
-  TestingSemantics.
+  TestingSemantics
+  TestingMiniCETSync.
 
 Import MonadNotation.
 Local Open Scope monad_scope.
@@ -30,7 +31,7 @@ Definition gen_dbr : G dir :=
 Definition gen_dcall (pst: list nat) : G dir :=
   l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
 
-Instance ShowDirection : Show dir := {
+#[global] Instance ShowDirection : Show dir := {
   show dir := match dir with 
     | DBranch b => ("DBranch " ++ show b)%string
     | DCall cptr => ("DCall " ++ show cptr)%string 
@@ -72,23 +73,23 @@ Class Injection (A : Type) := mkInjection {
   inject : A -> A
 }.
 
-Instance MachineProg : Injection prog := {
+#[global] Instance MachineProg : Injection prog := {
   inject p := machine_prog p
 }.
 
-Instance MachineMem : Injection mem := {
+#[global] Instance MachineMem : Injection mem := {
   inject m := machine_mem m
 }.
 
-Instance MachineReg : Injection reg := {
+#[global] Instance MachineReg : Injection reg := {
   inject r := machine_rctx r
 }.
 
-Instance TransformPair {A B : Type} `{Injection A} `{Injection B}: Injection (A * B) := {
+#[global] Instance TransformPair {A B : Type} `{Injection A} `{Injection B}: Injection (A * B) := {
   inject '(a, b) := (inject a, inject b)
 }.
 
-Instance TransformTuple {A B C : Type} `{Injection A} `{Injection B} `{Injection C}: Injection (A * B * C) := {
+#[global] Instance TransformTuple {A B C : Type} `{Injection A} `{Injection B} `{Injection C}: Injection (A * B * C) := {
   inject '(a, b, c) := (inject a, inject b, inject c)
 }.
 
@@ -176,11 +177,11 @@ Class SmartGen (A : Type) := mkSmartGen {
   sgen : list nat -> G A
 }.
 
-Instance CallDirGen : SmartGen dir := {
+#[global] Instance CallDirGen : SmartGen dir := {
   sgen := gen_dcall
 }.
 
-Instance BranchDirGen : Gen dir := {
+#[global] Instance BranchDirGen : Gen dir := {
   arbitrary := gen_dbr
 }.
 
@@ -278,3 +279,63 @@ Definition test_relative_security
 
 (*! QuickChick test_relative_security. *)
 (* +++ Passed 10000 tests (0 discards) *)
+
+Module Import IS := IdealStepSemantics(MCC).
+
+(* This test looks exactly as the "ultimate_slh_bcc_single_cycle_refactor" lemma
+in the "MiniCET_Index.v", so I assume it tests BCC in block-based machine *)
+
+Definition single_step_cc `{Injection (prog * mem * reg)}:= (
+  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_reg_wt c pst) (fun rs1 => 
+  forAll (gen_wt_mem tm pst) (fun m1 =>
+  forAll (gen_pc_from_prog p) (fun pc =>
+  forAll (gen_call_stack_from_prog_sized 3 p) (fun stk => 
+  forAll (@arbitrary bool _) (fun ms =>
+  let p := inject p in
+  let icfg := (pc, inject rs1, inject m1, stk, ms) in
+  match (spec_cfg_sync p icfg) with
+  | None => collect "hello"%string (checker tt)
+  | Some tcfg => 
+      forAll (gen_directive_from_ideal_cfg p pst icfg) (fun ds => 
+      match ideal_step p (S_Running icfg) ds with 
+      | (S_Fault, _, oideal) =>  
+          match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
+          | None => match spec_steps 4 (uslh_prog p) (S_Running tcfg) ds with 
+                    | (S_Fault, _, ospec) => (*untrace "fault"*) (checker (obs_eqb oideal ospec)) (* speculative execution should fail if it won't sync again *)
+                    | _ => trace "spec exec didn't fail"%string (checker false)
+                    end
+          | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
+          end
+      | (S_Term, _, oideal) =>
+          match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
+          | None => match spec_steps 1 (uslh_prog p) (S_Running tcfg) ds with 
+                    | (S_Term, _, ospec) => (*untrace "term"*) (checker (obs_eqb oideal ospec))
+                    | _ => trace "spec exec didn't terminate"%string (checker false)
+                    end
+          | Some n => collect ("ideal step failed for "%string ++ show (p[[pc]]) ++ " but steps_to_sync_point was Some"%string)%string (checker tt)
+          end
+      | (S_Running icfg', _, oideal) => 
+          match (steps_to_sync_point (uslh_prog p) tcfg ds) with 
+          | None => trace "Ideal step succeeds, but steps_to_sync_point undefined" (checker false)
+          | Some n => match spec_steps n (uslh_prog p) (S_Running tcfg) ds with 
+                      | (S_Running tcfg', _, ospec) => match (spec_cfg_sync p icfg') with
+                                              | None => collect "sync fails "%string (checker tt)
+                                              | Some tcfgref => match (spec_cfg_eqb_up_to_callee tcfg' tcfgref) with 
+                                                                | true => (*untrace ("running " ++ show oideal ++ " / " ++ show ospec)*) (checker (obs_eqb oideal ospec))
+                                                                | false => (*untrace (show tcfg' ++ "|||||" ++ show tcfgref)*) (checker false)
+                                                                end
+                                              end
+                      | (_, ds, os) => trace ("spec exec fails "%string ++ (show os) ++ show (uslh_prog p)) (checker false)
+                      end
+          end
+      | _ => collect "ideal exec undef"%string (checker tt)
+      end
+      )
+  end
+  ))))))).
+
+QuickChick single_step_cc.
+
+(* 472 : (Discarded) "ideal exec undef"
++++ Passed 10000 tests (472 discards) *)
