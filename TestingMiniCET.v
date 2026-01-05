@@ -13,20 +13,68 @@ Set Default Goal Selector "!".
 From QuickChick Require Import QuickChick Tactics.
 Import QcNotation QcDefaultNotation. Open Scope qc_scope.
 Import MonadNotation.
-From SECF Require Import TestingLib.
-From SECF Require Import MiniCET TaintTracking MapsFunctor.
+From SECF Require Import MiniCET TaintTracking MapsFunctor TestingLib TestingSemantics.
 
-Module Import MCC := MiniCETCommon(ListTotalMap).
+Module Import MCC := MiniCETSemantics(ListTotalMap).
 Module Import TS := TestingStrategies(MCC).
 Module Import TT := TaintTracking(MCC).
 
-Definition gen_dbr : G direction :=
+Definition gen_dbr : G dir :=
   b <- arbitrary;; ret (DBranch b).
 
-Definition gen_dcall (pst: list nat) : G direction :=
+Definition gen_dcall (pst: list nat) : G dir :=
   l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
 
-Derive Show for direction.
+Instance ShowDirection : Show dir := {
+  show dir := match dir with 
+    | DBranch b => ("DBranch " ++ show b)%string
+    | DCall cptr => ("DCall " ++ show cptr)%string 
+  end
+}.
+
+QuickChick (forAll gen_pub_mem (fun P =>
+    forAll gen_mem (fun s1 =>
+    forAll (gen_pub_mem_equiv P s1) (fun s2 =>
+      (checker (pub_equiv_listb P s1 s2))
+    )))).
+
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+      pub_equivb P s1 s2
+  )))).
+
+Definition wt_exp_is_defined := (forAll arbitrary (fun (c : rctx) =>
+            forAll (gen_reg_wt c [3; 3; 1; 1]) (fun (state: reg) =>
+            forAll (gen_exp_wt 4 c [3; 3; 1; 1]) (fun (exp : exp) =>
+            implication (is_defined (eval state exp)) true)))).
+(*! QuickChick wt_exp_is_defined. *)
+
+Definition basic_block_test := (forAll (basic_block_gen_example) (fun (blk: list inst) => (basic_block_checker blk))).
+(*! QuickChick basic_block_test. *)
+
+Definition wt_wf := (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf p))).
+(*! QuickChick wt_wf. *)
+Definition wt_uslh_wf := (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf (uslh_prog p)))).
+(*! QuickChick wt_uslh_wf. *)
+
+(* The well-typed expression "always evaluates" in the register set produces by "gen_reg_wt " *)
+Definition wt_expr_is_defined := (
+    forAll arbitrary (fun (c : rctx) =>
+    forAll arbitrary (fun (pl : nat) =>
+    forAll (choose (2, 5)) (fun (exp_sz : nat) => 
+    pst <- gen_partition pl;;
+    forAll (gen_reg_wt c pst) (fun (r : reg) =>
+    forAll (gen_exp_wt exp_sz c pst) (fun (e : exp) =>
+    is_defined (eval r e)
+  )))))).
+(*! QuickChick wt_expr_is_defined. *)
+
+Definition ty_prog_wf := 
+  (forAll (gen_prog_ty_ctx_wt 3 8) (fun '(c, tm, p) => 
+    ((ty_prog c tm p) && (wf p)))).
+
+(* "+++ Passed 10000 tests (0 discards)" *)
 
 (* Extract Constant defNumTests => "1000000". *)
 

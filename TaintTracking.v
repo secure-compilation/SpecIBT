@@ -15,7 +15,7 @@ Require Export ExtLib.Structures.Monads.
 Require Import ExtLib.Data.List.
 Import MonadNotation.
 From Stdlib Require Import String.
-From SECF Require Import ListMaps MapsFunctor MiniCET Utils.
+From SECF Require Import ListMaps MapsFunctor MiniCET Utils TestingSemantics.
 Require Import Stdlib.Classes.EquivDec.
 
 (* For testing relative security we do taint tracking of sequential executions
