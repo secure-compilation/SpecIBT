@@ -1784,15 +1784,13 @@ Qed.
 (*   i. rewrite H2 in *. unfold uslh_prog.  *)
 (*   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as (p', newp) eqn:Htp. *)
 
-(* YH: TODO: add memory & register wf *)
-
 Lemma ultimate_slh_bcc_single_cycle_refactor (p: prog) : forall ic1 sc1 sc2 n ds os,
   no_ct_prog p ->
   wf_prog p ->
   wf_ds' (uslh_prog p) ds ->
   unused_prog msf p ->
   unused_prog callee p ->
-  msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) -> (* YH: I think this premise contained in mathc_cfgs. *)
+  msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
   steps_to_sync_point' p ic1 ds = Some n ->
   match_cfgs p ic1 sc1 ->
   uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( S_Running sc2 ))> ->
@@ -2511,6 +2509,47 @@ Proof.
       i. des. exists ic0. econs; eauto.
 Qed.
 
+Definition first_blk_call (p: prog) : Prop :=
+  match nth_error p 0 with
+  | None => False (* unreachable *)
+  | Some (blk, b) => if b then True else False
+  end.
+
+Lemma ultimate_slh_bcc_init
+  (p: prog) n ir sc1 sr m sc2 ds os
+  (NCT: no_ct_prog p)
+  (FST: first_blk_call p)
+  (WFP: wf_prog p)
+  (WFDS: wf_ds' (uslh_prog p) ds)
+  (UNUSED1: unused_prog msf p)
+  (UNUSED2: unused_prog callee p)
+  (SC1: sc1 = ((0,0), sr, m, @nil cptr, true, false))
+  (INIT1: Rsync ir sr false)
+  (INIT2: sr ! callee = FP 0)
+  (TGT: uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( sc2 ))>) :
+  exists ic2, p |- <(( S_Running ((0,0), ir, m, [], false) ))> -->i*_ ds ^^ os <(( ic2 ))>.
+Proof.
+  destruct n.
+  { inv TGT. esplits. econs. }
+  assert (CT: (uslh_prog p)[[(0, 0)]] = Some <{{ ctarget }}>).
+  { admit. }
+  destruct n.
+  { inv TGT. inv H5. inv H0; clarify. ss. do 2 econs. }
+  exploit head_call_target; eauto. i. des; clarify.
+  replace ((0,0) + 1) with (0, 1) in x2 by ss.
+  inv TGT. inv H0; clarify. inv H5. inv H0; clarify. simpl.
+  exploit ultimate_slh_bcc; try eapply H6; eauto.
+  { red in INIT1. des. simpl. rewrite INIT2. ss. }
+  econs; try sfby ss.
+  - unfold pc_sync. ss. clear -FST WFP.
+    red in FST. des_ifs; ss; clarify.
+    inv WFP. ss. subst. inv H0. inv H3.
+    red in H0. ss. lia.
+  - inv INIT1. split; ii.
+    + des. rewrite t_update_neq; eauto.
+    + rewrite t_update_eq. simpl. rewrite INIT2. ss.
+Admitted.
+
 (** * Definition of Relative Secure *)
 
 Definition seq_same_obs p pc r1 r2 m1 m2 stk : Prop :=
@@ -2519,10 +2558,10 @@ Definition seq_same_obs p pc r1 r2 m1 m2 stk : Prop :=
   p |- <(( S_Running (pc, r2, m2, stk) ))> -->*^ os2 <(( c2 ))> ->
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
-Definition spec_same_obs p pc r1 r2 m1 m2 stk : Prop :=
-  forall ds n os1 os2 c1 c2,
-  p |- <(( S_Running (pc, r1, m1, stk, false, false) ))> -->*_ds^^os1^^n <(( c1 ))> ->
-  p |- <(( S_Running (pc, r2, m2, stk, false, false) ))> -->*_ds^^ os2^^n <(( c2 ))> ->
+Definition spec_same_obs p pc r1 r2 m1 m2 stk b : Prop :=
+  forall ds n os1 os2 c1 c2 (WFDS: wf_ds' p ds),
+  p |- <(( S_Running (pc, r1, m1, stk, b, false) ))> -->*_ds^^os1^^n <(( c1 ))> ->
+  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->*_ds^^ os2^^n <(( c2 ))> ->
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition ideal_same_obs p pc r1 r2 m1 m2 stk : Prop :=
@@ -2532,9 +2571,10 @@ Definition ideal_same_obs p pc r1 r2 m1 m2 stk : Prop :=
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition relative_secure (p:prog) (trans1 : prog -> prog)
-  (r1 r2 : reg) (m1 m2 : mem): Prop :=
+  (r1 r2 r1' r2' : reg) (m1 m2 : mem): Prop :=
   seq_same_obs p (0,0) r1 r2 m1 m2 [] ->
-  spec_same_obs (trans1 p) (0,0) r1 r2 m1 m2 [].
+  Rsync r1 r1' false -> Rsync r2 r2' false ->
+  spec_same_obs (trans1 p) (0,0) r1' r2' m1 m2 [] true.
 
 (** * Ultimate Speculative Load Hardening *) 
 
@@ -3119,4 +3159,48 @@ Proof.
   eapply ideal_eval_relative_secure; eauto.
 Qed.
 
+Lemma spec_eval_relative_secure_init_aux
+  p r1 r2 m1 m2
+  (FST: first_blk_call p)
+  (* (ICFG1: c1 = ((0,0), r1, m1, @nil cptr)) *)
+  (* (ICFG2: c2 = ((0,0), r2, m2, @nil cptr)) *)
+  (SEQ: seq_same_obs p (0,0) r1 r2 m1 m2 [])
+  (NCT: no_ct_prog p)
+  (WFP: wf_prog p)
+  (UNUSED1: unused_prog msf p)
+  (UNUSED2: unused_prog callee p)
+  r1' r2' sc1 sc2
+  (SCFG1: sc1 = ((0,0), r1', m1, [], true, false))
+  (SCFG2: sc2 = ((0,0), r2', m2, [], true, false))
+  (INIT1: r1' ! callee = FP 0)
+  (INIT2: r2' ! callee = FP 0)
+  (MATCH1: Rsync r1 r1' false)
+  (MATCH2: Rsync r2 r2' false)
+  ds os1 os2 n sc1' sc2'
+  (WFDS: wf_ds' (uslh_prog p) ds)
+  (SSTEP1: (uslh_prog p) |- <(( S_Running sc1 ))> -->*_ds^^os1^^n <(( sc1' ))>)
+  (SSTEP2: (uslh_prog p) |- <(( S_Running sc2 ))> -->*_ds^^ os2^^n <(( sc2' ))>):
+  (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
+Proof.
+  eapply ultimate_slh_bcc_init in SSTEP1; eauto. des.
+  eapply ultimate_slh_bcc_init in SSTEP2; eauto. des. subst.
+  eapply ideal_eval_relative_secure; eauto.
+Qed.
+
+Lemma spec_eval_relative_secure
+  p r1 r2 r1' r2' m1 m2
+  (FST: first_blk_call p)
+  (NCT: no_ct_prog p)
+  (WFP: wf_prog p)
+  (CALLEE1: r1' ! callee = FP 0)
+  (CALLEE2: r2' ! callee = FP 0)
+  (UNUSED1: unused_prog msf p)
+  (UNUSED2: unused_prog callee p) : 
+  relative_secure p (uslh_prog) r1 r2 r1' r2' m1 m2.
+Proof.
+  red. ii. eapply spec_eval_relative_secure_init_aux.
+  11:{ eapply H0. }
+  11:{ eapply H1. }
+  all: eauto.
+Qed.
 
