@@ -26,6 +26,7 @@ Notation t_update_neq := TotalMap.t_update_neq.
 
 Definition Rsync1 (sr tr: reg) (ms: bool) : Prop :=
   (forall x, x <> msf /\ x <> callee -> sr ! x = tr ! x).
+
 Definition ms_msf_match (tr: reg) (ms: bool) : Prop :=
   (tr ! msf = N (if ms then 1 else 0)).
 
@@ -36,6 +37,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
 | match_cfgs_ext_ct1 (* call target *)
   l blk r m stk ms r' stk'      
   (CT: nth_error p l = Some (blk, true))
+  (CT1: (uslh_prog p)[[(l, 0)]] = Some <{{ ctarget }}>)
   (REG: Rsync1 r r' ms)
   (STK: map_opt (pc_sync p) stk = Some stk')
   (MS: eval r' <{{ (callee = (& l)) ? msf : 1 }}> = N (if ms then 1 else 0)) :
@@ -44,6 +46,8 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
 | match_cfgs_ext_ct2 (* call target msf *)
   l blk r m stk ms r' stk'
   (CT: nth_error p l = Some (blk, true))
+  (CT1: (uslh_prog p)[[(l, 0)]] = Some <{{ ctarget }}>)
+  (CT2: (uslh_prog p)[[(l, 1)]] = Some <{{ msf := (callee = (& l)) ? msf : 1 }}>)
   (REG: Rsync1 r r' ms)
   (STK: map_opt (pc_sync p) stk = Some stk')
   (MS: eval r' <{{ (callee = (& l)) ? msf : 1 }}> = N (if ms then 1 else 0)) :
@@ -52,6 +56,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
 | match_cfgs_ext_call
   pc fp r m stk ms pc' r' stk'
   (CALL: p[[pc]] = Some <{{ call fp }}>)
+  (TCALL: (uslh_prog p)[[pc' + 1]] = Some <{{ call ((msf = 1) ? & 0 : fp) }}>)
   (PC: pc_sync p pc = Some pc')
   (REG: Rsync r r' ms)
   (STK: map_opt (pc_sync p) stk = Some stk')
@@ -102,6 +107,27 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   match_cfgs_ext p S_Term S_Term
 .
 
+Lemma src_lookup
+  p pc pc' (* i' *)
+  (* (TGT: (uslh_prog p) [[pc']] = Some i') *)
+  (SYNC: pc_sync p pc = Some pc') :
+  exists i, p[[pc]] = Some i.
+Proof.
+  unfold pc_sync in SYNC. des_ifs.
+  destruct pc; ss. des_ifs; eauto.
+Qed.
+
+Lemma tgt_inv
+  p pc pc' i'
+  (NCT: no_ct_prog p)
+  (TGT: (uslh_prog p) [[pc']] = Some i')
+  (SYNC: pc_sync p pc = Some pc') :
+  exists i, p[[pc]] = Some i /\ match_inst_uslh p pc i i'.
+Proof.
+  exploit src_lookup; eauto. i. des.
+  exploit src_inv; eauto. i. des; clarify. eauto.
+Qed.
+
 Lemma ultimate_slh_bcc_single (p: prog) ic1 sc1 sc2 ds os
   (NCT: no_ct_prog p)
   (WFP: wf_prog p)
@@ -110,23 +136,82 @@ Lemma ultimate_slh_bcc_single (p: prog) ic1 sc1 sc2 ds os
   (UNUSED2: unused_prog callee p)
   (MATCH: match_cfgs_ext p ic1 sc1)
   (TGT: uslh_prog p |- <(( sc1 ))> -->_ ds^^os <(( sc2 ))>) :
-     exists ic2, p |- <(( ic1 ))> -->i*_ ds ^^ os <(( ic2 ))> 
-          /\ match_cfgs_ext p ic2 sc2.
+  exists ic2, p |- <(( ic1 ))> -->i*_ ds ^^ os <(( ic2 ))>
+      /\ match_cfgs_ext p ic2 sc2.
 Proof.
   inv MATCH; try sfby inv TGT.
   (* common match *)
-  - admit.
+  - inv TGT; inv MATCH0; clarify.
+    (* skip *)
+    + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
+      replace (@nil direction) with ((@nil direction) ++ []) by ss.
+      replace (@nil observation) with ((@nil observation) ++ []) by ss.
+      esplits.
+      { econs 2; econs. eauto. }
+      econs. econs; eauto.
+      exploit block_always_terminator_prog; try eapply x0; eauto. i. des.
+      destruct pc0. unfold pc_sync in *. ss. des_ifs_safe.
+      replace (add n0 1) with (S n0) by lia.
+      erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
+      rewrite add_1_r. auto.
+    (* asgn *)
+    + exploit tgt_inv; eauto. i. des. inv x0.
+      (* normal asgn *)
+      * inv MATCH.
+        replace (@nil direction) with ((@nil direction) ++ []) by ss.
+        replace (@nil observation) with ((@nil observation) ++ []) by ss.
+        esplits.
+        { econs 2; [econs 2|econs]. eauto. }
+        econs. econs; eauto.
+        { exploit block_always_terminator_prog; try eapply x1; eauto. i. des.
+          destruct pc0. unfold pc_sync in *. ss. des_ifs_safe.
+          replace (add n0 1) with (S n0) by lia.
+          erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
+          rewrite add_1_r. auto. }
+        { eapply unused_prog_lookup in UNUSED1; eauto.
+          eapply unused_prog_lookup in UNUSED2; eauto. ss; des.
+          inv REG. econs.
+          - i. destruct (string_dec x x0); subst.
+            { do 2 rewrite t_update_eq. apply eval_regs_eq; eauto. }
+            { rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
+          - erewrite t_update_neq; eauto. }
+      (* callee asgn *)
+      * admit.
+    (* branch *)
+    + admit.
+    (* jump *)
+    + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
+      replace (@nil direction) with ((@nil direction) ++ []) by ss.
+      replace (@nil observation) with ((@nil observation) ++ []) by ss.
+
+      exists (S_Running (l, 0, r0, m, stk, ms)). split; econs; [|econs|].
+      * eapply ISMI_Jump; eauto.
+      * econs; eauto.
+        exploit wf_prog_lookup; try eapply x0; eauto. i.
+        ss. unfold pc_sync, wf_lbl in *. ss. des_ifs_safe. ss.
+        subst. inv WFP. rewrite Forall_forall in H1.
+        eapply nth_error_In in Heq. eapply H1 in Heq.
+        red in Heq. des. ss.
+    (* load *)
+    + admit.
+    (* store *)
+    + admit.
+    (* call *)
+    + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
+    (* ctarget *)
+    + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
+    (* ret - return *)
+    + admit.
+    (* ret - term*)
+    + admit.
   (* target = ctarget *)
-  - assert (CT': (uslh_prog p)[[(l, 0)]] = Some <{{ ctarget }}>).
-    { admit. (* by CT *) }
-    inv TGT; clarify. esplits.
+  - inv TGT; clarify. esplits.
     + econs.
     + eapply match_cfgs_ext_ct2; eauto.
+      exploit head_call_target; eauto. i. des; clarify; eauto.
   (* target = msf := (callee = (& (fst pc))) ? msf : 1 *)
-  - assert (CT': (uslh_prog p)[[(l, 0)]] = Some <{{ ctarget }}>).
-    { admit. (* by CT *) }
-    exploit head_call_target; eauto. i. des; clarify.
-    replace ((l0, 0) + 1) with (l0, 1) in x2 by ss.
+  - (* exploit head_call_target; eauto. i. des; clarify. *)
+    (* replace ((l0, 0) + 1) with (l0, 1) in x2 by ss. *)
     inv TGT; clarify.
     esplits; econs.
     econs; eauto.
@@ -134,12 +219,10 @@ Proof.
       { admit. (* nonempty *) }
       simpl. eauto.
     + red in REG. econs.
-      * i. des. admit.
+      * i. des. rewrite t_update_neq; eauto.
       * rewrite t_update_eq. eauto.
   (* call *)
-  - assert (TCALL: (uslh_prog p)[[pc' + 1]] = Some <{{ call ((msf = 1) ? & 0 : fp) }}>).
-    { admit. }
-    inv TGT; clarify.
+  - inv TGT; clarify.
     destruct pc'0 as [l' o'].
     red in WFDS. inv WFDS. inv H2. red in H1. unfold is_some in H1.
     des_ifs.
@@ -149,16 +232,19 @@ Proof.
     + exploit head_call_target; eauto. i. des; clarify.
       replace [DCall(l0, 0)] with ([DCall (l0, 0)] ++ []) by ss.
       replace [OCall l] with ([OCall l] ++ []) by ss.
+
       assert (exists blk, nth_error p l0 = Some (blk, true)).
       { admit. }
       des. esplits.
       * do 2 econs; eauto.
         inv REG.
         rewrite <- H8. simpl. rewrite H2. destruct ms; ss.
-        admit.
+        erewrite eval_regs_eq; eauto.
+        { exploit unused_prog_lookup; try eapply UNUSED1; eauto. }
+        { exploit unused_prog_lookup; try eapply UNUSED2; eauto. }
       * eapply match_cfgs_ext_ct1; eauto.
         { red. inv REG. eauto. }
-        { inv REG. admit. }
+        { inv REG. simpl. rewrite STK. admit. }
         inv REG. simpl. rewrite MS. ss. rewrite H2.
         destruct ms; ss.
         { des_ifs. }
@@ -167,7 +253,7 @@ Proof.
           + rewrite Nat.eqb_sym. rewrite JMP. auto.
           + rewrite Nat.eqb_sym. rewrite JMP. auto. }
     + assert (exists i, p[[(l', o')]] = Some i).
-      { admit. }
+      { admit. (* by Heq *) }
       des. simpl in H0. des_ifs_safe. destruct p0. simpl in H0.
       replace [DCall(l', o')] with ([DCall (l', o')] ++ []) by ss.
       replace [OCall l] with ([OCall l] ++ []) by ss.
@@ -184,7 +270,7 @@ Proof.
     + econs.
     + eapply match_cfgs_ext_br_true2; eauto.
       red. split.
-      * ii. des. admit.
+      * ii. des. rewrite t_update_neq; eauto.
       * rewrite t_update_eq. simpl. ss.
   - inv TGT; clarify. esplits.
     + econs.
