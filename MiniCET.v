@@ -41,6 +41,8 @@ Variant val : Type :=
   | FP (l:nat) (* <- NEW: function pointer to procedure at label [l] *)
   | UV. (* undefined value *)
 
+Inductive ty : Type := | TNum | TPtr.
+
 Definition not_zero (n : nat) : bool := negb (n =? 0).
 Definition bool_to_nat (b : bool) : nat := if b then 1 else 0.
 
