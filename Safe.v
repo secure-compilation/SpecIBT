@@ -176,9 +176,43 @@ Proof.
             { rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
           - erewrite t_update_neq; eauto. }
       (* callee asgn *)
-      * admit.
+      * clarify. esplits; [econs|].
+        eapply match_cfgs_ext_call; eauto.
+        { inv REG. split; i.
+          - des. rewrite t_update_neq; eauto.
+          - rewrite t_update_neq; eauto. ii; clarify. }
+        { rewrite t_update_eq. rewrite eval_unused_update; eauto.
+          exploit unused_prog_lookup; try eapply x1; eauto. i. ss. }
     (* branch *)
-    + admit.
+    + exploit tgt_inv; eauto. i. des. inv x1.
+      { inv MATCH. }
+      clarify.
+      eapply unused_prog_lookup in UNUSED1; eauto.
+      eapply unused_prog_lookup in UNUSED2; eauto. ss; des.
+
+      replace [DBranch b'] with ([DBranch b'] ++ []) by ss.
+      replace [OBranch (not_zero n)] with ([OBranch (not_zero n)] ++ []) by ss.
+      esplits.
+      { econs; econs; eauto. simpl in H1. inv REG. rewrite H2 in H1.
+        ss. rewrite <- H1. destruct ms; ss. erewrite eval_regs_eq; eauto. }
+      destruct pc as [b o]. destruct pc0 as [b0 o0].
+      destruct b'.
+      (* true *)
+      * eapply match_cfgs_ext_br_true1; eauto.
+        { simpl. rewrite IN. ss. }
+        { clear -H1 REG. inv REG. rewrite H0 in H1. ss. rewrite H0. ss.
+          destruct ms; ss. unfold to_nat in H1. des_ifs_safe.
+          destruct n; ss; clarify. }
+        { admit. }
+        { ss. rewrite IN. ss. }
+        { inv REG. red. eauto. }
+      (* false *)
+      * eapply match_cfgs_ext_br_false; eauto.
+        { admit. }
+        { clear -H1 REG. inv REG. rewrite H0 in H1. ss. rewrite H0. ss.
+          destruct ms; ss. unfold to_nat in H1. des_ifs_safe.
+          destruct n; ss; clarify. }
+        { inv REG. red. eauto. }
     (* jump *)
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
       replace (@nil direction) with ((@nil direction) ++ []) by ss.
@@ -193,17 +227,72 @@ Proof.
         eapply nth_error_In in Heq. eapply H1 in Heq.
         red in Heq. des. ss.
     (* load *)
-    + admit.
+    + exploit tgt_inv; eauto. i. des. inv x0. inv MATCH.
+      exists (S_Running ((pc0 + 1), x !-> v'; r0, m, stk, ms)).
+
+      eapply unused_prog_lookup in UNUSED1; eauto.
+      eapply unused_prog_lookup in UNUSED2; eauto. ss; des.
+      destruct pc as [b o]. destruct pc0 as [b0 o0].
+      replace (@nil direction) with ((@nil direction) ++ []) by ss.
+      replace [OLoad n] with ([OLoad n] ++ []) by ss.
+      split; econs; eauto; [|econs|].
+      * econs; eauto. inv REG. rewrite <- H1. ss.
+        rewrite H3. ss. destruct ms; ss. erewrite eval_regs_eq; eauto.
+      * econs; eauto.
+        { exploit block_always_terminator_prog; try eapply x1; eauto. i. des.
+          unfold pc_sync in *. ss. des_ifs_safe.
+          replace (add o0 1) with (S o0) by lia.
+          erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
+          rewrite add_1_r. auto. }
+        { red. splits; i.
+          - destruct (string_dec x x0); subst.
+            { do 2 rewrite t_update_eq; eauto. }
+            { rewrite t_update_neq; eauto. rewrite t_update_neq; eauto.
+              inv REG. eauto. }
+          - inv REG. ss. des. rewrite t_update_neq; eauto. }
     (* store *)
-    + admit.
+    + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
+      eapply unused_prog_lookup in UNUSED1; eauto.
+      eapply unused_prog_lookup in UNUSED2; eauto. ss. des.
+
+      exists (S_Running (pc0+1, r0, (upd n m (eval r0 e')), stk, ms)).
+
+      destruct pc as [b o]. destruct pc0 as [b0 o0].
+      replace (@nil direction) with ((@nil direction) ++ []) by ss.
+      replace [OStore n] with ([OStore n] ++ []) by ss.
+
+      split.
+      * econs; [|econs]. simpl. eapply ISMI_Store; eauto.
+        inv REG. rewrite <- H1. rewrite H2. destruct ms; ss.
+        erewrite eval_regs_eq; eauto.
+      * dup REG. inv REG. econs.
+        erewrite <- eval_regs_eq with (r := r0) (r' := r); eauto.
+        econs; eauto.
+        exploit block_always_terminator_prog; try eapply x0; eauto. i. des.
+        unfold pc_sync in *. ss. des_ifs_safe. replace (add o0 1) with (S o0) by lia.
+        erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
+        rewrite add_1_r. auto.
     (* call *)
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
     (* ctarget *)
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
     (* ret - return *)
-    + admit.
-    (* ret - term*)
-    + admit.
+    + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
+      destruct stk; try sfby ss.
+      replace (@nil direction) with ((@nil direction) ++ []) by ss.
+      replace (@nil observation) with ((@nil observation) ++ []) by ss.
+      esplits.
+      * econs 2; [|econs]. eapply ISMI_Ret; eauto.
+      * econs. simpl in STK. des_ifs.
+    (* ret - term *)
+    + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
+      destruct stk.
+      2:{ ss. des_ifs. }
+      replace (@nil direction) with ((@nil direction) ++ []) by ss.
+      replace (@nil observation) with ((@nil observation) ++ []) by ss.
+      esplits.
+      * econs 2; [|econs]. eapply ISMI_Term; eauto.
+      * econs.
   (* target = ctarget *)
   - inv TGT; clarify. esplits.
     + econs.
