@@ -1774,6 +1774,20 @@ Proof.
   des_ifs.
 Qed.
 
+Lemma ctarget_exists p l blk
+  (LTH: nth_error p l = Some (blk, true)) :
+  (uslh_prog p)[[(l, 0)]] = Some <{{ ctarget }}>.
+Proof.
+  unfold uslh_prog. des_ifs_safe.
+  exploit mapM_nth_error_strong; eauto.
+  { eapply nth_error_add_index; eauto. }
+  i. des.
+  eapply bind_inv in x1. des. clarify. subst.
+  ss. erewrite nth_error_app1.
+  2:{ rewrite <- nth_error_Some. ii. clarify. }
+  rewrite x0. unfold MiniCET.uslh_ret in x3. clarify.
+Qed.
+
 (* Lemma src_tgt_length : forall p tp pc (bk bk': list inst * bool) e l (i: inst), *)
 (*   nth_error p (fst pc) = Some bk -> *)
 (*   nth_error (fst bk) (snd pc) = Some i -> *)
@@ -2532,7 +2546,7 @@ Proof.
   destruct n.
   { inv TGT. esplits. econs. }
   assert (CT: (uslh_prog p)[[(0, 0)]] = Some <{{ ctarget }}>).
-  { admit. }
+  { red in FST. des_ifs. eapply ctarget_exists; eauto. }
   destruct n.
   { inv TGT. inv H5. inv H0; clarify. ss. do 2 econs. }
   exploit head_call_target; eauto. i. des; clarify.
@@ -2548,7 +2562,7 @@ Proof.
   - inv INIT1. split; ii.
     + des. rewrite t_update_neq; eauto.
     + rewrite t_update_eq. simpl. rewrite INIT2. ss.
-Admitted.
+Qed.
 
 (** * Definition of Relative Secure *)
 
