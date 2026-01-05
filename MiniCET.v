@@ -680,38 +680,7 @@ Proof.
     + apply S_Term.
 Defined.
 
-Module Type Semantics(M : TMap).
-
-  (* YH: This part is the common code that all semantics share.
-         This means it can be used for both testing and proofs.
-         I think we discussed separating this part as common
-         code in the previous meeting. This can be applied to
-         all languages in our project, not just for MiniCET testing. *)
-  (* Parameter prog: Type. *)
-  Parameter pc : Type.
-  Definition reg := M.t val.
-  Definition cfg : Type := ((pc * reg) * mem) * list pc.
-  Definition spec_cfg : Type := (cfg * bool) * bool.
-
-  Parameter dir : Type.
-  Definition dirs := list dir.
-
-  Parameter ipc : pc.
-  Parameter istk : list pc.
-  Parameter icfg : pc -> reg -> mem -> list pc -> cfg.
-
-  Parameter eval : reg -> exp -> val.
-  Parameter fetch : prog -> pc -> option inst.
-
-  (* YH: This part is only for testing. This part can also be used for
-         testing all languages, not just for MiniCET testing. *)
-  Parameter step : prog -> state cfg -> state cfg * obs.
-  Parameter steps : nat -> prog -> state cfg -> state cfg * obs.
-  Parameter spec_step : prog -> state spec_cfg -> dirs -> state spec_cfg * dirs * obs.
-  Parameter spec_steps : nat -> prog -> state spec_cfg -> dirs -> state spec_cfg * dirs * obs.
-End Semantics.
-
-Module MiniCETCommon (M: TMap) <: Semantics M.
+Module MiniCETCommon (M: TMap).
 
 Notation "'_' '!->' v" := (M.init v)
     (at level 100, right associativity).
@@ -731,6 +700,10 @@ Definition no_callee_msf (r: reg) : Prop :=
   | _, _ => False
   end.
 
+Definition cfg : Type := ((cptr*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
+Definition spec_cfg : Type := ((cfg * bool) * bool).
+Definition ideal_cfg : Type := cfg * bool.
+
 Fixpoint eval (st : reg) (e: exp) : val :=
   match e with
   | ANum n => N n
@@ -743,9 +716,6 @@ Fixpoint eval (st : reg) (e: exp) : val :=
       end
   | <{&l}> => FP l
   end.
-
-Definition cfg : Type := ((cptr*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
-Definition spec_cfg : Type := ((cfg * bool) * bool).
 
 (* ret with empty stackframe *)
 Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
@@ -761,175 +731,5 @@ Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
              end
   | None => false
   end.
-
-Definition ideal_cfg : Type := cfg * bool.
-
-Local Definition pc := cptr.
-Definition ipc : cptr := (0, 0).
-Definition istk : list cptr := [].
-Definition icfg (ipc : pc) (ireg : reg) (mem : mem) (istk : list pc): cfg := 
-  (ipc, ireg, mem, istk).
-
-Definition dir := direction.
-Definition dirs := dirs.
-Definition fetch := fetch.
-
-Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
-    match sc with
-    | S_Running c =>
-        let '(pc, r, m, sk) := c in
-        match p[[pc]] with
-        | Some i =>
-            match i with
-            | <{{skip}}> | <{{ctarget}}> =>
-              (S_Running (pc+1, r, m, sk), [])
-            | <{{x:=e}}> =>
-              (S_Running (pc+1, (x !-> eval r e; r), m, sk), [])
-            | <{{branch e to l}}> =>
-              match
-                n <- to_nat (eval r e);;
-                let b := not_zero n in
-                ret ((if b then (l,0) else pc+1, r, m, sk), [OBranch b])
-              with
-              | Some (c, o) => (S_Running c, o)
-              | None => (S_Undef, [])
-              end
-            | <{{jump l}}> =>
-              (S_Running ((l,0), r, m, sk), [])
-            | <{{x<-load[e]}}> =>
-              match
-                n <- to_nat (eval r e);;
-                v' <- nth_error m n;;
-                ret ((pc+1, (x !-> v'; r), m, sk), [OLoad n])
-              with
-              | Some (c, o) => (S_Running c, o)
-              | None => (S_Undef, [])
-              end
-            | <{{store[e]<-e'}}> =>
-              match
-                n <- to_nat (eval r e);;
-                ret ((pc+1, r, upd n m (eval r e'), sk), [OStore n])
-              with
-              | Some (c, o) => (S_Running c, o)
-              | None => (S_Undef, [])
-              end
-            | <{{call e}}> =>
-              match
-                l <- to_fp (eval r e);;
-                ret (((l,0), r, m, (pc+1)::sk), [OCall l])
-              with
-              | Some (c, o) => (S_Running c, o)
-              | None => (S_Undef, [])
-              end
-            | <{{ret}}> =>
-              match sk with
-              | [] => (S_Term, [])
-              | pc'::stk' => (S_Running (pc', r, m, stk'), [])
-              end
-            end
-        | None => (S_Fault, [])
-        end
-    | s => (s, [])
-    end.
-
-  Definition spec_step (p:prog) (ssc: state spec_cfg) (ds: dirs) : (state spec_cfg * dirs * obs) :=
-    match ssc with
-    | S_Running sc =>
-        let '(c, ct, ms) := sc in
-        let '(pc, r, m, sk) := c in
-        match p[[pc]] with
-        | None => untrace "lookup fail" (S_Undef, ds, [])
-        | Some i =>
-            match i with
-            | <{{branch e to l}}> =>
-              if ct then (*untrace "ct set at branch"*) (S_Fault, ds, []) else
-              match
-                if seq.nilp ds then
-                  untrace "Branch: Directions are empty!" None
-                else
-                  d <- hd_error ds;;
-                  b' <- is_dbranch d;;
-                  n <- to_nat (eval r e);;
-                  let b := not_zero n in
-                  let ms' := ms || negb (Bool.eqb b b') in
-                  let pc' := if b' then (l, 0) else (pc+1) in
-                  ret ((S_Running ((pc', r, m, sk), ct, ms'), tl ds), [OBranch b])
-              with
-              | None => untrace "branch fail" (S_Undef, ds, [])
-              | Some (c, ds, os) => (c, ds, os)
-              end
-            | <{{call e}}> =>
-              if ct then (*untrace "ct set at call"*) (S_Fault, ds, []) else
-              match
-                if seq.nilp ds then
-                  untrace "Call: Directions are empty!" None
-                else
-                  d <- hd_error ds;;
-                  pc' <- is_dcall d;;
-                  l <- to_fp (eval r e);;
-                  let ms' := ms || negb ((fst pc' =? l) && (0 =? (snd pc')%nat)) in
-                  (*! *)
-                  ret ((S_Running ((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
-                  (*!! spec-call-no-set-ct *)
-                  (*! ret ((S_Running ((pc', r, m, (pc+1)::sk), ct, ms'), tl ds), [OCall l]) *)
-              with
-              | None => untrace "call fail" (S_Undef, ds, [])
-              | Some (c, ds, os) => (c, ds, os)
-              end
-            | <{{ctarget}}> =>
-              match
-                is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
-                (*! *)
-                (ret (S_Running ((pc+1, r, m, sk), false, ms), ds, []))
-                (*!! spec_ctarget_no_clear *)
-                (*! (ret (S_Running ((pc+1, r, m, sk), ct, ms), ds, [])) *)
-              with
-              | None => untrace "ctarget fail!" (S_Undef, ds, [])
-              | Some (c, ds, os) => (c, ds, os)
-              end
-            | _ =>
-              if ct then (*untrace ("ct set at " ++ show i)*) (S_Fault, ds, [])
-              else
-                match step p (S_Running c) with
-                | (S_Running c', o) => (S_Running (c', false, ms), ds, o)
-                | (S_Undef, o) => (S_Undef, ds, o)
-                | (S_Fault, o) => (S_Fault, ds, o)
-                | (S_Term, o) => (S_Term, ds, o)
-                end
-            end
-        end
-    | s => (s, ds, [])
-    end.
-
-  Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds: dirs)
-    : (state spec_cfg * dirs * obs) :=
-    match f with
-    | S f' =>
-        match sc with
-        | S_Running c =>
-            let '(c1,ds1,o1) := spec_step p sc ds in
-            let '(c2,ds2,o2) := spec_steps f' p c1 ds1 in
-            (c2,ds2,o1++o2)
-        | s => (s, ds, [])
-        end
-    | 0 =>
-        (sc, ds, []) (* JB: executing for 0 steps should be just the identity... *)
-        (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
-    end.
-
-  (* Morally state+output monad hidden in here: step p >> steps f' p  *)
-  Fixpoint steps (f:nat) (p:prog) (sc: state cfg) : (state cfg * obs) :=
-    match f with
-    | S f' =>
-        match sc with
-        | S_Running c =>
-            let '(c1, o1) := step p sc in
-            let '(c2, o2) := steps f' p c1 in
-            (c2, o1++o2)
-        | s => (s, [])
-        end
-    | 0 =>
-        (sc, [])
-    end.
 
 End MiniCETCommon.
