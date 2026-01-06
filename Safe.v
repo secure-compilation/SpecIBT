@@ -533,7 +533,7 @@ Definition seq_ideal_match (st1: state cfg) (st2: state ideal_cfg) : Prop :=
   end.
 
 Definition nonempty_mem (m: mem) : Prop :=
-  Datatypes.length m > 0.
+  0 < Datatypes.length m.
 
 Lemma seq_ideal_nonspec
   p pc r m stk os stt
@@ -560,13 +560,145 @@ Proof.
     + ss. split; auto. rewrite Nat.eqb_refl. auto.
 Qed.
 
+Definition wf_stk (p: prog) (stk: list cptr) : Prop :=
+  forall l o, In (l, o) stk -> exists e, p[[(l, o - 1)]] = Some <{{ call e }}> /\ o > 0.
+
+
+Lemma wf_stk_preserve_ideal
+  p pc r m stk ms pc' r' m' stk' ms' ds os
+  (WFSTK: wf_stk p stk)
+  (STEP: p |- <(( S_Running (pc, r, m, stk, ms) ))> -->i_ ds ^^ os <((S_Running (pc', r', m', stk', ms') ))>):
+  wf_stk p stk'.
+Proof.
+  inv STEP; eauto.
+  { red. ii. simpl in H. des; eauto.
+    destruct pc. simpl in H. clarify.
+    replace ((add n0 1) - 1) with n0 by lia. esplits; eauto. lia. }
+  red. i. eapply WFSTK. simpl. auto.
+Qed.
+
+Lemma nonempty_mem_preserve_ideal
+  p pc r m stk ms pc' r' m' stk' ms' ds os
+  (STEP: p |- <(( S_Running (pc, r, m, stk, ms) ))> -->i_ ds ^^ os <((S_Running (pc', r', m', stk', ms') ))>):
+  Datatypes.length m = Datatypes.length m'.
+Proof.
+  inv STEP; eauto. rewrite upd_length. eauto.
+Qed.
+
+Require Import Stdlib.Program.Equality.
+
+Lemma wf_stk_preserve_multi_ideal
+  p pc r m stk ms pc' r' m' stk' ms' ds os
+  (WFSTK: wf_stk p stk)
+  (STEP: p |- <(( S_Running (pc, r, m, stk, ms) ))> -->i*_ ds ^^ os <((S_Running (pc', r', m', stk', ms') ))>):
+  wf_stk p stk'.
+Proof.
+  dependent induction STEP; auto.
+  destruct ic2. 2-4: inv STEP; inv H0.
+  destruct a as [ [ [ [pc'' r''] m''] stk''] ms''].
+  eapply wf_stk_preserve_ideal in H; eauto.
+Qed.
+
+Lemma ideal_res_pc_exists
+  p pc r m stk ms pc' r' m' stk' ms' ds os
+  (WFSTK: wf_stk p stk)
+  (WFP: wf_prog p)
+  (* (WFDS: wf_ds' (uslh_prog p) ds) *)
+  (STEP: p |- <(( S_Running (pc, r, m, stk, ms) ))> -->i_ ds ^^ os <((S_Running (pc', r', m', stk', ms') ))>):
+  exists i, p[[pc']] = Some i.
+Proof.
+  inv STEP.
+  - exploit block_always_terminator_prog; try eapply H11; eauto.
+  - exploit block_always_terminator_prog; try eapply H11; eauto.
+  - exploit block_always_terminator_prog; try eapply H11; eauto.
+    intros (i'' & PC').
+    destruct pc as [b o]. ss. des_ifs_safe. destruct p0 as [blk ct].
+    destruct b'.
+    { inv WFP. rewrite Forall_forall in H0.
+      eapply nth_error_In in Heq, H11. eapply H0 in Heq.
+      red in Heq. des. rewrite Forall_forall in Heq1. eapply Heq1 in H11.
+      simpl in H11. des. red in H1. des_ifs_safe. simpl.
+      rewrite Heq2. destruct l0; simpl; eauto.
+      eapply nth_error_In in Heq2. eapply H0 in Heq2. red in Heq2. des.
+      red in Heq2. ss; lia. }
+    ss. des_ifs; ss; eauto.
+  - destruct pc as [b o]. ss. des_ifs_safe. destruct p0 as [blk ct].
+    inv WFP. rewrite Forall_forall in H0.
+    eapply nth_error_In in Heq, H11. eapply H0 in Heq. red in Heq. des.
+    rewrite Forall_forall in Heq1. eapply Heq1 in H11.
+    simpl in H11. des. red in H11. des_ifs_safe. simpl.
+    destruct l0; simpl; eauto.
+    eapply nth_error_In in Heq2. eapply H0 in Heq2. red in Heq2. des.
+    red in Heq2. ss; lia.
+  - exploit block_always_terminator_prog; try eapply H11; eauto.
+  - exploit block_always_terminator_prog; try eapply H11; eauto.
+  - destruct pc', blk. ss. subst. rewrite H14. ss. destruct l0; eauto.
+    inv WFP. rewrite Forall_forall in H0.
+    eapply nth_error_In in H14. eapply H0 in H14. red in H14. des.
+    red in H14. ss.
+  - destruct pc' as [b' o']. specialize (WFSTK b' o').
+    exploit WFSTK; [simpl; auto|]. i. des.
+    exploit block_always_terminator_prog; try eapply x0; eauto.
+    unfold inc. replace (add (o' - 1) 1) with o' by lia.
+    i. eauto.
+Qed.
+
+Lemma multi_ideal_res_pc_exists_aux :
+  forall p ic1 ic2 ds os,
+    p |- <(( ic1 ))>  -->i*_ ds ^^ os <(( ic2 ))> ->
+    forall pc r m stk ms pc' r' m' stk' ms',
+      ic1 = S_Running (pc, r, m, stk, ms) ->
+      ic2 = S_Running (pc', r', m', stk', ms') ->
+      wf_stk p stk -> wf_prog p -> p[[pc]] <> None -> exists i, p[[pc']] = Some i.
+Proof.
+  induction 1; subst; i.
+  - subst. clarify. destruct (p[[pc']]); eauto. clarify.
+  - destruct ic2. 2-4: inv H0; inv H7; inv H6.
+    destruct a as [ [ [ [pc'' r''] m''] stk''] ms'']. subst.
+    exploit IHmulti_ideal_inst.
+    { eauto. }
+    { eauto. }
+    { eapply wf_stk_preserve_ideal in H; eauto. }
+    { eauto. }
+    { eapply ideal_res_pc_exists in H; eauto. des. ii. clarify. }
+    eauto.
+Qed.
+
+Lemma multi_ideal_res_pc_exists
+  p pc r m stk ms pc' r' m' stk' ms' ds os
+  (WFSTK: wf_stk p stk)
+  (WFP: wf_prog p)
+  (PC: p[[pc]] <> None)
+  (STEP: p |- <(( S_Running (pc, r, m, stk, ms) ))> -->i*_ ds ^^ os <((S_Running (pc', r', m', stk', ms') ))>):
+  exists i, p[[pc']] = Some i.
+Proof.
+  eapply multi_ideal_res_pc_exists_aux; eauto.
+Qed.
+
+Lemma nonempty_mem_preserve_multi_ideal
+  p pc r m stk ms pc' r' m' stk' ms' ds os
+  (STEP: p |- <(( S_Running (pc, r, m, stk, ms) ))> -->i*_ ds ^^ os <((S_Running (pc', r', m', stk', ms') ))>):
+  Datatypes.length m = Datatypes.length m'.
+Proof.
+  dependent induction STEP; eauto.
+  destruct ic2. 2-4: inv STEP; inv H0.
+  destruct a as [ [ [ [pc'' r''] m''] stk''] ms'']. subst.
+  eapply nonempty_mem_preserve_ideal in H.
+  rewrite H. eapply IHSTEP; eauto.
+Qed.
+
 Lemma seq_ideal_safety_preservation
-  p c
+  p c pc r m stk
+  (CFG: c = (pc, r, m, stk))
+  (MEM: nonempty_mem m)
+  (WFSTK: wf_stk p stk)
+  (WFP: wf_prog p)
+  (NCT: no_ct_prog p)
   (SEQ: seq_exec_safe p c) :
   ideal_exec_safe p (c, false).
 Proof.
-  red. ii. destruct ict as [c' ms].
-  destruct c as [cl stk]. destruct cl as [cl m]. destruct cl as [pc r].
+  red. ii. destruct ict as [c' ms]. subst.
+  (* destruct c as [cl stk]. destruct cl as [cl m]. destruct cl as [pc r]. *)
   destruct c' as [cl' stk']. destruct cl' as [cl' m']. destruct cl' as [pc' r'].
   destruct ms; cycle 1.
   { red in SEQ.
@@ -574,37 +706,52 @@ Proof.
     eapply SEQ in x0. des. eapply seq_ideal_nonspec in x0.
     des. eauto. }
   destruct (p[[pc']]) eqn:PC'; cycle 1.
-  { admit. (* wf_prog, wf_dir -> contradiction *) }
+  { eapply multi_ideal_res_pc_exists in H; eauto; des; clarify.
+    ii. red in SEQ. exploit SEQ; [econs|]. i. des. inv x0; clarify. }
   destruct i.
   - esplits. econs; eauto.
   - esplits. econs 2. eauto.
   - esplits. econs 3; eauto.
   - esplits. econs 4; eauto.
-  - esplits. econs 5; ss; eauto.
-    admit. (* nonempty memory *)
+  - assert (MEM': nonempty_mem m').
+    { eapply nonempty_mem_preserve_multi_ideal in H.
+      unfold nonempty_mem in *. lia. }
+    assert (exists v, nth_error m' 0 = Some v).
+    { red in MEM'. erewrite <- nth_error_Some in MEM'.
+      destruct (nth_error m' 0); eauto. clarify. }
+    des. esplits. econs 5; ss; eauto.
   - esplits. econs 6; ss; eauto.
   - exists [DCall (0, 0)], [OCall 0].
-    esplits. econs; eauto. 
-    + admit. (* nonempty program *)
-    + admit. (* 0th program is a call target *)
-  - admit. (* no call target in the source code *)
+    red in WFP. des. red in WFP.
+    assert (exists blk b, nth_error p 0 = Some (blk, b)).
+    { erewrite <- nth_error_Some in WFP. destruct (nth_error p 0); clarify.
+      destruct p0. eauto. }
+    des. destruct b.
+    + esplits. econs; eauto.
+    + esplits. eapply ISMI_Call_F; eauto. ii. ss. clarify.
+      left. ss.
+  - exfalso. eapply no_ct_prog_src; eauto.
   - destruct stk'.
     + esplits. eapply ISMI_Term. eauto.
     + esplits. eapply ISMI_Ret. eauto.
       Unshelve. all: repeat (econs).
-Admitted.
+Qed.
 
 Lemma seq_spec_safety_preservation
-  p b c
-  (SEQ: seq_exec_safe p c)
+  p b c pc r m stk
+  (CFG: c = (pc, r, m, stk))
+  (MEM: nonempty_mem m)
+  (WFSTK: wf_stk p stk)
   (NCT: no_ct_prog p)
   (WFP: wf_prog p)
   (UNUSED1: unused_prog msf p)
   (UNUSED2: unused_prog callee p)
+  (SEQ: seq_exec_safe p c)
   (MATCH: match_cfgs_ext p (S_Running (c, false)) (S_Running (c, b, false))) :
   spec_exec_safe (uslh_prog p) (c, b, false).
 Proof.
-  ii. eapply seq_ideal_safety_preservation in SEQ.
+  ii. eapply seq_ideal_safety_preservation in SEQ; eauto.
+
   red in SEQ.
   exploit ultimate_slh_bcc'; eauto.
   i. des. destruct ic2.
@@ -617,12 +764,12 @@ Proof.
     + inv REG.
       eapply unused_prog_lookup in UNUSED1; eauto.
       eapply unused_prog_lookup in UNUSED2; eauto.
-      (* inv x2; clarify. *)
+
       destruct (to_fp (eval r' <{{ (msf = 1) ? & 0 : fp }}>)) eqn:FP.
       2:{ ss. rewrite H1 in FP. ss. destruct ms; ss.
-          assert (exists l, to_fp (eval r fp) = Some l).
+          assert (exists l, to_fp (eval r0 fp) = Some l).
           { inv x2; clarify; eauto. }
-          des. erewrite eval_regs_eq with (r := r) (r' := r') in H2; try eapply H0; eauto.
+          des. erewrite eval_regs_eq with (r := r0) (r' := r') in H2; try eapply H0; eauto.
           clarify. }
       esplits. eapply SpecSMI_Call; eauto.
     + esplits. econs 2; eauto.
