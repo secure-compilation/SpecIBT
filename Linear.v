@@ -34,8 +34,9 @@ From SECF Require Import sflib.
 
 (* mem only contains data. *)
 
+(* m : mem *)
 (* 0 ~ length m - 1 : data area *)
-(* length m ~ length m + length p : code area *)
+(* 0 ~ length p - 1 : code area *)
 
 (** Linearized machine level semantics *)
 Inductive ty : Type := TNum.
