@@ -758,7 +758,46 @@ Proof.
   - exploit SEQ; eauto. i. des.
     (* match -> source progress -> target progress *)
     inv x1.
-    + admit.
+    + inv MATCH0. inv x2.
+      * exploit src_inv; eauto. i. des. inv x2. inv MATCH0.
+        esplits. econs; eauto.
+      * exploit src_inv; eauto. i. des. inv x1. inv MATCH0.
+        esplits. econs 2; eauto.
+      * exploit src_inv; eauto. i. des. inv x2; [ss|].
+        eapply unused_prog_lookup in UNUSED1; eauto.
+        eapply unused_prog_lookup in UNUSED2; eauto.
+
+        assert (to_nat (eval r' <{{ (msf = 1) ? 0 : e }}>) = Some n').
+        { ss. inv REG. rewrite H1. destruct ms; ss; eauto.
+          rewrite <- H9. erewrite <- eval_regs_eq; eauto. }
+        esplits. econs 3; eauto.
+      * exploit src_inv; eauto. i. des. inv x2. inv MATCH0.
+        esplits. econs 4; eauto.
+      * exploit src_inv; eauto. i. des. inv x1. inv MATCH0.
+        eapply unused_prog_lookup in UNUSED1; eauto.
+        eapply unused_prog_lookup in UNUSED2; eauto. ss. des.
+
+        esplits. econs 5; eauto. rewrite <- H10.
+        inv REG. simpl. rewrite H1. destruct ms; ss.
+        erewrite <- eval_regs_eq; eauto.
+      * exploit src_inv; eauto. i. des. inv x2. inv MATCH0.
+        eapply unused_prog_lookup in UNUSED1; eauto.
+        eapply unused_prog_lookup in UNUSED2; eauto. ss. des.
+
+        esplits. econs 6; eauto. erewrite <- H10.
+        inv REG. simpl. rewrite H1. destruct ms; ss.
+        erewrite <- eval_regs_eq; eauto.
+      * exploit src_inv; eauto. i. des. inv x2; [ss|].
+        esplits. econs 2; eauto.
+      * exploit src_inv; eauto. i. des. inv x2; [ss|].
+        esplits. econs 2; eauto.
+      * destruct stk'.
+        { ss. des_ifs. }
+        exploit src_inv; eauto. i. des. inv x2. inv MATCH0.
+        esplits. econs 10; eauto.
+      * destruct stk'; [|ss].
+        exploit src_inv; eauto. i. des. inv x2. inv MATCH0.
+        esplits. econs 11; eauto.
     + esplits. econs. eauto.
     + esplits. econs 2; eauto.
     + inv REG.
@@ -775,9 +814,13 @@ Proof.
     + esplits. econs 2; eauto.
     + esplits. eapply SpecSMI_Jump; eauto.
     + esplits. econs 2; eauto.
-  - clear - x0. exfalso. admit. (* contradiction *)
+  - clear - x0. exfalso. remember false. clear Heqb.
+    dependent induction x0. destruct ic2. 3-4: inv x0; inv H0.
+    2:{ inv H. }
+    destruct a. eapply IHx0; eauto.
   - inv x1. exists [], [], S_Fault.
     eapply SpecSMI_Fault; eauto.
   - inv x1.
-Admitted.
+Unshelve. all: repeat econs.
+Qed.
 
