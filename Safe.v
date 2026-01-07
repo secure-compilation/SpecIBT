@@ -738,7 +738,7 @@ Proof.
 Qed.
 
 Lemma seq_spec_safety_preservation
-  p b c pc r m stk
+  p b c c' pc r m stk
   (CFG: c = (pc, r, m, stk))
   (MEM: nonempty_mem m)
   (WFSTK: wf_stk p stk)
@@ -747,8 +747,8 @@ Lemma seq_spec_safety_preservation
   (UNUSED1: unused_prog msf p)
   (UNUSED2: unused_prog callee p)
   (SEQ: seq_exec_safe p c)
-  (MATCH: match_cfgs_ext p (S_Running (c, false)) (S_Running (c, b, false))) :
-  spec_exec_safe (uslh_prog p) (c, b, false).
+  (MATCH: match_cfgs_ext p (S_Running (c, false)) (S_Running (c', b, false))) :
+  spec_exec_safe (uslh_prog p) (c', b, false).
 Proof.
   ii. eapply seq_ideal_safety_preservation in SEQ; eauto.
 
@@ -824,3 +824,56 @@ Proof.
 Unshelve. all: repeat econs.
 Qed.
 
+Lemma seq_spec_safety_preservation_init_aux
+  p c c' r r' m
+  (FST: first_blk_call p)
+  (CFG1: c = ((0,0), r, m, @nil cptr))
+  (CFG2: c' = ((0,0), r', m, @nil cptr))
+  (CALLEE: r' ! callee = FP 0)
+  (MEM: nonempty_mem m)
+  (NCT: no_ct_prog p)
+  (WFP: wf_prog p)
+  (UNUSED1: unused_prog msf p)
+  (UNUSED2: unused_prog callee p)
+  (SEQ: seq_exec_safe p c)
+  (REG: Rsync r r' false) :
+  spec_exec_safe (uslh_prog p) (c', true, false).
+Proof.
+  red. i.
+  assert (CT: (uslh_prog p)[[(0, 0)]] = Some <{{ ctarget }}>).
+  { red in FST. des_ifs. eapply ctarget_exists; eauto. }
+  exploit head_call_target; eauto. i. des; clarify.
+  replace ((0,0) + 1) with (0,1) in x2 by ss.
+  destruct n.
+  { inv H. esplits. econs. eauto. }
+  destruct n.
+  { inv H. inv H6. inv H1. esplits. econs 2. eauto. }
+  inv H. inv H1; clarify. inv H6. inv H0; clarify.
+  replace ((0,1) + 1) with (0,2) in H5 by ss.
+  eapply seq_spec_safety_preservation in SEQ; eauto.
+  { ii. ss. }
+  econs. econs.
+  { red in FST. des_ifs. unfold pc_sync. ss. des_ifs_safe.
+    simpl in Heq1. subst. red in WFP. des. rewrite Forall_forall in WFP0.
+    ss. exploit WFP0; eauto. i. red in x0. des. red in x0. ss. }
+  { red. inv REG. split.
+    - i. des. rewrite t_update_neq; eauto.
+    - ss. rewrite CALLEE. ss. }
+  { ss. }
+Qed.
+
+Lemma seq_spec_safety_preservation_init
+  p r r' m
+  (FST: first_blk_call p)
+  (CALLEE: r' ! callee = FP 0)
+  (MEM: nonempty_mem m)
+  (NCT: no_ct_prog p)
+  (WFP: wf_prog p)
+  (UNUSED1: unused_prog msf p)
+  (UNUSED2: unused_prog callee p)
+  (SEQ: seq_exec_safe p ((0,0), r, m, @nil cptr))
+  (REG: Rsync r r' false) :
+  spec_exec_safe (uslh_prog p) (((0,0), r', m, @nil cptr), true, false).
+Proof.
+  eapply seq_spec_safety_preservation_init_aux; eauto.
+Qed.
