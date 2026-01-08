@@ -284,6 +284,7 @@ Lemma minicet_linear_bcc_single
   (TRANSL: machine_prog p = Some tp)
   (SAFE: exists ds os sct, p |- <(( S_Running sc ))> -->_ ds ^^ os  <(( sct ))>)
   (MATCH: match_states p (S_Running sc) (S_Running tc))
+  (WFDS: wf_ds tp tds)
   (TGT: tp |- <(( S_Running tc ))> -->m_ tds ^^ tos  <(( tct ))>) :
   exists ds os sct, p |- <(( S_Running sc ))> -->_ ds ^^ os  <(( sct ))>
              /\ match_states p sct tct
@@ -296,12 +297,47 @@ Lemma minicet_linear_bcc
   (TRANSL: machine_prog p = Some tp)
   (SAFE: spec_exec_safe p sc)
   (MATCH: match_states p (S_Running sc) (S_Running tc))
+  (WFDS: wf_ds tp tds)
   (TGT: tp |- <(( S_Running tc ))> -->m*_ tds ^^ tos ^^ n  <(( tct ))>) :
   exists ds os sct, p |- <(( S_Running sc ))> -->*_ ds ^^ os ^^ n  <(( sct ))>
              /\ match_states p sct tct
              /\ match_dirs p ds tds /\ match_obs p os tos.
 Proof.
-Admitted.
+  ginduction n; ii.
+  { inv TGT. esplits; try econs. eauto. }
+  assert (SAFE1: exists ds os sct, p |- <(( S_Running sc ))> -->_ ds ^^ os  <(( sct ))>).
+  { eapply SAFE with (ds := []); econs. }
+  inv TGT.
+  eapply Forall_app in WFDS. destruct WFDS.
+  exploit minicet_linear_bcc_single; try eapply H0; eauto. i. des.
+  destruct sct; cycle 1.
+  { inv x0. }
+  { inv x1. inv H5; [|inv H2].
+    exists (ds ++ []), (os ++ []), S_Fault.
+    esplits; try repeat econs; auto.
+    - do 2 rewrite app_nil_r; auto.
+    - do 2 rewrite app_nil_r; auto. }
+  { inv x1. inv H5;[|inv H2].
+    exists (ds ++ []), (os ++ []), S_Term.
+    esplits; try repeat econs; auto.
+    - do 2 rewrite app_nil_r; auto.
+    - do 2 rewrite app_nil_r; auto. }
+  destruct sc2; try sfby inv x1.
+
+  assert (WFDS: wf_ds' p ds).
+  { eapply wf_ds_inj; try eapply x2; eauto. }
+
+  assert (SAFE2: spec_exec_safe p a).
+  { red. i. exploit SAFE.
+    2:{ econs 2; [eapply x0|eapply H2]. }
+    { red. rewrite Forall_app; eauto. }
+    eauto. }
+  exploit IHn; try eapply H5; eauto.
+  i. des. esplits; try eapply x5.
+  { econs; eauto. }
+  { red. eapply Forall2_app; eauto. }
+  { red. eapply Forall2_app; eauto. }
+Qed.
 
 Definition spec_same_obs_machine p pc r1 r2 m1 m2 stk b : Prop :=
   forall ds n os1 os2 c1 c2 (WFDS: wf_ds p ds),
@@ -359,7 +395,7 @@ Proof.
   intros ISAFE2.
 
   red. i.
-  hexploit minicet_linear_bcc; [|eapply ISAFE1| |eapply H5|]; eauto.
+  hexploit minicet_linear_bcc; [|eapply ISAFE1| | |eapply H5|]; eauto.
   { econs; ss.
     - unfold pc_inj. admit. (* nonempty *)
     - red. i. red in H0.
@@ -375,7 +411,7 @@ Proof.
     - red. i. specialize (H2 i). des_ifs_safe.
       unfold val_inject in *. des_ifs_safe. admit. }
   i. des.
-  hexploit minicet_linear_bcc; [|eapply ISAFE2| |eapply H6|]; eauto.
+  hexploit minicet_linear_bcc; [|eapply ISAFE2| | |eapply H6|]; eauto.
   { admit. (* see above *) }
   i. des.
 
