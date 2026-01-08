@@ -488,13 +488,16 @@ Definition machine_blk (p: MiniCET.prog) (blk: (list inst * bool)) : option (lis
   let ob := map (machine_inst p) (fst blk) in
   transpose ob.
 
-Definition machine_prog (p: MiniCET.prog) : option prog :=
-  let op := map (machine_blk p) p in
+Definition _machine_prog  (p_ctx: MiniCET.prog) (p: MiniCET.prog) : option prog :=
+  let op := map (machine_blk p_ctx) p in
   let op' := transpose op in
   match op' with
   | Some lp => Some (List.concat lp)
   | _ => None
   end.
+
+Definition machine_prog (p: MiniCET.prog) : option prog :=
+  _machine_prog p p.
 
 Module SimCommon (M: TMap).
 
