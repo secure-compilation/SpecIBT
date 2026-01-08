@@ -175,6 +175,48 @@ From SECF Require Import sflib.
 Definition match_reg (p: MiniCET.prog) (r: MCC.reg) (r': reg) : Prop :=
   forall x, val_inject p (r ! x) (r' ! x).
 
+Lemma eval_binop_inject p o v1 v1' v2 v2'
+  (INJ1: val_inject p v1 v1')
+  (INJ2: val_inject p v2 v2') :
+  val_inject p (eval_binop o v1 v2) (eval_binop o v1' v2').
+Proof.
+  red in INJ1, INJ2. des_ifs. destruct o; ss.
+  f_equal.
+  destruct (Nat.eq_dec l0 l); clarify.
+  { do 2 rewrite Nat.eqb_refl. auto. }
+  hexploit pc_inj_inject; [| eapply Heq0| eapply Heq|].
+  { ii. eapply n. inv H. auto. }
+  ii. rewrite <- Nat.eqb_neq in n, H. rewrite n, H. auto.
+Qed.
+
+Lemma eval_inject p r1 r2 e1 e2
+  (INJ: match_reg p r1 r2)
+  (TRANS: machine_exp p e1 = Some e2) :
+  val_inject p (MCC.eval r1 e1) (eval r2 e2).
+Proof.
+  ginduction e1; ss; ii; clarify.
+  - des_ifs. ss.
+    hexploit IHe1_1; eauto. intros INJ1. hexploit IHe1_2; eauto. intros INJ2.
+    eapply (eval_binop_inject p o); eauto.
+  - des_ifs_safe. hexploit IHe1_1; eauto. i. ss.
+    destruct (MCC.eval r1 e1_1); ss; auto. des_ifs_safe. ss. clarify.
+    des_ifs.
+    + hexploit IHe1_2; eauto.
+    + hexploit IHe1_3; eauto.
+  - des_ifs. ss. clarify.
+Qed.
+
+Lemma asgn_match_reg p v v' r r' x
+  (INJ: val_inject p v v')
+  (MATCH: match_reg p r r') :
+  match_reg p (x !-> v; r) (x !-> v'; r').
+Proof.
+  unfold match_reg in *. i.
+  destruct (string_dec x x0); subst.
+  { do 2 rewrite MiniCET_Index.t_update_eq. auto. }
+  do 2 (rewrite MiniCET_Index.t_update_neq; eauto).
+Qed.
+
 Definition match_reg_src (p: MiniCET.prog) (r: MCC.reg) (r': reg) (ms: bool) : Prop :=
   (forall x, x <> msf /\ x <> callee -> val_inject p (r ! x) (r' ! x))
 /\ r' ! msf = N (if ms then 1 else 0).
@@ -186,9 +228,17 @@ Definition match_mem (p: MiniCET.prog) (m m': mem) : Prop :=
        | Some v, None => False
        end.
 
+Lemma store_match_reg p v v' m m' n
+  (MEM: match_mem p m m')
+  (INJ: val_inject p v v') :
+  match_mem p (upd n m v) (upd n m' v').
+Proof.
+  red. i.
+Admitted.
+
 Variant match_states (p: MiniCET.prog) : state MCC.spec_cfg -> state spec_cfg -> Prop :=
 | match_states_intro pc r m stk ct ms pc' r' m' stk'
-  (PC: pc_inj p pc = Some pc')
+  (PC: p[[pc]] <> None -> pc_inj p pc = Some pc')
   (REG: match_reg p r r')
   (MEM: match_mem p m m')
   (STK: map_opt (pc_inj p) stk = Some stk') :
@@ -239,23 +289,84 @@ Proof.
   - eapply flat_coord_inverse.
 Qed.
 
-Lemma src_inv
-  (p: MiniCET.prog) (tp: prog) pc l i
-  (TRANSL: machine_prog p = Some tp)
-  (SRC: p[[pc]] = Some i)
-  (INJ: pc_inj p pc = Some l) :
-  nth_error tp l = Some i.
+(* Lemma src_inv *)
+(*   (p: MiniCET.prog) (tp: prog) pc l i *)
+(*   (TRANSL: machine_prog p = Some tp) *)
+(*   (SRC: p[[pc]] = Some i) *)
+(*   (INJ: pc_inj p pc = Some l) : *)
+(*   exists i', nth_error tp l = Some i' /\ machine_inst p i = Some i'. *)
+(* Proof. *)
+
+Lemma transpose_len {X} (ol: list (option X)) l
+  (TRNS: transpose ol = Some l) :
+  Datatypes.length ol = Datatypes.length l.
 Proof.
-Admitted.
+  ginduction ol; ss; ii; clarify.
+  des_ifs. ss. erewrite IHol; eauto.
+Qed.
+
+Lemma machine_blk_len p_ctx blk tblk b
+  (MBLK: machine_blk p_ctx (blk, b) = Some tblk) :
+  Datatypes.length blk = Datatypes.length tblk.
+Proof.
+  unfold machine_blk in MBLK. ss. eapply transpose_len in MBLK.
+  rewrite length_map in MBLK; eauto.
+Qed.
+
+Lemma machine_blk_inv p_ctx blk ct blk' l ti
+  (MBLK: machine_blk p_ctx (blk, ct) = Some blk')
+  (LK: nth_error blk' l = Some ti) :
+  exists i, nth_error blk l = Some i /\ machine_inst p_ctx i = Some ti.
+Proof.
+  ginduction blk; i.
+  { unfold machine_blk in MBLK. ss. clarify.
+    rewrite nth_error_nil in LK. clarify. }
+  unfold machine_blk in MBLK. ss. des_ifs_safe.
+  destruct l.
+  { simpl in *. clarify. esplits; eauto. }
+  simpl in *. exploit IHblk; eauto.
+Unshelve. econs.
+Qed.
+
+Lemma tgt_inv_aux
+  (p p_ctx: MiniCET.prog) (tp: prog) pc l ti
+  (TRANSL: _machine_prog p_ctx p = Some tp)
+  (TGT: nth_error tp l = Some ti)
+  (INJ: pc_inj p pc = Some l) :
+  exists i, p[[pc]] = Some i /\ machine_inst p_ctx i = Some ti.
+Proof.
+  ginduction p; ii.
+  { ii. unfold _machine_prog in TRANSL. ss. clarify.
+    rewrite nth_error_nil in TGT. clarify. }
+  unfold _machine_prog in TRANSL. simpl in TRANSL. des_ifs_safe.
+  simpl in TGT. destruct pc0 as [b o]. destruct a as [blk ct].
+  destruct b as [|b].
+  { ss. unfold pc_inj in INJ. simpl in INJ.
+    des_ifs_safe. rewrite ltb_lt in Heq.
+    exploit machine_blk_len; eauto. i. rewrite x0 in Heq.
+    rewrite nth_error_app1 in TGT; [|lia].
+    exploit machine_blk_inv; eauto. }
+  replace (((blk, ct) :: p) [[(S b, o)]]) with p[[(b, o)]] by ss.
+  unfold pc_inj in INJ. simpl in INJ. des_ifs_safe.
+  exploit machine_blk_len; eauto. i. rewrite x0 in TGT.
+  rewrite nth_error_app2 in TGT; [|lia].
+  rewrite add_comm, add_sub in TGT.
+  exploit IHp.
+  { unfold _machine_prog. erewrite Heq1. eauto. }
+  { eauto. }
+  { eauto. }
+  eauto.
+Qed.
 
 Lemma tgt_inv
-  (p: MiniCET.prog) (tp: prog) pc l i
+  (p: MiniCET.prog) (tp: prog) pc l ti
   (TRANSL: machine_prog p = Some tp)
-  (TGT: nth_error tp l = Some i)
+  (TGT: nth_error tp l = Some ti)
   (INJ: pc_inj p pc = Some l) :
-  p[[pc]] = Some i.
+  exists i, p[[pc]] = Some i /\ machine_inst p i = Some ti.
 Proof.
-Admitted.
+  eapply tgt_inv_aux; eauto.
+Qed.
 
 Lemma wf_dir_inj
   (p: MiniCET.prog) (tp: prog) d td
@@ -279,6 +390,22 @@ Lemma wf_ds_inj
 Proof.
 Admitted.
 
+Lemma pc_inj_inc p pc pc'
+  (INJ: pc_inj p pc = Some pc')
+  (PC: p [[pc + 1]] <> None) :
+  pc_inj p (pc + 1) = Some (add pc' 1).
+Proof.
+  unfold pc_inj in *. ginduction p; ii.
+  { exfalso. eapply PC. destruct pc0. ss. }
+  destruct pc0 as [b o]. destruct a as [blk ct].
+  destruct b as [|b].
+  { simpl in *. des_ifs_safe. rewrite ltb_ge in Heq0.
+    rewrite nth_error_Some in PC. lia. }
+  ss. des_ifs_safe.
+  hexploit IHp; eauto; ii; ss; [des_ifs|].
+  rewrite H. f_equal. lia.
+Qed.
+
 Lemma minicet_linear_bcc_single
   (p: MiniCET.prog) (tp: prog) sc tc tct tds tos
   (TRANSL: machine_prog p = Some tp)
@@ -290,6 +417,68 @@ Lemma minicet_linear_bcc_single
              /\ match_states p sct tct
              /\ match_dirs p ds tds /\ match_obs p os tos.
 Proof.
+  inv MATCH.
+  assert (ISRC: exists i, p[[pc0]] = Some i).
+  { des. inv SAFE; eauto. }
+  des. exploit PC; [ii; clarify|]. clear PC. intros PC. inv TGT.
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
+    esplits; econs; eauto. unfold pc_inj. intro PC'.
+    destruct pc0 as [b o]. simpl.
+    exploit pc_inj_inc; eauto.
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x0. des_ifs.
+    esplits. 3-4: econs.
+    { econs 2; eauto. }
+    econs; eauto.
+    { i. exploit pc_inj_inc; eauto. }
+    red. i.
+    destruct (string_dec x x0); subst.
+    { do 2 rewrite MiniCET_Index.t_update_eq. eapply eval_inject; eauto. }
+    do 2 (rewrite MiniCET_Index.t_update_neq; eauto).
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1.
+    destruct i0; ss; clarify; try sfby des_ifs. des_ifs_safe.
+    esplits.
+    { econs 3; eauto. rewrite <- H9. admit. }
+    2:{ repeat econs. }
+    2:{ repeat econs. }
+    econs; eauto. i. destruct b'; auto.
+    exploit pc_inj_inc; try eapply PC; eauto.
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
+    esplits; try sfby (repeat econs).
+    { econs 4; eauto. }
+    econs; eauto.
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x0. des_ifs.
+    inv SAFE; clarify.
+    assert (n0 = n).
+    { exploit eval_inject; eauto. i. unfold to_nat in *. des_ifs. }
+    subst.
+
+    assert (exists v, nth_error m n = Some v /\ val_inject p v v').
+    { red in MEM. specialize (MEM n). des_ifs. esplits; eauto. }
+
+    des. clarify. esplits.
+    { econs 5; eauto. }
+    2:{ econs. }
+    2:{ econs; eauto. red. auto. }
+    econs; eauto.
+    { i. exploit pc_inj_inc; try eapply PC; eauto. }
+    { red. i. unfold match_mem in MEM.
+      esplits; try sfby (repeat econs).
+      { eapply asgn_match_reg; eauto. } }
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
+    inv SAFE; clarify.
+    assert (n0 = n).
+    { exploit eval_inject; try eapply Heq; eauto. i. unfold to_nat in *. des_ifs. }
+    subst.
+
+    assert (VAL: val_inject p (MCC.eval r e0) (eval r' e')).
+    { eapply eval_inject; eauto. }
+
+    esplits.
+    { econs 6; eauto. }
+    2-3: repeat econs.
+    econs; eauto.
+    { i. exploit pc_inj_inc; try eapply PC; eauto. }
+
 Admitted.
 
 Lemma minicet_linear_bcc
