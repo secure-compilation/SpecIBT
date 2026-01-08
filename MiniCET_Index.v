@@ -2575,7 +2575,7 @@ Definition seq_same_obs p pc r1 r2 m1 m2 stk : Prop :=
 Definition spec_same_obs p pc r1 r2 m1 m2 stk b : Prop :=
   forall ds n os1 os2 c1 c2 (WFDS: wf_ds' p ds),
   p |- <(( S_Running (pc, r1, m1, stk, b, false) ))> -->*_ds^^os1^^n <(( c1 ))> ->
-  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->*_ds^^ os2^^n <(( c2 ))> ->
+  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->*_ds^^ os2^^n <(( c2 ))> -> (* YH: Yan said this can be generalized different numbers of steps. *)
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition ideal_same_obs p pc r1 r2 m1 m2 stk : Prop :=

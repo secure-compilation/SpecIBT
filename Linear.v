@@ -111,9 +111,9 @@ Definition pc_inj (p: MiniCET.prog) (pc: MiniCET.cptr) : option nat :=
   coord_to_flat_idx fstp pc.
 
 Lemma coord_to_flat_idx_inject {X} (p: list (list X)) pc1 pc2 pc1' pc2'
-    (DIFF: pc1 <> pc2)
-    (INJ1: coord_to_flat_idx p pc1 = Some pc1')
-    (INJ2: coord_to_flat_idx p pc2 = Some pc2') :
+  (DIFF: pc1 <> pc2)
+  (INJ1: coord_to_flat_idx p pc1 = Some pc1')
+  (INJ2: coord_to_flat_idx p pc2 = Some pc2') :
   pc1' <> pc2'.
 Proof.
   ginduction p; ss; ii.

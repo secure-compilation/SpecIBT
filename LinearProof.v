@@ -306,13 +306,13 @@ Admitted.
 Definition spec_same_obs_machine p pc r1 r2 m1 m2 stk b : Prop :=
   forall ds n os1 os2 c1 c2 (WFDS: wf_ds p ds),
   p |- <(( S_Running (pc, r1, m1, stk, b, false) ))> -->m*_ds^^os1^^n <(( c1 ))> ->
-  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->m*_ds^^ os2^^n <(( c2 ))> ->
+  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->m*_ds^^ os2^^n <(( c2 ))> -> (* YH: Yan said this can be generalized different numbers of steps. *)
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition relative_secure_machine (p:MiniCET.prog) (tp: prog) (trans : MiniCET.prog -> option prog)
   (r1 r2 r1' r2' : reg) (m1 m2 m1' m2' : mem) : Prop :=
   seq_same_obs p (0,0) r1 r2 m1 m2 [] ->
-  match_reg_src p r1 r1' false -> match_reg_src (uslh_prog p) r2 r2' false ->
+  match_reg_src p r1 r1' false -> match_reg_src p r2 r2' false ->
   match_mem p m1 m1' -> match_mem p m2 m2' ->
   trans p = Some tp ->
   spec_same_obs_machine tp 0 r1' r2' m1' m2' [] true.
