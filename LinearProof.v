@@ -431,6 +431,25 @@ Proof.
   exploit IHMATCH; eauto.
 Qed.
 
+Lemma match_dir_unique p d1 d2 dt
+  (MATCH1: match_dir p d1 dt)
+  (MATCH2: match_dir p d2 dt):
+  d1 = d2.
+Proof.
+  unfold match_dir in *. des_ifs.
+  rewrite pc_inj_iff in *. clarify.
+Qed.
+
+Lemma match_dirs_unique p ds1 ds2 dst
+  (MATCH1: match_dirs p ds1 dst)
+  (MATCH2: match_dirs p ds2 dst):
+  ds1 = ds2.
+Proof.
+  ginduction dst; i; inv MATCH1; inv MATCH2; auto.
+  exploit (match_dir_unique p x x0); eauto. i. subst.
+  exploit (IHdst _ l l0); eauto. i. clarify.
+Qed.
+
 Lemma pc_inj_inc p pc pc'
   (INJ: pc_inj p pc = Some pc')
   (PC: p [[pc + 1]] <> None) :
@@ -690,14 +709,16 @@ Proof.
   { subst ir2. rewrite MiniCET_Index.t_update_neq; eauto. ii; clarify. }
   intros ISAFE2.
 
+  assert (ISYNC: pc_inj (uslh_prog p) (0, 0) = Some 0).
+  { admit. }
+
   red. i.
   hexploit minicet_linear_bcc; [|eapply ISAFE1| | |eapply H5|]; eauto.
-  { econs; ss.
-    - unfold pc_inj. admit. (* nonempty *)
+  { econs; try sfby ss.
     - red. i. red in H0.
       destruct (string_dec x callee).
       { subst. subst ir1. rewrite CALLEE1. ss.
-        admit. }
+        rewrite ISYNC. eauto. }
       destruct (string_dec x msf).
       { des. subst. subst ir1. rewrite H7. ss. }
       des. exploit H0; eauto. i. des. eauto.
@@ -705,18 +726,19 @@ Proof.
       unfold val_inject in *. des_ifs_safe.
       admit.
     - red. i. specialize (H2 i). des_ifs_safe.
-      unfold val_inject in *. des_ifs_safe. admit. }
+      unfold val_inject in *. des_ifs_safe.
+      admit. }
   i. des.
   hexploit minicet_linear_bcc; [|eapply ISAFE2| | |eapply H6|]; eauto.
   { admit. (* see above *) }
   i. des.
 
   assert (UNIQ: ds0 = ds1).
-  { admit. }
+  { eapply match_dirs_unique; eauto. }
   subst.
   red in SPEC. hexploit SPEC; cycle 1.
   { eapply H7. }
   { eapply H11. }
   2:{ eapply wf_ds_inj; eauto. }
-  i. admit. (* H15 H14 H10 *)
+  i. clear - H15 H14 H10. admit. (* H15 H14 H10 *)
 Admitted.
