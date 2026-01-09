@@ -718,8 +718,9 @@ Definition spec_same_obs_machine p pc r1 r2 m1 m2 stk b : Prop :=
 Definition relative_secure_machine (p:MiniCET.prog) (tp: prog) (trans : MiniCET.prog -> option prog)
   (r1 r2 r1' r2' : reg) (m1 m2 m1' m2' : mem) : Prop :=
   seq_same_obs p (0,0) r1 r2 m1 m2 [] ->
-  match_reg_src p r1 r1' false -> match_reg_src p r2 r2' false ->
-  match_mem p m1 m1' -> match_mem p m2 m2' ->
+  (* Function pointers are mapped to integer addresses with respect to the ULSHed program. *)
+  match_reg_src (uslh_prog p) r1 r1' false -> match_reg_src (uslh_prog p) r2 r2' false ->
+  match_mem (uslh_prog p) m1 m1' -> match_mem (uslh_prog p) m2 m2' ->
   trans p = Some tp ->
   spec_same_obs_machine tp 0 r1' r2' m1' m2' [] true.
 
@@ -753,8 +754,7 @@ Proof.
   { split; subst ir2; ss. ii. des.
     do 2 (rewrite MiniCET_Index.t_update_neq; eauto). }
 
-  hexploit REL; eauto.
-  intros SPEC.
+  hexploit REL; eauto. intros SPEC.
 
   hexploit seq_spec_safety_preservation_init; try eapply SAFE1; eauto.
   { subst ir1. rewrite MiniCET_Index.t_update_neq; eauto. ii; clarify. }
@@ -764,33 +764,33 @@ Proof.
   { subst ir2. rewrite MiniCET_Index.t_update_neq; eauto. ii; clarify. }
   intros ISAFE2.
 
+  assert (INITSAFE: (uslh_prog p)[[(0,0)]] <> None).
+  { red in ISAFE1. exploit ISAFE1; [econs|econs|]. i. des. inv x0; ii; clarify. }
+
   assert (ISYNC: pc_inj (uslh_prog p) (0, 0) = Some 0).
-  { admit. }
+  { clear -INITSAFE. destruct (uslh_prog p); ss.
+    destruct p0. ss. des_ifs. }
 
   red. i.
   hexploit minicet_linear_bcc; [|eapply ISAFE1| | |eapply H5|]; eauto.
   { econs; try sfby ss.
-    - red. i. red in H0.
-      destruct (string_dec x callee).
-      { subst. subst ir1. rewrite CALLEE1. ss.
-        rewrite ISYNC. eauto. }
-      destruct (string_dec x msf).
-      { des. subst. subst ir1. rewrite H7. ss. }
-      des. exploit H0; eauto. i. des. eauto.
-      inv IREG1. rewrite <- H8; eauto.
-      unfold val_inject in *. des_ifs_safe.
-      admit.
-    - red. i. specialize (H2 i). des_ifs_safe.
-      unfold val_inject in *. des_ifs_safe.
-      admit. }
+    red. i. red in H0.
+    destruct (string_dec x callee).
+    { subst. subst ir1. rewrite CALLEE1. ss.
+      rewrite ISYNC. eauto. }
+    destruct (string_dec x msf).
+    { des. subst. subst ir1. rewrite H7. ss. }
+    des. exploit H0; eauto. i. des. eauto.
+    inv IREG1. rewrite <- H8; eauto. }
   i. des.
+
   hexploit minicet_linear_bcc; [|eapply ISAFE2| | |eapply H6|]; eauto.
   { admit. (* see above *) }
   i. des.
 
-  assert (UNIQ: ds0 = ds1).
+  assert (UNIQ: ds0 = ds1); subst.
   { eapply match_dirs_unique; eauto. }
-  subst.
+
   red in SPEC. hexploit SPEC; cycle 1.
   { eapply H7. }
   { eapply H11. }
