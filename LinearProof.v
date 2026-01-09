@@ -450,6 +450,61 @@ Proof.
   exploit (IHdst _ l l0); eauto. i. clarify.
 Qed.
 
+Lemma match_ob_unique_src p o1 o2 ot
+  (MATCH1: match_ob p o1 ot)
+  (MATCH2: match_ob p o2 ot):
+  o1 = o2.
+Proof.
+  unfold match_ob in *. des_ifs.
+  rewrite pc_inj_iff in *. clarify.
+Qed.
+
+Lemma match_obs_unique_src p os1 os2 ost
+  (MATCH1: match_obs p os1 ost)
+  (MATCH2: match_obs p os2 ost):
+  os1 = os2.
+Proof.
+  ginduction ost; i; inv MATCH1; inv MATCH2; auto.
+  exploit (match_ob_unique_src p x x0); eauto. i. subst.
+  exploit (IHost _ l l0); eauto. i. clarify.
+Qed.
+
+Lemma match_ob_unique_tgt p o ot1 ot2
+  (MATCH1: match_ob p o ot1)
+  (MATCH2: match_ob p o ot2):
+  ot1 = ot2.
+Proof.
+  unfold match_ob in *. des_ifs.
+Qed.
+
+Lemma match_obs_unique_tgt p os ost1 ost2
+  (MATCH1: match_obs p os ost1)
+  (MATCH2: match_obs p os ost2):
+  ost1 = ost2.
+Proof.
+  ginduction os; i; inv MATCH1; inv MATCH2; auto.
+  exploit (match_ob_unique_tgt p _ y y0); eauto. i. subst.
+  exploit (IHos _ l' l'0); eauto. i. clarify.
+Qed.
+
+Lemma prefix_match_obs
+  p os1 os2 os os0
+  (MATCH1: match_obs (uslh_prog p) os os1)
+  (MATCH2: match_obs (uslh_prog p) os0 os2)
+  (OBS: Utils.prefix os os0 \/ Utils.prefix os0 os) :
+  Utils.prefix os1 os2 \/ Utils.prefix os2 os1.
+Proof.
+  des.
+  - left. unfold Utils.prefix in *. des.
+    subst. exploit Forall2_app_inv_l; eauto. i. des.
+    subst. exists l2'. exploit (match_obs_unique_tgt _ os os1 l1'); eauto.
+    i. subst. auto.
+  - right. unfold Utils.prefix in *. des.
+    subst. exploit Forall2_app_inv_l; eauto. i. des.
+    subst. exists l2'. exploit (match_obs_unique_tgt _ os0 os2 l1'); eauto.
+    i. subst. auto.
+Qed.
+
 Lemma pc_inj_inc p pc pc'
   (INJ: pc_inj p pc = Some pc')
   (PC: p [[pc + 1]] <> None) :
@@ -740,5 +795,6 @@ Proof.
   { eapply H7. }
   { eapply H11. }
   2:{ eapply wf_ds_inj; eauto. }
-  i. clear - H15 H14 H10. admit. (* H15 H14 H10 *)
+  i. clear - H15 H14 H10.
+  eapply prefix_match_obs; eauto.
 Admitted.
