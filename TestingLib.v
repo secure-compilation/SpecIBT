@@ -23,6 +23,7 @@ From SECF Require Import
   MapsFunctor
   Linear
   MiniCET
+  MiniCET_Index
   Machine
   Utils
   Safe
