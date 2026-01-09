@@ -785,7 +785,15 @@ Proof.
   i. des.
 
   hexploit minicet_linear_bcc; [|eapply ISAFE2| | |eapply H6|]; eauto.
-  { admit. (* see above *) }
+  { econs; try sfby ss.
+    red. i. red in H1.
+    destruct (string_dec x callee).
+    { subst. subst ir2. rewrite CALLEE2. ss.
+      rewrite ISYNC. eauto. }
+    destruct (string_dec x msf).
+    { des. subst. subst ir2. rewrite H11. ss. }
+    des. exploit H1; eauto. i. des. eauto.
+    inv IREG2. rewrite <- H12; eauto. }
   i. des.
 
   assert (UNIQ: ds0 = ds1); subst.
@@ -797,4 +805,4 @@ Proof.
   2:{ eapply wf_ds_inj; eauto. }
   i. clear - H15 H14 H10.
   eapply prefix_match_obs; eauto.
-Admitted.
+Qed.

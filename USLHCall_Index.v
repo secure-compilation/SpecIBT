@@ -487,20 +487,6 @@ Fixpoint subst_hd ctxt c : com :=
   end.
 
 Notation "C '<[' c ']>'" := (subst_hd C c).
-
-(* Definition is_seq (c : com) := exists (c1 c2 : com), c = <{{ c1; c2 }}>.
-
-Lemma canonicalize_seq : forall (c : com) (C : hd_ctxt), 
-  ~ (is_seq c) \/ exists c1 c2 c_hd, c = <{{ c1; c2 }}> /\ c1 = C <[ c_hd ]>.
-Proof.
-  intros. induction c.
-  1, 2, 4, 5, 6, 7, 8 : left; unfold not; intros; unfold is_seq in H; do 2 destruct H; discriminate.
-  right. exists c1. exists c2. 
-  destruct IHc1, IHc2.
-  - exists c1. split; auto. induction C; auto.
-    rewrite IHC in H. cbn.
-    assert (subst_hd C c1 = c1).
-   Admitted. *)
   
 
 (** The masking USLH does for indices requires that our arrays are nonempty. *)
