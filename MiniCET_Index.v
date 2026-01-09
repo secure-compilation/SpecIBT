@@ -2573,9 +2573,9 @@ Definition seq_same_obs p pc r1 r2 m1 m2 stk : Prop :=
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition spec_same_obs p pc r1 r2 m1 m2 stk b : Prop :=
-  forall ds n os1 os2 c1 c2 (WFDS: wf_ds' p ds),
+  forall ds n m os1 os2 c1 c2 (WFDS: wf_ds' p ds),
   p |- <(( S_Running (pc, r1, m1, stk, b, false) ))> -->*_ds^^os1^^n <(( c1 ))> ->
-  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->*_ds^^ os2^^n <(( c2 ))> -> (* YH: Yan said this can be generalized different numbers of steps. *)
+  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->*_ds^^ os2^^m <(( c2 ))> -> (* YH: Yan said this can be generalized different numbers of steps. *)
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition ideal_same_obs p pc r1 r2 m1 m2 stk : Prop :=
@@ -3162,10 +3162,10 @@ Lemma spec_eval_relative_secure_aux
   (LK2: msf_lookup_sc sc2 = N (if (ms_true_sc sc2) then 1 else 0))
   (MATCH1: match_cfgs p ic1 sc1)
   (MATCH2: match_cfgs p ic2 sc2)
-  ds os1 os2 n c1 c2
+  ds os1 os2 n m c1 c2
   (WFDS: wf_ds' (uslh_prog p) ds)
   (SSTEP1: (uslh_prog p) |- <(( S_Running sc1 ))> -->*_ds^^os1^^n <(( c1 ))>)
-  (SSTEP2: (uslh_prog p) |- <(( S_Running sc2 ))> -->*_ds^^ os2^^n <(( c2 ))>):
+  (SSTEP2: (uslh_prog p) |- <(( S_Running sc2 ))> -->*_ds^^ os2^^m <(( c2 ))>):
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 Proof.
   eapply ultimate_slh_bcc in SSTEP1; eauto. des.
@@ -3190,10 +3190,10 @@ Lemma spec_eval_relative_secure_init_aux
   (INIT2: r2' ! callee = FP 0)
   (MATCH1: Rsync r1 r1' false)
   (MATCH2: Rsync r2 r2' false)
-  ds os1 os2 n sc1' sc2'
+  ds os1 os2 n m sc1' sc2'
   (WFDS: wf_ds' (uslh_prog p) ds)
   (SSTEP1: (uslh_prog p) |- <(( S_Running sc1 ))> -->*_ds^^os1^^n <(( sc1' ))>)
-  (SSTEP2: (uslh_prog p) |- <(( S_Running sc2 ))> -->*_ds^^ os2^^n <(( sc2' ))>):
+  (SSTEP2: (uslh_prog p) |- <(( S_Running sc2 ))> -->*_ds^^ os2^^m <(( sc2' ))>):
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 Proof.
   eapply ultimate_slh_bcc_init in SSTEP1; eauto. des.

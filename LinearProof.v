@@ -250,9 +250,9 @@ Proof.
   - intros l BEQ NTH. destruct l; auto. 
     + rewrite nth_error_nil in NTH; inversion NTH.
     + simpl in *. destruct n.
-      -- simpl in BEQ.
+      * simpl in BEQ.
          admit.
-      -- admit.
+      * admit.
   - admit.
 Admitted.
       
@@ -752,9 +752,9 @@ Proof.
 Qed.
 
 Definition spec_same_obs_machine p pc r1 r2 m1 m2 stk b : Prop :=
-  forall ds n os1 os2 c1 c2 (WFDS: wf_ds p ds),
+  forall ds n m os1 os2 c1 c2 (WFDS: wf_ds p ds),
   p |- <(( S_Running (pc, r1, m1, stk, b, false) ))> -->m*_ds^^os1^^n <(( c1 ))> ->
-  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->m*_ds^^ os2^^n <(( c2 ))> -> (* YH: Yan said this can be generalized different numbers of steps. *)
+  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->m*_ds^^ os2^^m <(( c2 ))> -> (* YH: Yan said this can be generalized different numbers of steps. *)
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition relative_secure_machine (p:MiniCET.prog) (tp: prog) (trans : MiniCET.prog -> option prog)
@@ -763,7 +763,7 @@ Definition relative_secure_machine (p:MiniCET.prog) (tp: prog) (trans : MiniCET.
   (* Function pointers are mapped to integer addresses with respect to the ULSHed program. *)
   match_reg_src (uslh_prog p) r1 r1' false -> match_reg_src (uslh_prog p) r2 r2' false ->
   match_mem (uslh_prog p) m1 m1' -> match_mem (uslh_prog p) m2 m2' ->
-  trans p = Some tp ->
+  trans (uslh_prog p) = Some tp ->
   spec_same_obs_machine tp 0 r1' r2' m1' m2' [] true.
 
 Lemma spec_eval_relative_secure_machine
@@ -775,11 +775,11 @@ Lemma spec_eval_relative_secure_machine
   (NEM2: nonempty_mem m2)
   (CALLEE1: r1' ! callee = N 0)
   (CALLEE2: r2' ! callee = N 0)
-  (SAFE1: seq_exec_safe p ((0,0), r1, m1, []))
-  (SAFE2: seq_exec_safe p ((0,0), r2, m2, []))
   (UNUSED1: unused_prog msf p)
-  (UNUSED2: unused_prog callee p) :
-  relative_secure_machine p tp (fun p => machine_prog (uslh_prog p)) r1 r2 r1' r2' m1 m2 m1' m2'.
+  (UNUSED2: unused_prog callee p)
+  (SAFE1: seq_exec_safe p ((0,0), r1, m1, []))
+  (SAFE2: seq_exec_safe p ((0,0), r2, m2, [])) :
+  relative_secure_machine p tp machine_prog r1 r2 r1' r2' m1 m2 m1' m2'.
 Proof.
   red. i.
   set (ir1 := (msf !-> N 0; callee !-> (FP 0); r1)).
