@@ -244,12 +244,18 @@ Proof.
   - admit. (* neq *)
 Admitted.
 
+Definition match_pc (p: MiniCET.prog) (pc: cptr) (pc': nat) : Prop :=
+  p[[pc]] <> None -> pc_inj p pc = Some pc'.
+
+Definition match_stk (p: MiniCET.prog) (stk: list cptr) (stk': list nat) : Prop :=
+  Forall2 (match_pc p) stk stk'.
+
 Variant match_states (p: MiniCET.prog) : state MCC.spec_cfg -> state spec_cfg -> Prop :=
 | match_states_intro pc r m stk ct ms pc' r' m' stk'
   (PC: p[[pc]] <> None -> pc_inj p pc = Some pc')
   (REG: match_reg p r r')
   (MEM: match_mem p m m')
-  (STK: map_opt (pc_inj p) stk = Some stk') :
+  (STK: match_stk p stk stk') :
   match_states p (S_Running (pc, r, m, stk, ct, ms)) (S_Running (pc', r', m', stk', ct, ms))
 | match_states_term :
   match_states p S_Term S_Term
@@ -509,10 +515,9 @@ Proof.
       { red in VINJ. des_ifs.
         admit. (* by H, Heq0 *) }
       rewrite H0. eapply match_states_intro; i; eauto.
-      simpl. rewrite STK.
-      assert (pc_inj p (pc0 + 1) = Some (add pc' 1)).
-      { admit. (* maybe some wf needed *) }
-      rewrite H1. auto. }
+      econs; eauto.
+      red. i.
+      exploit pc_inj_inc; try eapply H1; eauto. }
     { repeat econs. red. eauto. }
     { repeat econs. unfold match_ob, val_inject in *. des_ifs. }
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
@@ -525,15 +530,12 @@ Proof.
     esplits; eauto. 2-4: repeat econs.
     { eapply MiniCET_Index.SpecSMI_CTarget_F. eauto. }
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
-    inv SAFE; clarify.
+    inv STK. inv SAFE; clarify.
     esplits; eauto. 3-4: repeat econs.
     { eapply MiniCET_Index.SpecSMI_Ret. eauto. }
-    simpl in STK. des_ifs.
     econs; eauto.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
-    clear SAFE.
-    destruct stk; cycle 1.
-    { ss. des_ifs. }
+    clear SAFE. inv STK.
     esplits; eauto. 2-4: repeat econs.
     { eapply MiniCET_Index.SpecSMI_Term. eauto. }
   - exploit tgt_inv; eauto. i. des.
