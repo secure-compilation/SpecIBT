@@ -1,7 +1,6 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
-From SECF Require Import TestingLib.
 From SECF Require Import Utils.
 From SECF Require Import MiniCET MiniCET_Index Linear.
 From SECF Require Import Safe.
@@ -342,6 +341,30 @@ Proof.
 Unshelve. econs.
 Qed.
 
+Lemma lookup_from_target
+  (p p_ctx: MiniCET.prog) (tp: prog) l ti
+  (TRANSL: _machine_prog p_ctx p = Some tp)
+  (TGT: nth_error tp l = Some ti):
+  exists pc, pc_inj p pc = Some l.
+Proof.
+  ginduction p; ii.
+  { ii. unfold _machine_prog in TRANSL. ss. clarify.
+    rewrite nth_error_nil in TGT. clarify. }
+  unfold _machine_prog in TRANSL. simpl in TRANSL. des_ifs_safe.
+  simpl in TGT.
+  rewrite nth_error_app in TGT. des_ifs.
+  - exists (0, l). unfold pc_inj. simpl.
+    eapply machine_blk_len in Heq0; [|econs]. rewrite Heq0. des_ifs.
+  - exploit IHp.
+    { unfold _machine_prog. erewrite Heq1. eauto. }
+    { eauto. }
+    i. des. destruct pc0 as [b o].
+    exists (add b 1, o).
+    unfold pc_inj in *. replace (add b 1) with (S b) by lia.
+    simpl. rewrite x0. eapply machine_blk_len in Heq0; [|econs].
+    rewrite Heq0. f_equal. rewrite ltb_ge in Heq. lia.
+Qed.
+
 Lemma tgt_inv_aux
   (p p_ctx: MiniCET.prog) (tp: prog) pc l ti
   (TRANSL: _machine_prog p_ctx p = Some tp)
@@ -389,11 +412,10 @@ Lemma wf_dir_inj
   (MATCH: match_dir p d td):
   wf_dir' p d.
 Proof.
-  destruct td; ss; des_ifs_safe.
-  { red in MATCH. des_ifs. }
-  red in MATCH. des_ifs.
-  admit.
-Admitted.
+  unfold wf_dir, wf_dir' in *. des_ifs.
+  red in MATCH. unfold is_some in *. des_ifs_safe.
+  exploit tgt_inv; eauto. i. des; clarify.
+Qed.
 
 Lemma wf_ds_inj
   (p: MiniCET.prog) (tp: prog) ds tds
@@ -402,7 +424,12 @@ Lemma wf_ds_inj
   (MATCH: match_dirs p ds tds):
   wf_ds' p ds.
 Proof.
-Admitted.
+  ginduction MATCH; i.
+  { econs. }
+  inv WFT. econs; eauto.
+  { eapply wf_dir_inj; eauto. }
+  exploit IHMATCH; eauto.
+Qed.
 
 Lemma pc_inj_inc p pc pc'
   (INJ: pc_inj p pc = Some pc')
@@ -451,7 +478,11 @@ Proof.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1.
     destruct i0; ss; clarify; try sfby des_ifs. des_ifs_safe.
     esplits.
-    { econs 3; eauto. rewrite <- H9. admit. }
+    { econs 3; eauto. rewrite <- H9.
+      exploit eval_inject; eauto. i.
+      red in x1. des_ifs; ss.
+      { inv SAFE; clarify. rewrite Heq1 in H10. ss. }
+      { inv SAFE; clarify. rewrite Heq1 in H10. ss. } }
     2:{ repeat econs. }
     2:{ repeat econs. }
     econs; eauto. i. destruct b'; auto.
@@ -496,9 +527,10 @@ Proof.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     inv SAFE; clarify.
 
-    assert (exists pc'_src, pc_inj_inv p pc'0 = Some pc'_src).
-    { admit. (* from WFDS *) }
-    des. rewrite <- pc_inj_iff in H.
+    assert (exists pc'_src, pc_inj p pc'_src = Some pc'0).
+    { red in WFDS. inv WFDS. red in H1. unfold is_some in H1.
+      des_ifs. eapply lookup_from_target; eauto. }
+    des.
 
     exploit wf_ds_inj; eauto; i.
     { instantiate (1:= [MiniCET.DCall pc'_src]).
@@ -513,7 +545,17 @@ Proof.
     { instantiate (1:=pc'_src).
       assert (((fst pc'_src =? l0)%nat && (snd pc'_src =? 0)%nat) = (pc'0 =? l)%nat).
       { red in VINJ. des_ifs.
-        admit. (* by H, Heq0 *) }
+        destruct pc'_src as [b o]. rename pc'0 into n0. simpl.
+        destruct (Nat.eq_dec b l0); subst.
+        { destruct (Nat.eq_dec o 0); clarify.
+          { repeat rewrite Nat.eqb_refl. auto. }
+          hexploit pc_inj_inject. 2: eapply H. 2: eapply Heq0.
+          { ii. clarify. }
+          ii. rewrite <- Nat.eqb_neq in *. rewrite n1, H0.
+          rewrite andb_false_r. auto. }
+        { hexploit pc_inj_inject. 2: eapply H. 2: eapply Heq0.
+          { ii. clarify. }
+          ii. rewrite <- Nat.eqb_neq in *. rewrite n1, H0. ss. } }
       rewrite H0. eapply match_states_intro; i; eauto.
       econs; eauto.
       red. i.
@@ -544,7 +586,7 @@ Proof.
     { ii. eapply H8. subst. unfold machine_inst in x1. clarify. }
     esplits; eauto. 2-4: repeat econs.
     eapply MiniCET_Index.SpecSMI_Fault; eauto.
-Admitted.
+Qed.
 
 Lemma minicet_linear_bcc
   (p: MiniCET.prog) (tp: prog) sc tc tct tds tos n

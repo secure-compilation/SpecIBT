@@ -22,7 +22,6 @@ Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
 Import MonadNotation. Open Scope monad_scope.
 
-From SECF Require Import TestingLib.
 From SECF Require Import Utils.
 From SECF Require Import MapsFunctor.
 From SECF Require Import MiniCET.
@@ -127,9 +126,9 @@ Proof.
 Qed.
 
 Lemma pc_inj_inject p pc1 pc2 pc1' pc2'
-    (DIFF: pc1 <> pc2)
-    (INJ1: pc_inj p pc1 = Some pc1')
-    (INJ2: pc_inj p pc2 = Some pc2') :
+  (DIFF: pc1 <> pc2)
+  (INJ1: pc_inj p pc1 = Some pc1')
+  (INJ2: pc_inj p pc2 = Some pc2') :
   pc1' <> pc2'.
 Proof.
   unfold pc_inj in *.
