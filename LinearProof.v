@@ -246,15 +246,23 @@ Lemma nth_error_upd_beq : forall {A : Type} (i n : nat) (x v : A) (l : list A),
   nth_error (upd n l v) i = Some x.
 Proof.
   intros A i n x v.
+  generalize dependent n.
   induction i.
-  - intros l BEQ NTH. destruct l; auto. 
+  - intros n l BEQ NTH. destruct l; auto. 
     + rewrite nth_error_nil in NTH; inversion NTH.
     + simpl in *. destruct n.
-      * simpl in BEQ.
-         admit.
-      * admit.
-  - admit.
-Admitted.
+      * contradiction.
+      * assumption.
+  - intros n l BEQ NTH. simpl. destruct l.
+    + rewrite nth_error_nil in NTH. inversion NTH.
+    + destruct n eqn:Heqb; auto.
+      simpl. apply IHi.
+      * ss. 
+        assert (HL : Datatypes.length (upd n (a :: l) v) > 0). 
+        { rewrite upd_length. simpl. lia. }
+        rewrite Heqb in HL. ss. lia.
+      * ss.
+Qed.
       
 Lemma store_match_mem p v v' m m' n
   (MEM: match_mem p m m')
