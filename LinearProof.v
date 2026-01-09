@@ -227,7 +227,36 @@ Definition match_mem (p: MiniCET.prog) (m m': mem) : Prop :=
        | Some v, None => False
        end.
 
-Lemma store_match_reg p v v' m m' n
+Lemma nth_error_upd_eq : forall {A : Type} (i: nat) (v : A) (l : list A),
+  (exists x, nth_error l i = Some x) ->
+  nth_error (upd i l v) i = Some v.
+Proof.
+  intros A i v l [x H].
+  generalize dependent l.
+  induction i.
+  - intros l H. destruct l; auto. rewrite nth_error_nil in H. inversion H.
+  - intros l H. simpl in *. destruct l.
+    + inversion H.
+    + apply IHi. assumption.
+Qed.
+
+Lemma nth_error_upd_beq : forall {A : Type} (i n : nat) (x v : A) (l : list A),
+  i <> n ->
+  nth_error l i = Some x ->
+  nth_error (upd n l v) i = Some x.
+Proof.
+  intros A i n x v.
+  induction i.
+  - intros l BEQ NTH. destruct l; auto. 
+    + rewrite nth_error_nil in NTH; inversion NTH.
+    + simpl in *. destruct n.
+      -- simpl in BEQ.
+         admit.
+      -- admit.
+  - admit.
+Admitted.
+      
+Lemma store_match_mem p v v' m m' n
   (MEM: match_mem p m m')
   (INJ: val_inject p v v') :
   match_mem p (upd n m v) (upd n m' v').
@@ -239,9 +268,22 @@ Proof.
     erewrite <- nth_error_None in MSRC. rewrite MSRC. auto. }
   specialize (MEM i). des_ifs_safe.
   destruct (eq_decidable n i); subst.
-  - admit. (* eq *)
-  - admit. (* neq *)
-Admitted.
+  - destruct (nth_error (upd i m' v') i) eqn:Heqb.
+    + rewrite nth_error_upd_eq in Heq.
+      -- rewrite nth_error_upd_eq in Heqb. 
+        +++ inv Heq. inv Heqb. assumption.
+        +++ exists v2. assumption.
+      -- exists v0. assumption.
+    + rewrite nth_error_upd_eq in Heqb.
+      -- inversion Heqb.
+      -- exists v2. assumption.
+  - destruct (nth_error (upd n m' v') i) eqn:Heqb.
+    + rewrite nth_error_upd_beq with (x := v0) in Heq; auto.
+      rewrite nth_error_upd_beq with (x := v2) in Heqb; auto.
+      inv Heq. inv Heqb. assumption.
+    + rewrite nth_error_upd_beq with (x := v2) in Heqb; auto.
+      inversion Heqb.
+Qed.
 
 Definition match_pc (p: MiniCET.prog) (pc: cptr) (pc': nat) : Prop :=
   p[[pc]] <> None -> pc_inj p pc = Some pc'.
@@ -597,7 +639,7 @@ Proof.
     2-3: repeat econs.
     econs; eauto.
     { i. exploit pc_inj_inc; try eapply PC; eauto. }
-    eapply store_match_reg; eauto.
+    eapply store_match_mem; eauto.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     inv SAFE; clarify.
 
