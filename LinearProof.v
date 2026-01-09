@@ -130,7 +130,7 @@ Inductive spec_eval_small_step (p:prog):
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[OStore n] <(( S_Running ((add pc 1, r, upd n m (eval r e'), sk), false, ms) ))>
   | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
       nth_error p pc = Some <{{ call e }}> ->
-      to_fp (eval r e) = Some l ->
+      to_nat (eval r e) = Some l ->
       ms' = ms || negb ((pc' =? l) (* && (snd pc' =? 0) *)) (* YH: (snd pc' =? 0) ??? *) ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (add pc 1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
@@ -234,6 +234,14 @@ Lemma store_match_reg p v v' m m' n
   match_mem p (upd n m v) (upd n m' v').
 Proof.
   red. i.
+  destruct (nth_error m i) eqn:MSRC; cycle 1.
+  { erewrite nth_error_None in MSRC.
+    erewrite <- upd_length with (i:=n) (a:=v) in MSRC.
+    erewrite <- nth_error_None in MSRC. rewrite MSRC. auto. }
+  specialize (MEM i). des_ifs_safe.
+  destruct (eq_decidable n i); subst.
+  - admit. (* eq *)
+  - admit. (* neq *)
 Admitted.
 
 Variant match_states (p: MiniCET.prog) : state MCC.spec_cfg -> state spec_cfg -> Prop :=
@@ -478,7 +486,62 @@ Proof.
     2-3: repeat econs.
     econs; eauto.
     { i. exploit pc_inj_inc; try eapply PC; eauto. }
+    eapply store_match_reg; eauto.
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
+    inv SAFE; clarify.
 
+    assert (exists pc'_src, pc_inj_inv p pc'0 = Some pc'_src).
+    { admit. (* from WFDS *) }
+    des. rewrite <- pc_inj_iff in H.
+
+    exploit wf_ds_inj; eauto; i.
+    { instantiate (1:= [MiniCET.DCall pc'_src]).
+      repeat econs. red. eauto. }
+
+    assert (VINJ: val_inject p (FP l0) (N l)).
+    { unfold to_fp, to_nat in *. des_ifs; clarify.
+      rewrite <- Heq1, <- Heq0. eapply eval_inject; eauto. }
+
+    esplits.
+    { eapply MiniCET_Index.SpecSMI_Call; eauto. }
+    { instantiate (1:=pc'_src).
+      assert (((fst pc'_src =? l0)%nat && (snd pc'_src =? 0)%nat) = (pc'0 =? l)%nat).
+      { red in VINJ. des_ifs.
+        admit. (* by H, Heq0 *) }
+      rewrite H0. eapply match_states_intro; i; eauto.
+      simpl. rewrite STK.
+      assert (pc_inj p (pc0 + 1) = Some (add pc' 1)).
+      { admit. (* maybe some wf needed *) }
+      rewrite H1. auto. }
+    { repeat econs. red. eauto. }
+    { repeat econs. unfold match_ob, val_inject in *. des_ifs. }
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
+    inv SAFE; clarify.
+    esplits; eauto. 3-4: repeat econs.
+    { eapply MiniCET_Index.SpecSMI_CTarget. eauto. }
+    econs; eauto. ii. exploit pc_inj_inc; try eapply PC; eauto.
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
+    inv SAFE; clarify.
+    esplits; eauto. 2-4: repeat econs.
+    { eapply MiniCET_Index.SpecSMI_CTarget_F. eauto. }
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
+    inv SAFE; clarify.
+    esplits; eauto. 3-4: repeat econs.
+    { eapply MiniCET_Index.SpecSMI_Ret. eauto. }
+    simpl in STK. des_ifs.
+    econs; eauto.
+  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
+    clear SAFE.
+    destruct stk; cycle 1.
+    { ss. des_ifs. }
+    esplits; eauto. 2-4: repeat econs.
+    { eapply MiniCET_Index.SpecSMI_Term. eauto. }
+  - exploit tgt_inv; eauto. i. des.
+    clear SAFE.
+    assert (i1 <> <{{ ctarget }}>).
+    { ii. eapply H8. subst. unfold machine_inst in x1. clarify. }
+    esplits; eauto. 2-4: repeat econs.
+    eapply MiniCET_Index.SpecSMI_Fault; eauto.
 Admitted.
 
 Lemma minicet_linear_bcc

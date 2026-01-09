@@ -344,7 +344,7 @@ Proof.
         inv REG.
         rewrite <- H8. simpl. rewrite H0. destruct ms; ss.
         erewrite eval_regs_eq; eauto.
-      * eapply match_cfgs_ext_ct1; eauto.
+      * simpl. rewrite andb_true_r. eapply match_cfgs_ext_ct1; eauto.
         { red. inv REG. eauto. }
         { inv REG. simpl. rewrite STK.
           exploit block_always_terminator_prog; try eapply CALL; eauto. i. des.

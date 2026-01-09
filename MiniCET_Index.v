@@ -124,7 +124,7 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      ms' = ms || negb ((fst pc' =? l) (* && (snd pc' =? 0) *)) (* YH: (snd pc' =? 0) ??? *) ->
+      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) (* YH: (snd pc' =? 0) ??? *) ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
@@ -2253,7 +2253,7 @@ Proof.
       { simpl. eauto. }
       { eauto. }
       { simpl. auto. }
-    + econs.
+    + simpl. rewrite andb_true_r. econs.
       * simpl. unfold pc_sync. simpl.
         rewrite CESRC. destruct b_src' as [b_src' is_proc']. ss; clarify.
         rewrite eqb_reflx.
