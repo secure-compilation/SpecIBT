@@ -302,6 +302,7 @@ Definition match_stk (p: MiniCET.prog) (len: nat) (stk: list cptr) (stk': list n
 Variant match_states (p: MiniCET.prog) (len: nat) : state MCC.spec_cfg -> state spec_cfg -> Prop :=
 | match_states_intro pc r m stk ct ms pc' r' m' stk'
   (PC: p[[pc]] <> None -> pc_inj p len pc = Some (pc' + len))
+  (MLEN: len = Datatypes.length m')  
   (REG: match_reg p len r r')
   (MEM: match_mem p len m m')
   (STK: match_stk p len stk stk') :
@@ -621,20 +622,25 @@ Proof.
     2:{ repeat econs. }
     2:{ repeat econs. }
     econs; eauto. i. destruct b'; auto.
-    { admit. }
+    { assert (l >= Datatypes.length m').
+      { unfold pc_inj in Heq0. des_ifs. lia. }
+      rewrite Heq0. f_equal. lia. }
     exploit pc_inj_inc; try eapply PC; eauto.
     i. rewrite x1. f_equal. lia.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     esplits; try sfby (repeat econs).
     { econs 4; eauto. }
-    econs; eauto. i. rewrite Heq. f_equal. admit.
+    econs; eauto. i. rewrite Heq. f_equal.
+    assert (l >= Datatypes.length m').
+    { unfold pc_inj in Heq. des_ifs. lia. }
+    lia.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x0. des_ifs.
     inv SAFE; clarify.
     assert (n0 = n).
     { exploit eval_inject; eauto. i. unfold to_nat in *. des_ifs. }
     subst.
 
-    assert (exists v, nth_error m n = Some v /\ val_inject p len v v').
+    assert (exists v, nth_error m n = Some v /\ val_inject p (Datatypes.length m') v v').
     { red in MEM. specialize (MEM n). des_ifs. esplits; eauto. }
 
     des. clarify. esplits.
@@ -653,7 +659,7 @@ Proof.
     { exploit eval_inject; try eapply Heq; eauto. i. unfold to_nat in *. des_ifs. }
     subst.
 
-    assert (VAL: val_inject p len (MCC.eval r e0) (eval r' e')).
+    assert (VAL: val_inject p (Datatypes.length m') (MCC.eval r e0) (eval r' e')).
     { eapply eval_inject; eauto. }
 
     esplits.
@@ -662,11 +668,12 @@ Proof.
     econs; eauto.
     { i. exploit pc_inj_inc; try eapply PC; eauto.
       i. rewrite x0. f_equal. lia. }
+    { rewrite upd_length. auto. }
     eapply store_match_mem; eauto.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     inv SAFE; clarify.
 
-    assert (exists pc'_src, pc_inj p len pc'_src = Some (pc'0 + len)).
+    assert (exists pc'_src, pc_inj p (Datatypes.length m') pc'_src = Some (pc'0 + (Datatypes.length m'))).
     { red in WFDS. inv WFDS. red in H1. unfold is_some in H1.
       des_ifs. eapply lookup_from_target; eauto. }
     des.
@@ -675,7 +682,7 @@ Proof.
     { instantiate (1:= [MiniCET.DCall pc'_src]).
       repeat econs. red. eauto. }
 
-    assert (VINJ: val_inject p len (FP l0) (N l)).
+    assert (VINJ: val_inject p (Datatypes.length m') (FP l0) (N l)).
     { unfold to_fp, to_nat in *. des_ifs; clarify.
       rewrite <- Heq1, <- Heq0. eapply eval_inject; eauto. }
 
@@ -687,14 +694,21 @@ Proof.
         destruct pc'_src as [b o]. rename pc'0 into n0. simpl.
         destruct (Nat.eq_dec b l0); subst.
         { destruct (Nat.eq_dec o 0); clarify.
-          { repeat rewrite Nat.eqb_refl. auto. admit. }
+          { repeat rewrite Nat.eqb_refl. simpl. symmetry.
+            rewrite Nat.eqb_eq. lia. }
           hexploit pc_inj_inject. 2: eapply H. 2: eapply Heq0.
           { ii. clarify. }
           ii. rewrite <- Nat.eqb_neq in *. rewrite n1.
-          rewrite andb_false_r. admit. }
+          rewrite andb_false_r.
+          assert (n >= Datatypes.length m').
+          { unfold pc_inj in Heq0. des_ifs. lia. }
+          symmetry. rewrite Nat.eqb_neq in *. lia. }
         { hexploit pc_inj_inject. 2: eapply H. 2: eapply Heq0.
           { ii. clarify. }
-          ii. rewrite <- Nat.eqb_neq in *. rewrite n1. ss. admit. } }
+          ii. rewrite <- Nat.eqb_neq in *. rewrite n1. ss.
+          assert (n >= Datatypes.length m').
+          { unfold pc_inj in Heq0. des_ifs. lia. }
+          symmetry. rewrite Nat.eqb_neq in *. lia. } }
       rewrite H0. eapply match_states_intro; i; eauto.
       econs; eauto.
       red. i.
@@ -702,7 +716,10 @@ Proof.
       i. rewrite x1. f_equal. lia.
     }
     { repeat econs. red. eauto. }
-    { repeat econs. unfold match_ob, val_inject in *. des_ifs. admit. }
+    { repeat econs. unfold match_ob, val_inject in *. des_ifs.
+      assert (n >= Datatypes.length m').
+      { unfold pc_inj in Heq0. des_ifs. lia. }
+      symmetry. f_equal. lia. }
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     inv SAFE; clarify.
     esplits; eauto. 3-4: repeat econs.
@@ -728,8 +745,7 @@ Proof.
     { ii. eapply H8. subst. unfold machine_inst in x1. clarify. }
     esplits; eauto. 2-4: repeat econs.
     eapply MiniCET_Index.SpecSMI_Fault; eauto.
-Admitted.
-(* Some Arithmetic needed. *)
+Qed.
 
 Lemma minicet_linear_bcc
   (p: MiniCET.prog) len (tp: prog) sc tc tct tds tos n
@@ -796,19 +812,20 @@ Definition relative_secure_machine (p:MiniCET.prog) (len:nat) (tp: prog) (trans 
   spec_same_obs_machine tp 0 r1' r2' len m1' m2' [] true.
 
 Lemma spec_eval_relative_secure_machine
-  p r1 r2 r1' r2' len m1 m2 m1' m2' tp
+  p r1 r2 r1' r2' m1 m2 m1' m2' tp
   (FST: first_blk_call p)
   (NCT: no_ct_prog p)
   (WFP: wf_prog p)
+  (LEN1: Datatypes.length m1' = Datatypes.length m2')
   (NEM1: nonempty_mem m1)
   (NEM2: nonempty_mem m2)
-  (CALLEE1: r1' ! callee = N len)
-  (CALLEE2: r2' ! callee = N len)
+  (CALLEE1: r1' ! callee = N (Datatypes.length m1'))
+  (CALLEE2: r2' ! callee = N (Datatypes.length m2'))
   (UNUSED1: unused_prog msf p)
   (UNUSED2: unused_prog callee p)
   (SAFE1: seq_exec_safe p ((0,0), r1, m1, []))
   (SAFE2: seq_exec_safe p ((0,0), r2, m2, [])) :
-  relative_secure_machine p len tp (fun p => machine_prog p len) r1 r2 r1' r2' m1 m2 m1' m2'.
+  relative_secure_machine p (Datatypes.length m1') tp (fun p => machine_prog p (Datatypes.length m1')) r1 r2 r1' r2' m1 m2 m1' m2'.
 Proof.
   red. i.
   set (ir1 := (msf !-> N 0; callee !-> (FP 0); r1)).
@@ -838,7 +855,7 @@ Proof.
   assert (INITSAFE: (uslh_prog p)[[(0,0)]] <> None).
   { red in ISAFE1. exploit ISAFE1; [econs|econs|]. i. des. inv x0; ii; clarify. }
 
-  assert (ISYNC: pc_inj (uslh_prog p) len (0, 0) = Some len).
+  assert (ISYNC: pc_inj (uslh_prog p) (Datatypes.length m1') (0, 0) = Some (Datatypes.length m1')).
   { clear -INITSAFE. destruct (uslh_prog p); ss.
     destruct p0. ss. des_ifs. }
 
