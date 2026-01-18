@@ -106,9 +106,12 @@ Proof.
 Qed.
 
 (* l: data memory length *)
-Definition pc_inj (p: MiniCET.prog) (l: nat) (pc: MiniCET.cptr) : option nat :=
+Definition pc_inj (p: MiniCET.prog) (len: nat) (pc: MiniCET.cptr) : option nat :=
   let fstp := map fst p in
-  coord_to_flat_idx fstp pc.
+  match coord_to_flat_idx fstp pc with
+  | Some n => Some (n + len)
+  | _ => None
+  end.
 
 Lemma coord_to_flat_idx_inject {X} (p: list (list X)) pc1 pc2 pc1' pc2'
   (DIFF: pc1 <> pc2)
@@ -132,8 +135,8 @@ Lemma pc_inj_inject p pc1 pc2 l pc1' pc2'
   (INJ2: pc_inj p l pc2 = Some pc2') :
   pc1' <> pc2'.
 Proof.
-  unfold pc_inj in *.
-  eapply coord_to_flat_idx_inject; eauto.
+  unfold pc_inj in *. des_ifs. ii.
+  exploit coord_to_flat_idx_inject; eauto. lia.
 Qed.
 
 Definition pc_inj_inv (p: MiniCET.prog) (l: nat) (pc: nat) : option cptr :=
@@ -160,11 +163,9 @@ Proof.
     + assert (nth_error (fst a) o <> None) by (unfold not; i; clarify).
       rewrite nth_error_Some in H. 
       rewrite <- ltb_lt in H. rewrite H.
-      exists o. auto.
+      eauto.
     + specialize IHp with (l:=l') (o:=o) (i:=i).
-      unfold MiniCET.fetch in IHp. ss. 
-      apply IHp in INBDD; eauto. des. rewrite INBDD.
-      exists (Datatypes.length (fst a) + pc'). auto.
+      des_ifs; eauto.
 Qed.
 
 Definition prog := list inst.
