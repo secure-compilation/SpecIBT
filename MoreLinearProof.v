@@ -31,48 +31,48 @@ Reserved Notation
 Inductive seq_eval_small_step_inst (p:prog) :
   state cfg -> state cfg -> obs -> Prop :=
   | SSMI_Skip : forall pc rs m stk,
-      nth_error p pc = Some <{{ skip }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ skip }}> ->
       p |- <(( S_Running (pc, rs, m, stk) ))> -->^[] <(( S_Running (add pc 1, rs, m, stk) ))>
   | SSMI_Ctarget : forall pc rs m stk,
-      nth_error p pc = Some <{{ ctarget }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ ctarget }}> ->
       p |- <(( S_Running (pc, rs, m, stk) ))> -->^[] <(( S_Running (add pc 1, rs, m, stk) ))>
 
   | SSMI_Asgn : forall pc r m sk e x,
-      nth_error p pc = Some <{{ x := e }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ x := e }}> ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running (add pc 1, (x !-> (eval r e); r), m, sk) ))>
 
   | SSMI_Branch : forall pc pc' r m sk e n l,
-      nth_error p pc = Some <{{ branch e to l }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
       pc' = (if (not_zero n) then l  - (Datatypes.length m) else add pc 1) ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OBranch (not_zero n)] <(( S_Running (pc', r, m, sk) ))>
 
   | SSMI_Jump : forall l pc r m sk,
-      nth_error p pc = Some <{{ jump l }}> ->
-      p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running (l - (Datatypes.length m), r, m, sk) ))>
+      fetch p (Datatypes.length m) pc = Some <{{ jump l }}> ->
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running (l, r, m, sk) ))>
 
   | SSMI_Load : forall pc r m sk x e n v',
-      nth_error p pc = Some <{{ x <- load[e] }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OLoad n] <(( S_Running (add pc 1, (x !-> v'; r), m, sk) ))>
 
   | SSMI_Store : forall pc r m sk e e' n,
-      nth_error p pc = Some <{{ store[e] <- e' }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OStore n] <(( S_Running (add pc 1, r, upd n m (eval r e'), sk) ))>
 
   | SSMI_Call : forall pc r m sk e l,
-      nth_error p pc = Some <{{ call e }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ call e }}> ->
       to_nat (eval r e) = Some l ->
-      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall (l - (Datatypes.length m))] <(( S_Running (l - (Datatypes.length m), r, m, ((add pc 1)::sk)) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running (l - (Datatypes.length m), r, m, ((add pc 1)::sk)) ))>
 
   | SSMI_Ret : forall pc r m sk pc',
-      nth_error p pc = Some <{{ ret }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
 
   | SSMI_Term : forall pc r m,
-      nth_error p pc = Some <{{ ret }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, []) ))> -->^[] <(( S_Term ))>
 
   where "p |- <(( c ))> -->^ os <(( ct ))>" :=
@@ -103,50 +103,50 @@ Reserved Notation
 Inductive spec_eval_small_step (p:prog):
   @state spec_cfg -> @state spec_cfg -> dirs -> obs -> Prop :=
   | SpecSMI_Skip  :  forall pc r m sk ms,
-      nth_error p pc = Some <{{ skip }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ skip }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[] <(( S_Running ((add pc 1, r, m, sk), false, ms) ))>
   | SpecSMI_Asgn : forall pc r m sk ms e x,
-      nth_error p pc = Some <{{ x := e }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ x := e }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[] <(( S_Running ((add pc 1, (x !-> (eval r e); r), m, sk), false, ms) ))>
   | SpecSMI_Branch : forall pc pc' r m sk ms ms' b (b': bool) e n l,
-      nth_error p pc = Some <{{ branch e to l }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
       b = (not_zero n) ->
-      pc' = (if b' then l  - (Datatypes.length m) else (add pc 1)) ->
+      pc' = (if b' then l else (add pc 1)) ->
       ms' = ms || negb (Bool.eqb b b') ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[DBranch b']^^[OBranch b] <(( S_Running ((pc', r, m, sk), false, ms') ))>
   | SpecSMI_Jump : forall l pc r m sk ms,
-      nth_error p pc = Some <{{ jump l }}> ->
-      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[] <(( S_Running ((l  - (Datatypes.length m), r, m, sk), false, ms) ))>
+      fetch p (Datatypes.length m) pc = Some <{{ jump l }}> ->
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[] <(( S_Running ((l, r, m, sk), false, ms) ))>
   | SpecSMI_Load : forall pc r m sk x e n v' ms,
-      nth_error p pc = Some <{{ x <- load[e] }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ x <- load[e] }}> ->
       to_nat (eval r e) = Some n ->
       nth_error m n = Some v' ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[OLoad n] <(( S_Running ((add pc 1, (x !-> v'; r), m, sk), false, ms) ))>
   | SpecSMI_Store : forall pc r m sk e e' n ms,
-      nth_error p pc = Some <{{ store[e] <- e' }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ store[e] <- e' }}> ->
       to_nat (eval r e) = Some n ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[OStore n] <(( S_Running ((add pc 1, r, upd n m (eval r e'), sk), false, ms) ))>
   | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
-      nth_error p pc = Some <{{ call e }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ call e }}> ->
       to_nat (eval r e) = Some l ->
-      ms' = ms || negb ((pc' =? (l - (Datatypes.length m)))) ->
-      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[DCall pc']^^[OCall (l  - (Datatypes.length m))] <(( S_Running ((pc', r, m, (add pc 1)::sk), true, ms') ))>
+      ms' = ms || negb ((pc' =? l)) ->
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (add pc 1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ms,
-      nth_error p pc = Some <{{ ctarget }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->m_[]^^[] <(( S_Running ((add pc 1, r, m, sk), false, ms) ))>
   | SpecSMI_CTarget_F : forall pc r m sk ms,
-      nth_error p pc = Some <{{ ctarget }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[] <(( S_Fault ))>
   | SpecSMI_Ret : forall pc r m sk pc' ms,
-      nth_error p pc = Some <{{ ret }}> ->
+      fetch p (Datatypes.length m) pc = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->m_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
   | SpecSMI_Term : forall pc r m ms,
-      nth_error p pc = Some <{{ ret }}> -> 
+      fetch p (Datatypes.length m) pc = Some <{{ ret }}> -> 
       p |- <(( S_Running ((pc, r, m, []), false, ms) ))> -->m_[]^^[] <(( S_Term ))>
   | SpecSMI_Fault : forall pc r m sk ms i,
       i <> <{{ ctarget }}> ->
-      nth_error p pc = Some i ->
+      fetch p (Datatypes.length m) pc = Some i ->
       p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->m_[]^^[] <(( S_Fault ))>
 
   where "p |- <(( sc ))> -->m_ ds ^^ os  <(( sct ))>" :=
@@ -294,14 +294,14 @@ Proof.
 Qed.
 
 Definition match_pc (p: MiniCET.prog) (len: nat) (pc: cptr) (pc': nat) : Prop :=
-  p[[pc]] <> None -> pc_inj p len pc = Some (pc' + len).
+  p[[pc]] <> None -> pc_inj p len pc = Some pc'.
 
 Definition match_stk (p: MiniCET.prog) (len: nat) (stk: list cptr) (stk': list nat) : Prop :=
   Forall2 (match_pc p len) stk stk'.
 
 Variant match_states (p: MiniCET.prog) (len: nat) : state MCC.spec_cfg -> state spec_cfg -> Prop :=
 | match_states_intro pc r m stk ct ms pc' r' m' stk'
-  (PC: p[[pc]] <> None -> pc_inj p len pc = Some (pc' + len))
+  (PC: p[[pc]] <> None -> pc_inj p len pc = Some pc')
   (MLEN: len = Datatypes.length m')  
   (REG: match_reg p len r r')
   (MEM: match_mem p len m m')
@@ -314,7 +314,7 @@ Variant match_states (p: MiniCET.prog) (len: nat) : state MCC.spec_cfg -> state 
 
 Definition match_dir (p: MiniCET.prog) (len: nat) (d: MiniCET.direction) (d': direction) : Prop :=
   match d, d' with
-  | MiniCET.DCall pc, DCall l => pc_inj p len pc = Some (l + len)
+  | MiniCET.DCall pc, DCall l => pc_inj p len pc = Some l
   | MiniCET.DBranch b, DBranch b' => b = b'
   | _, _ => False
   end.
@@ -327,7 +327,7 @@ Definition match_ob (p: MiniCET.prog) (len: nat) (o: MiniCET.observation) (o': o
   | MiniCET.OBranch b, OBranch b' => b = b'
   | MiniCET.OLoad n, OLoad n' => n = n'
   | MiniCET.OStore n, OStore n' => n = n'
-  | MiniCET.OCall l, OCall l' => pc_inj p len (l, 0) = Some (l' + len)
+  | MiniCET.OCall l, OCall l' => pc_inj p len (l, 0) = Some l'
   | _, _ => False
   end.
 
@@ -338,7 +338,7 @@ Definition match_obs (p: MiniCET.prog) (len: nat) (ds: MiniCET.obs) (ds': obs) :
 
 Definition wf_dir (p: prog) (len: nat) (d: direction) : Prop :=
   match d with
-  | DCall pc' => is_some (nth_error p pc') = true
+  | DCall pc' => is_some (nth_error p (pc' - len)) && (len <=? pc')%nat (* pc' should place in code area. *)
   | _ => True
   end.
 
@@ -396,9 +396,10 @@ Qed.
 
 Lemma lookup_from_target
   (p p_ctx: MiniCET.prog) len (tp: prog) l ti
+  (LLEN: l >= len)
   (TRANSL: _machine_prog p_ctx p len = Some tp)
-  (TGT: nth_error tp l = Some ti):
-  exists pc, pc_inj p len pc = Some (add l len).
+  (TGT: nth_error tp (l - len) = Some ti):
+  exists pc, pc_inj p len pc = Some l.
 Proof.
   ginduction p; ii.
   { ii. unfold _machine_prog in TRANSL. ss. clarify.
@@ -406,23 +407,26 @@ Proof.
   unfold _machine_prog in TRANSL. simpl in TRANSL. des_ifs_safe.
   simpl in TGT.
   rewrite nth_error_app in TGT. des_ifs.
-  - exists (0, l). unfold pc_inj. simpl.
+  - exists (0, (l - len)). unfold pc_inj. simpl.
     eapply machine_blk_len in Heq0; [|econs]. rewrite Heq0. des_ifs.
+    f_equal. lia.
   - exploit IHp.
-    { unfold _machine_prog. erewrite Heq1. eauto. }
-    { eauto. }
+    2:{ unfold _machine_prog. erewrite Heq1. eauto. }
+    2:{ replace (l - len - Datatypes.length l1)
+      with (l - Datatypes.length l1 - len) in TGT by lia. eauto. }
+    { rewrite ltb_ge in Heq. lia. }
     i. des. destruct pc0 as [b o].
     exists (add b 1, o).
     unfold pc_inj in *. replace (add b 1) with (S b) by lia.
-    simpl. des_ifs. eapply machine_blk_len in Heq0; [|econs].
+    simpl. des_ifs_safe. eapply machine_blk_len in Heq0; [|econs].
     rewrite Heq0. f_equal. rewrite ltb_ge in Heq. lia.
 Qed.
 
 Lemma tgt_inv_aux
   (p p_ctx: MiniCET.prog) len (tp: prog) pc l ti
   (TRANSL: _machine_prog p_ctx p len = Some tp)
-  (TGT: nth_error tp l = Some ti)
-  (INJ: pc_inj p len pc = Some (add l len)) :
+  (TGT: nth_error tp (l - len) = Some ti)
+  (INJ: pc_inj p len pc = Some l) :
   exists i, p[[pc]] = Some i /\ machine_inst p_ctx len i = Some ti.
 Proof.
   ginduction p; ii.
@@ -433,19 +437,20 @@ Proof.
   destruct b as [|b].
   { ss. unfold pc_inj in INJ. simpl in INJ.
     des_ifs_safe. rewrite ltb_lt in Heq2.
-    assert (n = l) by lia. subst.
+    replace (n + len - len) with n in TGT by lia.
     exploit machine_blk_len; eauto. i. rewrite x0 in Heq2.
     rewrite nth_error_app1 in TGT; [|lia].
     exploit machine_blk_inv; eauto. }
   replace (((blk, ct) :: p) [[(S b, o)]]) with p[[(b, o)]] by ss.
   unfold pc_inj in INJ. simpl in INJ. des_ifs_safe.
-  assert (Datatypes.length blk + n0 = l) by lia. subst.
+  assert (Datatypes.length blk + n0 + len - len = Datatypes.length blk + n0) by lia.
+  rewrite H in TGT. clear H.
   exploit machine_blk_len; eauto. i. rewrite x0 in TGT.
   rewrite nth_error_app2 in TGT; [|lia].
   rewrite add_comm, add_sub in TGT.
   exploit IHp.
   { unfold _machine_prog. erewrite Heq1. eauto. }
-  { eauto. }
+  { replace n0 with (n0 + len - len) in TGT by lia. eauto. }
   { unfold pc_inj. erewrite Heq2. eauto. }
   eauto.
 Qed.
@@ -453,8 +458,8 @@ Qed.
 Lemma tgt_inv
   (p: MiniCET.prog) len (tp: prog) pc l ti
   (TRANSL: machine_prog p len = Some tp)
-  (TGT: nth_error tp l = Some ti)
-  (INJ: pc_inj p len pc = Some (add l len)) :
+  (TGT: nth_error tp (l - len) = Some ti)
+  (INJ: pc_inj p len pc = Some l) :
   exists i, p[[pc]] = Some i /\ machine_inst p len i = Some ti.
 Proof.
   eapply tgt_inv_aux; eauto.
@@ -493,7 +498,9 @@ Lemma match_dir_unique p len d1 d2 dt
   d1 = d2.
 Proof.
   unfold match_dir in *. des_ifs.
-  rewrite pc_inj_iff in *; clarify; lia.
+  assert (l >= len).
+  { unfold pc_inj in *. des_ifs. lia. }
+  rewrite pc_inj_iff in *; clarify.
 Qed.
 
 Lemma match_dirs_unique p len ds1 ds2 dst
@@ -512,7 +519,9 @@ Lemma match_ob_unique_src p len o1 o2 ot
   o1 = o2.
 Proof.
   unfold match_ob in *. des_ifs.
-  rewrite pc_inj_iff in *; clarify; lia.
+  assert (l0 >= len).
+  { unfold pc_inj in *. des_ifs. lia. }
+  rewrite pc_inj_iff in *; clarify.
 Qed.
 
 Lemma match_obs_unique_src p len os1 os2 ost
@@ -531,7 +540,6 @@ Lemma match_ob_unique_tgt p len o ot1 ot2
   ot1 = ot2.
 Proof.
   unfold match_ob in *. des_ifs.
-  assert (l0 = l1) by lia. auto.  
 Qed.
 
 Lemma match_obs_unique_tgt p len os ost1 ost2
@@ -601,12 +609,12 @@ Proof.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     esplits; econs; eauto. unfold pc_inj. intro PC'.
     destruct pc0 as [b o]. simpl.
-    exploit pc_inj_inc; eauto. unfold pc_inj. i. ss. rewrite x2. f_equal. lia.
+    exploit pc_inj_inc; eauto.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x0. des_ifs.
     esplits. 3-4: econs.
     { econs 2; eauto. }
     econs; eauto.
-    { i. exploit pc_inj_inc; eauto. i. rewrite x2. f_equal. lia. }
+    { i. exploit pc_inj_inc; eauto. }
     red. i.
     destruct (string_dec x x0); subst.
     { do 2 rewrite MiniCET_Index.t_update_eq. eapply eval_inject; eauto. }
@@ -622,18 +630,11 @@ Proof.
     2:{ repeat econs. }
     2:{ repeat econs. }
     econs; eauto. i. destruct b'; auto.
-    { assert (l >= Datatypes.length m').
-      { unfold pc_inj in Heq0. des_ifs. lia. }
-      rewrite Heq0. f_equal. lia. }
     exploit pc_inj_inc; try eapply PC; eauto.
-    i. rewrite x1. f_equal. lia.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     esplits; try sfby (repeat econs).
     { econs 4; eauto. }
-    econs; eauto. i. rewrite Heq. f_equal.
-    assert (l >= Datatypes.length m').
-    { unfold pc_inj in Heq. des_ifs. lia. }
-    lia.
+    econs; eauto.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x0. des_ifs.
     inv SAFE; clarify.
     assert (n0 = n).
@@ -648,8 +649,7 @@ Proof.
     2:{ econs. }
     2:{ econs; eauto. red. auto. }
     econs; eauto.
-    { i. exploit pc_inj_inc; try eapply PC; eauto.
-      i. rewrite x1. f_equal. lia. }
+    { i. exploit pc_inj_inc; try eapply PC; eauto. }
     { red. i. unfold match_mem in MEM.
       esplits; try sfby (repeat econs).
       { eapply asgn_match_reg; eauto. } }
@@ -666,16 +666,15 @@ Proof.
     { econs 6; eauto. }
     2-3: repeat econs.
     econs; eauto.
-    { i. exploit pc_inj_inc; try eapply PC; eauto.
-      i. rewrite x0. f_equal. lia. }
+    { i. exploit pc_inj_inc; try eapply PC; eauto. }
     { rewrite upd_length. auto. }
     eapply store_match_mem; eauto.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     inv SAFE; clarify.
 
-    assert (exists pc'_src, pc_inj p (Datatypes.length m') pc'_src = Some (pc'0 + (Datatypes.length m'))).
+    assert (exists pc'_src, pc_inj p (Datatypes.length m') pc'_src = Some (pc'0)).
     { red in WFDS. inv WFDS. red in H1. unfold is_some in H1.
-      des_ifs. eapply lookup_from_target; eauto. }
+      des_ifs. eapply lookup_from_target; eauto. eapply leb_complete in H1. lia. }
     des.
 
     exploit wf_ds_inj; eauto; i.
@@ -689,43 +688,31 @@ Proof.
     esplits.
     { eapply MiniCET_Index.SpecSMI_Call; eauto. }
     { instantiate (1:=pc'_src).
-      assert (((fst pc'_src =? l0)%nat && (snd pc'_src =? 0)%nat) = (pc'0 =? (l - Datatypes.length m'))%nat).
+      assert (((fst pc'_src =? l0)%nat && (snd pc'_src =? 0)%nat) = (pc'0 =? l)%nat).
       { red in VINJ. des_ifs.
         destruct pc'_src as [b o]. rename pc'0 into n0. simpl.
         destruct (Nat.eq_dec b l0); subst.
         { destruct (Nat.eq_dec o 0); clarify.
-          { repeat rewrite Nat.eqb_refl. simpl. symmetry.
-            rewrite Nat.eqb_eq. lia. }
+          { repeat rewrite Nat.eqb_refl. simpl. auto. }
           hexploit pc_inj_inject. 2: eapply H. 2: eapply Heq0.
           { ii. clarify. }
           ii. rewrite <- Nat.eqb_neq in *. rewrite n1.
-          rewrite andb_false_r.
-          assert (n >= Datatypes.length m').
-          { unfold pc_inj in Heq0. des_ifs. lia. }
-          symmetry. rewrite Nat.eqb_neq in *. lia. }
+          rewrite andb_false_r. auto. }
         { hexploit pc_inj_inject. 2: eapply H. 2: eapply Heq0.
           { ii. clarify. }
-          ii. rewrite <- Nat.eqb_neq in *. rewrite n1. ss.
-          assert (n >= Datatypes.length m').
-          { unfold pc_inj in Heq0. des_ifs. lia. }
-          symmetry. rewrite Nat.eqb_neq in *. lia. } }
+          ii. rewrite <- Nat.eqb_neq in *. rewrite n1. ss. } }
       rewrite H0. eapply match_states_intro; i; eauto.
       econs; eauto.
       red. i.
       exploit pc_inj_inc; try eapply H1; eauto.
-      i. rewrite x1. f_equal. lia.
     }
     { repeat econs. red. eauto. }
-    { repeat econs. unfold match_ob, val_inject in *. des_ifs.
-      assert (n >= Datatypes.length m').
-      { unfold pc_inj in Heq0. des_ifs. lia. }
-      symmetry. f_equal. lia. }
+    { repeat econs. unfold match_ob, val_inject in *. des_ifs. }
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     inv SAFE; clarify.
     esplits; eauto. 3-4: repeat econs.
     { eapply MiniCET_Index.SpecSMI_CTarget. eauto. }
     econs; eauto. ii. exploit pc_inj_inc; try eapply PC; eauto.
-    i. rewrite x2. f_equal. lia.
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     inv SAFE; clarify.
     esplits; eauto. 2-4: repeat econs.
@@ -809,7 +796,7 @@ Definition relative_secure_machine (p:MiniCET.prog) (len:nat) (tp: prog) (trans 
   match_reg_src (uslh_prog p) len r1 r1' false -> match_reg_src (uslh_prog p) len r2 r2' false ->
   match_mem (uslh_prog p) len m1 m1' -> match_mem (uslh_prog p) len m2 m2' ->
   trans (uslh_prog p) = Some tp ->
-  spec_same_obs_machine tp 0 r1' r2' len m1' m2' [] true.
+  spec_same_obs_machine tp len r1' r2' len m1' m2' [] true.
 
 Lemma spec_eval_relative_secure_machine
   p r1 r2 r1' r2' m1 m2 m1' m2' tp
