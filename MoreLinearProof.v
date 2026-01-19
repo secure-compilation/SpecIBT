@@ -554,8 +554,8 @@ Qed.
 
 Lemma prefix_match_obs
   p len os1 os2 os os0
-  (MATCH1: match_obs (uslh_prog p) len os os1)
-  (MATCH2: match_obs (uslh_prog p) len os0 os2)
+  (MATCH1: match_obs p len os os1)
+  (MATCH2: match_obs p len os0 os2)
   (OBS: Utils.prefix os os0 \/ Utils.prefix os0 os) :
   Utils.prefix os1 os2 \/ Utils.prefix os2 os1.
 Proof.
@@ -789,6 +789,64 @@ Definition spec_same_obs_machine p pc r1 r2 len m1 m2 stk b : Prop :=
   p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->m*_ds^^ os2^^m <(( c2 ))> -> (* YH: Yan said this can be generalized different numbers of steps. *)
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
+Definition relative_secure_spec_mir_mc (p:MiniCET.prog) (len:nat) (tp: prog) (trans : MiniCET.prog -> option prog)
+  (r1 r2 r1' r2' : reg) (m1 m2 m1' m2' : mem) : Prop :=
+  spec_same_obs p (0,0) r1 r2 m1 m2 [] true ->
+  match_reg p len r1 r1' -> match_reg p len r2 r2' ->
+  match_mem p len m1 m1' -> match_mem p len m2 m2' ->
+  trans p = Some tp ->
+  spec_same_obs_machine tp len r1' r2' len m1' m2' [] true.
+
+Lemma spec_eval_relative_secure_spec_mir_mc_aux
+  p r1 r2 r1' r2' m1 m2 m1' m2' tp
+  (LEN1: Datatypes.length m1' = Datatypes.length m2')
+  (REG1: match_reg p (Datatypes.length m1') r1 r1')
+  (REG2: match_reg p (Datatypes.length m1') r2 r2')
+  (MEM1: match_mem p (Datatypes.length m1') m1 m1')
+  (MEM2: match_mem p (Datatypes.length m1') m2 m2')
+  (TRANS: machine_prog p (Datatypes.length m1') = Some tp)
+  (SPEC: spec_same_obs p (0, 0) r1 r2 m1 m2 [] true)
+  (ISAFE1: spec_exec_safe p (0, 0, r1, m1, [], true, false))
+  (ISAFE2: spec_exec_safe p (0, 0, r2, m2, [], true, false)):
+  spec_same_obs_machine tp (Datatypes.length m1') r1' r2' (Datatypes.length m1') m1' m2' [] true.
+Proof.
+  assert (INITSAFE: p[[(0,0)]] <> None).
+  { red in ISAFE1. exploit ISAFE1; [econs|econs|]. i. des. inv x0; ii; clarify. }
+
+  assert (ISYNC: pc_inj p (Datatypes.length m1') (0, 0) = Some (Datatypes.length m1')).
+  { clear -INITSAFE. ss. des_ifs. destruct p0. ss. clarify. }
+
+  red. i.
+  hexploit minicet_linear_bcc; [|eapply ISAFE1| | |eapply H|]; eauto.
+  { econs; try sfby ss. }
+  i. des.
+
+  hexploit minicet_linear_bcc; [|eapply ISAFE2| | |eapply H0|]; eauto.
+  { econs; try sfby ss. }
+  i. des.
+
+  assert (UNIQ: ds0 = ds1); subst.
+  { eapply match_dirs_unique; eauto. }
+
+  red in SPEC. hexploit SPEC; cycle 1.
+  { eapply H1. }
+  { eapply H5. }
+  2:{ eapply wf_ds_inj; eauto. }
+  i. clear - H4 H8 H9.
+  eapply prefix_match_obs; eauto.
+Qed.
+
+Lemma spec_eval_relative_secure_spec_mir_mc
+  p r1 r2 r1' r2' m1 m2 m1' m2' tp
+  (LEN1: Datatypes.length m1' = Datatypes.length m2')
+  (SPEC: spec_same_obs p (0, 0) r1 r2 m1 m2 [] true)
+  (ISAFE1: spec_exec_safe p (0, 0, r1, m1, [], true, false))
+  (ISAFE2: spec_exec_safe p (0, 0, r2, m2, [], true, false)):
+  relative_secure_spec_mir_mc p (Datatypes.length m1') tp (fun p => machine_prog p (Datatypes.length m1')) r1 r2 r1' r2' m1 m2 m1' m2'.
+Proof.
+  red. i. eapply spec_eval_relative_secure_spec_mir_mc_aux; eauto.
+Qed.
+
 Definition relative_secure_machine (p:MiniCET.prog) (len:nat) (tp: prog) (trans : MiniCET.prog -> option prog)
   (r1 r2 r1' r2' : reg) (m1 m2 m1' m2' : mem) : Prop :=
   seq_same_obs p (0,0) r1 r2 m1 m2 [] ->
@@ -846,38 +904,17 @@ Proof.
   { clear -INITSAFE. destruct (uslh_prog p); ss.
     destruct p0. ss. des_ifs. }
 
-  red. i.
-  hexploit minicet_linear_bcc; [|eapply ISAFE1| | |eapply H5|]; eauto.
-  { econs; try sfby ss.
-    red. i. red in H0.
+  eapply spec_eval_relative_secure_spec_mir_mc_aux; try eapply SPEC; eauto.
+  - subst ir1. red in H0. des. red. i.
     destruct (string_dec x callee).
-    { subst. subst ir1. rewrite CALLEE1. ss.
-      rewrite ISYNC. eauto. }
+    { subst. rewrite CALLEE1. ss. rewrite ISYNC. ss. }
     destruct (string_dec x msf).
-    { des. subst. subst ir1. rewrite H7. ss. }
-    des. exploit H0; eauto. i. des. eauto.
-    inv IREG1. rewrite <- H8; eauto. }
-  i. des.
-
-  hexploit minicet_linear_bcc; [|eapply ISAFE2| | |eapply H6|]; eauto.
-  { econs; try sfby ss.
-    red. i. red in H1.
+    { des. subst. rewrite H5. ss. }
+    do 2 (rewrite TotalMap.t_update_neq; eauto).
+  - subst ir2. red in H1. des. red. i.
     destruct (string_dec x callee).
-    { subst. subst ir2. rewrite CALLEE2. ss.
-      rewrite ISYNC. eauto. }
+    { subst. rewrite CALLEE2. ss. rewrite ISYNC. ss. }
     destruct (string_dec x msf).
-    { des. subst. subst ir2. rewrite H11. ss. }
-    des. exploit H1; eauto. i. des. eauto.
-    inv IREG2. rewrite <- H12; eauto. }
-  i. des.
-
-  assert (UNIQ: ds0 = ds1); subst.
-  { eapply match_dirs_unique; eauto. }
-
-  red in SPEC. hexploit SPEC; cycle 1.
-  { eapply H7. }
-  { eapply H11. }
-  2:{ eapply wf_ds_inj; eauto. }
-  i. clear - H15 H14 H10.
-  eapply prefix_match_obs; eauto.
+    { des. subst. rewrite H5. ss. }
+    do 2 (rewrite TotalMap.t_update_neq; eauto).
 Qed.
