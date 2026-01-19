@@ -44,7 +44,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Branch : forall pc pc' r m sk e n l,
       fetch p (Datatypes.length m) pc = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
-      pc' = (if (not_zero n) then l  - (Datatypes.length m) else add pc 1) ->
+      pc' = (if (not_zero n) then l else add pc 1) ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[OBranch (not_zero n)] <(( S_Running (pc', r, m, sk) ))>
 
   | SSMI_Jump : forall l pc r m sk,
@@ -65,7 +65,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Call : forall pc r m sk e l,
       fetch p (Datatypes.length m) pc = Some <{{ call e }}> ->
       to_nat (eval r e) = Some l ->
-      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running (l - (Datatypes.length m), r, m, ((add pc 1)::sk)) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running (l, r, m, ((add pc 1)::sk)) ))>
 
   | SSMI_Ret : forall pc r m sk pc',
       fetch p (Datatypes.length m) pc = Some <{{ ret }}> ->
