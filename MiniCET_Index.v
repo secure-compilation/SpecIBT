@@ -126,9 +126,9 @@ Inductive spec_eval_small_step (p:prog):
       to_fp (eval r e) = Some l ->
       ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) (* YH: (snd pc' =? 0) ??? *) ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
-  | SpecSMI_CTarget : forall pc r m sk ms,
+  | SpecSMI_CTarget : forall pc r m sk ct ms,
       p[[pc]] = Some <{{ ctarget }}> ->
-      p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), ct, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   (* | SpecSMI_CTarget_F : forall pc r m sk ms, *)
   (*     p[[pc]] = Some <{{ ctarget }}> -> *)
   (*     p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))> *)
@@ -2208,16 +2208,16 @@ Proof.
     { exploit head_call_target; try eapply H11; eauto. i. des. subst. eauto. }
 
     inv H7. inv H8. inv H2; clarify.
-    dup H11. destruct lo as [l' o']. simpl in H1. des_ifs_safe.
+    dup H15. destruct lo as [l' o']. simpl in H1. des_ifs_safe.
 
     assert (DLEN: l' < Datatypes.length p \/ Datatypes.length p <= l') by lia.
 
     destruct DLEN as [DLEN|DLEN]; cycle 1.
     { exfalso.
-      unfold uslh_prog in H11. des_ifs_safe.
+      unfold uslh_prog in H15. des_ifs_safe.
       exploit new_prog_ct_cut.
       { eapply Heq0. }
-      { eapply H11. }
+      { eapply H15. }
       { eapply new_prog_no_ct. eauto. }
       i. eapply mapM_perserve_len in Heq0. rewrite length_add_index in Heq0.
       ss. des_ifs_safe. clear -Heq1 DLEN Heq0.

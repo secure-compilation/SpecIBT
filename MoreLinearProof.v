@@ -132,9 +132,9 @@ Inductive spec_eval_small_step (p:prog):
       to_nat (eval r e) = Some l ->
       ms' = ms || negb ((pc' =? l)) ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (add pc 1)::sk), true, ms') ))>
-  | SpecSMI_CTarget : forall pc r m sk ms,
+  | SpecSMI_CTarget : forall pc r m sk ct ms,
       fetch p (Datatypes.length m) pc = Some <{{ ctarget }}> ->
-      p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->m_[]^^[] <(( S_Running ((add pc 1, r, m, sk), false, ms) ))>
+      p |- <(( S_Running ((pc, r, m, sk), ct, ms) ))> -->m_[]^^[] <(( S_Running ((add pc 1, r, m, sk), false, ms) ))>
   (* | SpecSMI_CTarget_F : forall pc r m sk ms, *)
   (*     fetch p (Datatypes.length m) pc = Some <{{ ctarget }}> -> *)
   (*     p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[] <(( S_Fault ))> *)
