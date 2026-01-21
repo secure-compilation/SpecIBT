@@ -129,9 +129,9 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_CTarget : forall pc r m sk ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
-  | SpecSMI_CTarget_F : forall pc r m sk ms,
-      p[[pc]] = Some <{{ ctarget }}> ->
-      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))>
+  (* | SpecSMI_CTarget_F : forall pc r m sk ms, *)
+  (*     p[[pc]] = Some <{{ ctarget }}> -> *)
+  (*     p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))> *)
   | SpecSMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
@@ -2461,8 +2461,8 @@ Proof.
             inv H8; clarify. inv H14. ss. clarify. inv H8.
             2:{ inv H13. inv H12. inv H7. }
             inv H13. inv H12. inv H7.
-            destruct lo as [l' o'].
-            exploit head_call_target; try eapply H16; eauto. i. des. clarify.
+            (* destruct lo as [l' o']. *)
+            (* exploit head_call_target; try eapply H16; eauto. i. des. clarify. *)
         - destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
           des_ifs_safe. rename c into pc.
           inv H6. exploit src_inv; eauto.  i. des.

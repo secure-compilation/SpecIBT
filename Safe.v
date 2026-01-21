@@ -273,8 +273,11 @@ Proof.
         rewrite add_1_r. auto.
     (* call *)
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
-    (* ctarget *)
-    + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
+    (* (* ctarget *) *)
+    (* + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH. *)
+    (*   esplits. *)
+    (*   { econs. } *)
+    (*   econs. econs. *)
     (* ret - return *)
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
       destruct stk; try sfby ss.
@@ -793,10 +796,10 @@ Proof.
       * destruct stk'.
         { ss. des_ifs. }
         exploit src_inv; eauto. i. des. inv x2. inv MATCH0.
-        esplits. econs 10; eauto.
+        esplits. econs 9; eauto.
       * destruct stk'; [|ss].
         exploit src_inv; eauto. i. des. inv x2. inv MATCH0.
-        esplits. econs 11; eauto.
+        esplits. econs 10; eauto.
     + esplits. econs. eauto.
     + esplits. econs 2; eauto.
     + inv REG.

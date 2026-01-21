@@ -135,9 +135,9 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_CTarget : forall pc r m sk ms,
       fetch p (Datatypes.length m) pc = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->m_[]^^[] <(( S_Running ((add pc 1, r, m, sk), false, ms) ))>
-  | SpecSMI_CTarget_F : forall pc r m sk ms,
-      fetch p (Datatypes.length m) pc = Some <{{ ctarget }}> ->
-      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[] <(( S_Fault ))>
+  (* | SpecSMI_CTarget_F : forall pc r m sk ms, *)
+  (*     fetch p (Datatypes.length m) pc = Some <{{ ctarget }}> -> *)
+  (*     p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[] <(( S_Fault ))> *)
   | SpecSMI_Ret : forall pc r m sk pc' ms,
       fetch p (Datatypes.length m) pc = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->m_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
@@ -713,10 +713,10 @@ Proof.
     esplits; eauto. 3-4: repeat econs.
     { eapply MiniCET_Index.SpecSMI_CTarget. eauto. }
     econs; eauto. ii. exploit pc_inj_inc; try eapply PC; eauto.
-  - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
-    inv SAFE; clarify.
-    esplits; eauto. 2-4: repeat econs.
-    { eapply MiniCET_Index.SpecSMI_CTarget_F. eauto. }
+  (* - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs. *)
+  (*   inv SAFE; clarify. *)
+  (*   esplits; eauto. 2-4: repeat econs. *)
+  (*   { eapply MiniCET_Index.SpecSMI_CTarget_F. eauto. } *)
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     inv STK. inv SAFE; clarify.
     esplits; eauto. 3-4: repeat econs.
