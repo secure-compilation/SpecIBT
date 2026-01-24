@@ -849,10 +849,9 @@ Proof.
   assert (UNIQ: ds0 = ds1); subst.
   { eapply match_dirs_unique; eauto. }
 
-  red in SPEC. hexploit SPEC; cycle 1.
+  red in SPEC. hexploit SPEC.
   { eapply H7. }
   { eapply H11. }
-  2:{ eapply wf_ds_inj; eauto. }
   i. clear - H15 H14 H10.
   eapply prefix_match_obs; eauto.
 Qed.
