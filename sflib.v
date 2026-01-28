@@ -1,18 +1,4 @@
-(* *********************************************************************)
-(*                                                                     *)
-(*           Software Foundations Laboratory's Lemmas & Tactic         *)
-(*               based on Viktor and Gil's lemmas & tactic             *)
-(*                                                                     *)
-(* *********************************************************************)
-
-(** This file collects a number of basic lemmas and tactics for better
-    proof automation, structuring large proofs, or rewriting.  Most of
-    the rewriting support is ported from ssreflect. *)
-
-(** Symbols starting with [sflib__] are internal. *)
-
 Require Import Bool List Arith ZArith String Program.
-(* Require Export paconotation newtac. *)
 
 Set Implicit Arguments.
 
