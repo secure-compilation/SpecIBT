@@ -102,7 +102,6 @@ Definition callee : string := "callee".
 Coercion AId : string >-> exp.
 Coercion ANum : nat >-> exp.
 
-(* HIDE: BCP: Again, these notations are in flux in PLF... *)
 Notation "<{ e }>" := e (at level 0, e custom com at level 99) : com_scope.
 Notation "( x )" := x (in custom com, x at level 99) : com_scope.
 Notation "x" := x (in custom com at level 0, x constr at level 0) : com_scope.
@@ -143,10 +142,6 @@ Notation "f x .. y" := (.. (f x) .. y)
 Open Scope com_scope.
 
 (** Now to the first interesting part, values instead of just numbers: *)
-
-(* Inductive val : Type := *)
-(*   | N (n:nat) *)
-(*   | FP (l:nat). (* <- NEW: function pointer to procedure at label [l] *) *)
 
 (** Since type mismatches are now possible, evaluation of expressions can now
     fail, so the [eval] function is in the option monad. *)
@@ -192,7 +187,7 @@ Notation "x := y"  :=
   (IAsgn x y)
     (in custom com at level 0, x constr at level 0,
       y custom com at level 85, no associativity) : com_scope.
-Notation "'branch' e 'to' l"  := (* SOONER: get rid of the [to] *)
+Notation "'branch' e 'to' l"  :=
   (IBranch e l)
      (in custom com at level 0, e custom com at level 85,
       l constr at level 0, no associativity) : com_scope.
@@ -233,10 +228,6 @@ Check <{ 2 = 1 }>.
 Check <{{ Z := X }}>.
 Check <{{ Z := X + 3 }}>.
 Check <{ true && ~(false && true) }>.
-(* SOONER: need tests for new notations *)
-(* Check <{{ if true then skip else skip end }}>. *)
-(* Check <{{ if true && true then skip; skip else skip; X:=X+1 end }}>. *)
-(* Check <{{ while Z <> 0 do Y := Y * Z; Z := Z - 1 end }}>. *)
 Check <{{ call 0 }}>.
 Check <{{ ctarget }}>.
 Check <{{ ret }}>.
@@ -327,8 +318,6 @@ Definition uslh_bind {A B: Type} (m: M A) (f: A -> M B) : M B :=
     bind := @uslh_bind
   }.
 
-(* No mapM in ExtLib, seems it got removed: https://github.com/rocq-community/Stdlib-ext-lib/commit/ef2e35f43b2d1db4cb64188e9521948fdd1e0527 *)
-(* YH: We can use mapGen from QuickChick library instead.  *)
 Definition mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
   sequence (List.map f l).
 

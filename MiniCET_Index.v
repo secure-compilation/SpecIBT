@@ -124,14 +124,11 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) (* YH: (snd pc' =? 0) ??? *) ->
+      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ct ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), ct, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
-  (* | SpecSMI_CTarget_F : forall pc r m sk ms, *)
-  (*     p[[pc]] = Some <{{ ctarget }}> -> *)
-  (*     p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Fault ))> *)
   | SpecSMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
@@ -183,7 +180,6 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       b = (not_zero n') ->
       pc' = (if b' then (l,0) else pc+1) ->
       ms' = (ms || (negb (Bool.eqb b b'))) ->
-      (* uslh imposes that if we're already speculating the branch condition is always false *)
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DBranch b']^^[OBranch b] <(( S_Running ((pc', r, m, sk), ms') ))>
   | ISMI_Jump : forall l pc r m sk ms,
       p[[pc]] = Some <{{ jump l }}> ->
@@ -199,22 +195,17 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       me = (if ms then (ANum 0) else e) ->
       to_nat (eval r me) = Some n ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore n] <(( S_Running ((pc+1, r, upd n m (eval r e'), sk), ms) ))>
-  (* no fault if program goes to the beginning of some procedure block, whether or not it's the intended one *)
   | ISMI_Call : forall pc pc' r m sk e l (ms ms' : bool) blk,
       p[[pc]] = Some <{{ call e }}> ->
       (if ms then Some 0 else to_fp (eval r e)) = Some l ->
-      (*l' = (if ms then 0 else l) -> (* uslh masking *)*)
       ms' = ms || negb (fst pc' =? l) ->
-      nth_error p (fst pc') = Some blk -> (* always established by well-formed directive *)
+      nth_error p (fst pc') = Some blk ->
       snd blk = true ->
       snd pc' = 0 ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), ms') ))>
-  (* fault if attacker pc goes to non-proc block or into the middle of any block *)
-  (* directives are always "well-formed": nth_error p (fst pc') = Some blk /\ nth_error blk (snd pc') = Some i always established. *)
   | ISMI_Call_F : forall pc pc' r m sk e l (ms : bool),
       p[[pc]] = Some <{{ call e }}> ->
       (if ms then Some 0 else to_fp (eval r e)) = Some l ->
-      (* l' = (if ms then 0 else l) -> (* uslh masking *) *)
       (forall blk, nth_error p (fst pc') = Some blk -> snd blk = false \/ snd pc' <> 0) ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l] <(( S_Fault ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
@@ -302,36 +293,6 @@ Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
 Definition r_sync (r: reg) (ms: bool) : reg :=
    msf !-> N (if ms then 1 else 0); r.
 
-(* 
-   eval (r_sync r ms) e = eval r e 
-   eval (msf !-> N (if ms then 1 else 0); r) e = eval r e
-   This can only be the case if msf isn't used in e. 
-   We know that this is the case (unused_p_msf).
-   eval comes down to looking up strings in the register state.
-   so as long as msf isn't used in the expression, then a new mapping 
-   in the register state will not affect the evaluation of the expression.
-
-Previously:
-forall (X : string) (st : total_map nat) (ae : aexp) (n : nat),
-       a_unused X ae -> aeval (X !-> n; st) ae = aeval st ae
-
-Lemma aeval_beval_unused_update : forall X st n,
-  (forall ae, a_unused X ae ->
-    aeval (X !-> n; st) ae = aeval st ae) /\
-  (forall be, b_unused X be ->
-    beval (X !-> n; st) be = beval st be).
-intros X st n. apply aexp_bexp_mutind; intros;
-  simpl in *; try reflexivity;
-  try (
-    rewrite H; [| tauto]; rewrite H0; [| tauto]; reflexivity
-  ).
-  - rewrite t_update_neq; eauto.
-  - rewrite H; [| tauto]. rewrite H0; [| tauto]. rewrite H1; [| tauto].
-    reflexivity.
-  - rewrite H; auto.
-
-*)
-
 Lemma eval_unused_update : forall (x : string) (r: reg) (e: exp) (v: val),
   e_unused x e -> eval (x !-> v; r) e = eval r e.
 Proof.
@@ -417,115 +378,9 @@ Definition get_pc_ic (ic: ideal_cfg) : cptr :=
   let '(pc, r, m, sk) := c in
   pc.
 
-(* (* Termination *) *)
-
-(* Inductive result : Type := *)
-(* | R_Normal *)
-(* | R_Fault *)
-(* | R_UB. *)
-
-(* (* target *) *)
-
-(* Definition is_fault_tgt (tp:prog) (res_t: spec_cfg) : option bool := *)
-(*   let '(c, ct, ms) := res_t in *)
-(*   let '(pc, rs, m, sk) := c in *)
-(*   i <- tp[[pc]];; *)
-(*   match i with *)
-(*   | <{{ ctarget }}> => Some (if ct then false else true) *)
-(*   | _ => Some (if ct then true else false) *)
-(*   end. *)
-
-(* Definition is_normal_termination_tgt (tp:prog) (res_t: spec_cfg) : option bool := *)
-(*   let '(c, ct, ms) := res_t in *)
-(*   let '(pc, rs, m, sk) := c in *)
-(*   i <- tp[[pc]];; *)
-(*   match i with *)
-(*   | <{{ ret }}> => Some (if seq.nilp sk then true else false) *)
-(*   | _ => Some false *)
-(*   end. *)
-
-(* Definition is_stuck_tgt (tp: prog) (res_t: spec_cfg) : option bool := *)
-(*   let '(c, ct, ms) := res_t in *)
-(*   let '(pc, rs, m, sk) := c in *)
-(*   _ <- tp[[pc]];; *)
-(*   match (is_fault_tgt tp res_t, is_normal_termination_tgt tp res_t) with *)
-(*   | (Some false, Some false) => Some true *)
-(*   | _ => Some false *)
-(*   end. *)
-
-(* Definition classify_res_tgt (tp: prog) (res_t: spec_cfg) : result := *)
-(*   if (is_fault_tgt tp res_t) then R_Fault else *)
-(*   if (is_normal_termination_tgt tp res_t) then R_Normal else R_UB. *)
-
-(* (* source *) *)
-
-(* Definition is_fault_src (p: prog) (res_s: ideal_cfg) : option bool := *)
-(*   let '(c, ms) := res_s in *)
-(*   let '(pc, rs, m, sk) := c in *)
-(*   i <- p[[pc]];; *)
-(*   Some true. *)
-
-(* (* Normal termination: ret + empty stack *) *)
-(* Definition is_normal_termination_src (p: prog) (res_s: ideal_cfg) : option bool := *)
-(*   let '(c, ms) := res_s in *)
-(*   let '(pc, rs, m, sk) := c in *)
-(*   i <- p[[pc]];; *)
-(*   match i with *)
-(*   | <{{ ret }}> => Some (if seq.nilp sk then true else false) *)
-(*   | _ => Some false *)
-(*   end. *)
-
-(* (* any other final state means the program got stuck because of UB *) *)
-(* Definition is_stuck_src (p: prog) (res_s: ideal_cfg) : option bool := *)
-(*   let '(c, ms) := res_s in *)
-(*   let '(pc, rs, m, sk) := c in *)
-(*   _ <- p[[pc]];; *)
-(*   match (is_fault_src p res_s, is_normal_termination_src p res_s) with *)
-(*   | (Some false, Some false) => Some true *)
-(*   | _ => Some false *)
-(*   end. *)
-
-(* Definition classify_term_src (p: prog) (res_s: ideal_cfg) : result := *)
-(*   if (is_fault_src p res_s) then R_Fault else *)
-(*   if (is_normal_termination_src p res_s) then R_Normal else R_UB. *)
-
-(* Definition same_result_type (p tp: prog) (sc: spec_cfg) (ic: ideal_cfg) : bool := *)
-(*   let '(c, ct, ms) := sc in *)
-(*   let '(pc, r, m, sk) := c in *)
-(*   let '(c', ms') := ic in *)
-(*   let '(pc', r', m', sk') := c' in *)
-(*   match (tp[[pc]], p[[pc']]) with *)
-(*   | (Some i, Some i') => *)
-(*       let ub_t := is_stuck_tgt tp sc in *)
-(*       let ub_s := is_stuck_src p ic in *)
-(*       let normal_t := is_normal_termination_tgt tp sc in *)
-(*       let normal_s := is_normal_termination_src p ic in *)
-(*       let fault_t := is_fault_tgt tp sc in *)
-(*       let fault_s := is_fault_src p ic in *)
-(*       let ub_match := *)
-(*         match (ub_t, ub_s) with *)
-(*         | (Some b1, Some b2) => b1 && b2 *)
-(*         | _ => false *)
-(*         end in *)
-(*       let normal_match := *)
-(*         match (normal_t, normal_s) with *)
-(*         | (Some b1', Some b2') => b1' && b2' *)
-(*         | _ => false *)
-(*         end in *)
-(*       let fault_match := *)
-(*         match (fault_t, fault_s) with *)
-(*         | (Some b1'', Some b2'') => b1'' && b2'' *)
-(*         | _ => false *)
-(*         end in *)
-(*           ub_match || normal_match || fault_match *)
-(*   | _ => false *)
-(*    end. *)
-
-(* Well-formedness properties *)
-
 Definition wf_dir (p: prog) (pc: cptr) (d: direction) : Prop :=
   match d, p[[pc]] with
-  | DBranch b, Some (IBranch e l) => is_some p[[(l, 0)]] = true (* YH: this should be checked in program's well-formness. *)
+  | DBranch b, Some (IBranch e l) => is_some p[[(l, 0)]] = true
   | DCall pc', Some (ICall e) => is_some p[[pc']] = true
   | _, _ => False
   end.
@@ -556,12 +411,6 @@ Definition last_inst_terminator (blk: (list inst * bool)) : Prop :=
   | [] => False (* unreachable *)
   | h::t => is_terminator h
   end.
-
-(* we need a wf property saying that if we look up an expression in a register or  
-   get it from memory, and it evaluates to a label, then that label is well-formed 
-   (currently we only have this for constants that occur in expressions that occur 
-   as the argument of the call instruction)
-*)
 
 Definition wf_lbl (p: prog) (is_proc: bool) (l: nat) : Prop :=
   match nth_error p l with
@@ -606,12 +455,6 @@ Definition wf_ic (p: prog) (ic: ideal_cfg) : Prop :=
   let '(pc, r, m, stk, ms) := ic in
   wf_reg p r /\ wf_mem p m.
 
-(* Lemma wf_ic_preserved p ic ds os ict *)
-(*     (WF: wf_ic p ic) *)
-(*     (STEP: p |- <(( S_Running ic ))> -->i_ ds ^^ os  <(( S_Running ict ))>): *)
-(*   wf_ic p ict. *)
-(* Proof. *)
-
 (* Aux Lemmas *)
 
 Lemma wf_ds_app p ds1 ds2
@@ -637,17 +480,6 @@ Proof.
     { subst. rewrite app_assoc. auto. }
     { subst. rewrite app_assoc. auto. }
 Qed.
-
-(* Lemma wf_uslh : forall (p: prog),    *)
-(*   wf_prog p -> wf_prog (uslh_prog p). *)
-(* Proof. *)
-
-(* Lemma multi_spec_msf_lookup_preserved p sc1 ds os n sc1' *)
-(* one more condition is needed : n steps of spec exec should be matched with single ideal steps *)
-(*     (LK: msf_lookup_sc sc1 = N (if ms_true_sc sc1 then 1 else 0)) *)
-(*     (STEPS: p |- <(( S_Running sc1 ))> -->*_ ds ^^ os ^^ n <(( S_Running sc1' ))>) : *)
-(*   msf_lookup_sc sc1' = N (if ms_true_sc sc1' then 1 else 0). *)
-(* Proof. *)
 
 (* Tactics *)
 
@@ -1748,7 +1580,6 @@ Proof.
   eapply bind_inv in x2. des. subst.
   assert (NCTS: no_ct_blk blk).
   { eapply nth_error_In in LTH. eapply no_ct_prog_In; eauto. }
-  (* YH: TODO: make lemma *)
   assert (no_ct_blk a).
   { clear - x2 NCTS. unfold concatM in x2. eapply bind_inv in x2. des; subst.
     ss. unfold MiniCET.uslh_ret in x0. clarify.
@@ -1788,16 +1619,6 @@ Proof.
   rewrite x0. unfold MiniCET.uslh_ret in x3. clarify.
 Qed.
 
-(* Lemma src_tgt_length : forall p tp pc (bk bk': list inst * bool) e l (i: inst), *)
-(*   nth_error p (fst pc) = Some bk -> *)
-(*   nth_error (fst bk) (snd pc) = Some i -> *)
-(*   i <> <{{ branch e to l }}> -> *)
-(*   tp = uslh_prog p -> *)
-(*   nth_error tp (fst pc) = Some bk'. *)
-(* Proof. *)
-(*   i. rewrite H2 in *. unfold uslh_prog.  *)
-(*   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as (p', newp) eqn:Htp. *)
-
 Lemma ultimate_slh_bcc_single_cycle_refactor (p: prog) : forall ic1 sc1 sc2 n ds os,
   no_ct_prog p ->
   wf_prog p ->
@@ -1812,14 +1633,11 @@ Lemma ultimate_slh_bcc_single_cycle_refactor (p: prog) : forall ic1 sc1 sc2 n ds
 Proof.
   intros until os. intros nct wfp unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
   destruct ic1 as (c & ms). destruct c as (c & sk). destruct c as (c & m). destruct c as (ipc & r).
-  (* assert (wftp: wf_prog (uslh_prog p)). { apply wf_uslh. assumption. } *)
 
   dup wfp. unfold wf_prog in wfp. destruct wfp. unfold nonempty_program in H.
-  (* unfold wf_ds' in wfds. *)
   destruct ipc as (l & o).
 
   destruct (p[[(l, o)]]) eqn: ISRC; cycle 1.
-  (* source instruction lookup failed: n_steps gives this. *)
   { ss. des_ifs. }
   inv cfg_sync. exploit src_inv; try eapply ISRC; eauto. i. des.
   destruct i.
@@ -2300,7 +2118,6 @@ Qed.
 Lemma ultimate_slh_bcc (p: prog) : forall n ic1 sc1 sc2 ds os,
   no_ct_prog p ->
   wf_prog p ->
-  (* wf_ds' (uslh_prog p) ds -> *)
   unused_prog msf p ->
   unused_prog callee p ->
   msf_lookup_sc sc1 = N (if (ms_true_sc sc1) then 1 else 0) ->
@@ -2314,7 +2131,7 @@ Proof.
     { inv H6. inv H5. destruct pc as [l o].
       unfold steps_to_sync_point' in SYNCPT.
       destruct (p[[(l, o)]]) eqn: ISRC; cycle 1.
-      { (* by PC *) unfold pc_sync in PC. ss. des_ifs. }
+      { unfold pc_sync in PC. ss. des_ifs. }
       destruct i; clarify.
       - exploit src_inv; eauto. i. des. inv x1; ss; clarify.
         inv H8; clarify.
@@ -2495,7 +2312,7 @@ Proof.
         { inv x1; [des_ifs; lia|inv H9; eauto]. }
         des. subst. esplits; eauto. }
 
-      des. subst. (* eapply wf_ds_app in H1. des. *)
+      des. subst.
       assert (steps_to_sync_point' p ic1 ds1 = Some n0).
       { destruct ic1 as (c1 & ms). unfold steps_to_sync_point' in SYNCPT.
         des_ifs_safe. rename c into pc.
@@ -2569,9 +2386,9 @@ Definition seq_same_obs p pc r1 r2 m1 m2 stk : Prop :=
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition spec_same_obs p pc r1 r2 m1 m2 stk b : Prop :=
-  forall ds n m os1 os2 c1 c2 (* (WFDS: wf_ds' p ds) *),
+  forall ds n m os1 os2 c1 c2,
   p |- <(( S_Running (pc, r1, m1, stk, b, false) ))> -->*_ds^^os1^^n <(( c1 ))> ->
-  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->*_ds^^ os2^^m <(( c2 ))> -> (* YH: Yan said this can be generalized different numbers of steps. *)
+  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->*_ds^^ os2^^m <(( c2 ))> ->
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition ideal_same_obs p pc r1 r2 m1 m2 stk : Prop :=
@@ -2713,7 +2530,7 @@ Proof.
       inv H0. 1: repeat eexists; reflexivity.
       inv H1; repeat eexists.
       all: try (rewrite (multi_ideal_ms_monotonic H2); reflexivity).
-      3, 4: inv H2; inv H1. (* I think these two cases leave unresolved evars *)
+      3, 4: inv H2; inv H1.
       all: apply multi_ideal_ms_monotonic, orb_false_elim in H2 as [-> _].
       all: reflexivity.
       Unshelve.
@@ -3159,7 +2976,6 @@ Lemma spec_eval_relative_secure_aux
   (MATCH1: match_cfgs p ic1 sc1)
   (MATCH2: match_cfgs p ic2 sc2)
   ds os1 os2 n m c1 c2
-  (* (WFDS: wf_ds' (uslh_prog p) ds) *)
   (SSTEP1: (uslh_prog p) |- <(( S_Running sc1 ))> -->*_ds^^os1^^n <(( c1 ))>)
   (SSTEP2: (uslh_prog p) |- <(( S_Running sc2 ))> -->*_ds^^ os2^^m <(( c2 ))>):
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
@@ -3172,8 +2988,6 @@ Qed.
 Lemma spec_eval_relative_secure_init_aux
   p r1 r2 m1 m2
   (FST: first_blk_call p)
-  (* (ICFG1: c1 = ((0,0), r1, m1, @nil cptr)) *)
-  (* (ICFG2: c2 = ((0,0), r2, m2, @nil cptr)) *)
   (SEQ: seq_same_obs p (0,0) r1 r2 m1 m2 [])
   (NCT: no_ct_prog p)
   (WFP: wf_prog p)
@@ -3187,7 +3001,6 @@ Lemma spec_eval_relative_secure_init_aux
   (MATCH1: Rsync r1 r1' false)
   (MATCH2: Rsync r2 r2' false)
   ds os1 os2 n m sc1' sc2'
-  (* (WFDS: wf_ds' (uslh_prog p) ds) *)
   (SSTEP1: (uslh_prog p) |- <(( S_Running sc1 ))> -->*_ds^^os1^^n <(( sc1' ))>)
   (SSTEP2: (uslh_prog p) |- <(( S_Running sc2 ))> -->*_ds^^ os2^^m <(( sc2' ))>):
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).

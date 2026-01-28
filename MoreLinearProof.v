@@ -135,9 +135,6 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_CTarget : forall pc r m sk ct ms,
       fetch p (Datatypes.length m) pc = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), ct, ms) ))> -->m_[]^^[] <(( S_Running ((add pc 1, r, m, sk), false, ms) ))>
-  (* | SpecSMI_CTarget_F : forall pc r m sk ms, *)
-  (*     fetch p (Datatypes.length m) pc = Some <{{ ctarget }}> -> *)
-  (*     p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[]^^[] <(( S_Fault ))> *)
   | SpecSMI_Ret : forall pc r m sk pc' ms,
       fetch p (Datatypes.length m) pc = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->m_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
@@ -354,14 +351,6 @@ Proof.
   - exploit flat_coord_inverse; eauto. i. rewrite x0.
     f_equal. lia.
 Qed.
-
-(* Lemma src_inv *)
-(*   (p: MiniCET.prog) (tp: prog) pc l i *)
-(*   (TRANSL: machine_prog p = Some tp) *)
-(*   (SRC: p[[pc]] = Some i) *)
-(*   (INJ: pc_inj p pc = Some l) : *)
-(*   exists i', nth_error tp l = Some i' /\ machine_inst p i = Some i'. *)
-(* Proof. *)
 
 Lemma transpose_len {X} (ol: list (option X)) l
   (TRNS: transpose ol = Some l) :
@@ -713,10 +702,6 @@ Proof.
     esplits; eauto. 3-4: repeat econs.
     { eapply MiniCET_Index.SpecSMI_CTarget. eauto. }
     econs; eauto. ii. exploit pc_inj_inc; try eapply PC; eauto.
-  (* - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs. *)
-  (*   inv SAFE; clarify. *)
-  (*   esplits; eauto. 2-4: repeat econs. *)
-  (*   { eapply MiniCET_Index.SpecSMI_CTarget_F. eauto. } *)
   - exploit tgt_inv; eauto. i. des. unfold machine_inst in x1. des_ifs.
     inv STK. inv SAFE; clarify.
     esplits; eauto. 3-4: repeat econs.
@@ -786,7 +771,7 @@ Qed.
 Definition spec_same_obs_machine p pc r1 r2 len m1 m2 stk b : Prop :=
   forall ds n m os1 os2 c1 c2 (WFDS: wf_ds p len ds),
   p |- <(( S_Running (pc, r1, m1, stk, b, false) ))> -->m*_ds^^os1^^n <(( c1 ))> ->
-  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->m*_ds^^ os2^^m <(( c2 ))> -> (* YH: Yan said this can be generalized different numbers of steps. *)
+  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->m*_ds^^ os2^^m <(( c2 ))> ->
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition relative_secure_spec_mir_mc (p:MiniCET.prog) (len:nat) (tp: prog) (trans : MiniCET.prog -> option prog)

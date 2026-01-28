@@ -27,8 +27,6 @@ From SECF Require Import MapsFunctor.
 From SECF Require Import MiniCET.
 From SECF Require Import sflib.
 
-(* TODO: Machine.v is a common part. Need to change. *)
-
 (* memory injection *)
 
 (* mem only contains data. *)
@@ -212,13 +210,6 @@ Definition val_inject (p: MiniCET.prog) (len: nat) (vsrc vtgt: val) : Prop :=
   | UV, _ => True
   | _, _ => False
   end.
-
-(* To use common testing framework, we need to follow then common
-   semantics for testing (defined in MiniCET.v). But before that,
-   we need to parameterize the program in the common semantics.
-
-   I expect some troubleshooting will be needed, but to handle all
-   all the related issues at once, I've just defined the semantics for now. *)
 
 Module MoreLinearCommon (M: TMap).
 
