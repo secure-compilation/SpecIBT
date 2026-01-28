@@ -252,8 +252,6 @@ Definition taint_tracking (f : nat) (p : prog) (c: cfg)
   let tc := (tpc, trs, tm, ts) in
   let ist := (c, tc, []) in
   match (steps_taint_track f p ist []) with
-    (* JB: also return the (partial) trace in the oof case, even if the taint tracking won't be sound in this case. *)
-    (* This should be fine if the speculative execution does not get more fuel than the sequential one *)
   | ETerm (_, _, tobs) os | EOutOfFuel (_, _, tobs) os =>
       let (ids, mems) := split_sum_list tobs in
       Some (os, remove_dupes String.eqb ids,

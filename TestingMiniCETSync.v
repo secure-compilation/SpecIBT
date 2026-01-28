@@ -398,18 +398,6 @@ Definition single_step_ideal_sf := (
 (* NOTE: Currently disabled, since it fails the "base" mutant *)
 (* QuickChick single_step_ideal_sf. *)
 
-(* YH:
-   Current single-step testing generates states with a nearly random strategy,
-   only checking well-typedness. This approach can produce ill-formed states
-   unreachable from the initial state, so stuck-free testing in a single step
-   setting may be unsound. That said, this stuck-free testing failure doesn't
-   make the other single-step tests incorrect. Other tests simply discard these
-   cases, and the discard rate is not significant (~2%).
-
-   However, this statement seems true: States reachable from the initial state are safe
-   (Stuck-free testing in an end-to-end setting is sound).*)
-
-(* Testing (single-step) Gilles' lemma *)
 Definition single_step_gilles := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 => 

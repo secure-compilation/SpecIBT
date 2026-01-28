@@ -416,8 +416,8 @@ Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds:dirs)
           (c2,ds2,o1++o2)
       | s => (s, ds, [])
       end
-  | 0 => (sc, ds, []) (* JB: executing for 0 steps should be just the identity... *)
-          (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
+  | 0 => (sc, ds, [])
+          (* None *)
     end.
 
 End LinearCommon.

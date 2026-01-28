@@ -211,8 +211,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
         | s => (s, ds, [])
         end
     | 0 =>
-        (sc, ds, []) (* JB: executing for 0 steps should be just the identity... *)
-        (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
+        (sc, ds, [])
     end.
 
   (* Morally state+output monad hidden in here: step p >> steps f' p  *)
@@ -423,8 +422,7 @@ Fixpoint spec_steps (f:nat) (p:prog) (sc: state spec_cfg) (ds:dirs)
       | s => (s, ds, [])
       end
   | 0 =>
-      (sc, ds, []) (* JB: executing for 0 steps should be just the identity... *)
-      (* None *) (* Q: Do we need more precise out-of-fuel error here? *)
+      (sc, ds, [])
   end.
 
 End MachineSemantics.

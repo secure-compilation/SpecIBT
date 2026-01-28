@@ -474,8 +474,6 @@ Qed.
 
 (** * Safety Presevation *)
 
-(* YH: This could be merge. *)
-
 Definition safe_imm_seq (p: prog) (st: state cfg) : Prop :=
   match st with
   | S_Running c => exists os stt, p |- <(( S_Running c ))> -->^ os <(( stt ))>
