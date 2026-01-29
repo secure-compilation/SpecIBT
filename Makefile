@@ -14,11 +14,10 @@ clean::
 	rm -rf ../_qc_$(shell basename $(CURDIR)).tmp *.bak
 
 test: Makefile.coq clean
-	@if [ -z "$(EXCLUDE)" ]; then \
-		$(QC) $(QCFLAGS); \
-	else \
-		$(QC) $(QCFLAGS) -exclude $(EXCLUDE); \
-	fi
+	@EXTRAFLAGS=""; \
+	if [ -n "$(SECTION)" ]; then EXTRAFLAGS="-s $(SECTION)"; fi; \
+	if [ -n "$(EXCLUDE)" ]; then EXTRAFLAGS="-exclude $(EXCLUDE) $$EXTRAFLAGS"; fi; \
+	$(QC) $(QCFLAGS) $$EXTRAFLAGS
 
 Makefile.coq: $(ALLVFILES)
 	coq_makefile $(COQMFFLAGS) -o Makefile.coq $(ALLVFILES)

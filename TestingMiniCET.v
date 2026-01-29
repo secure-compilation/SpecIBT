@@ -15,9 +15,11 @@ Import QcNotation QcDefaultNotation. Open Scope qc_scope.
 Import MonadNotation.
 From SECF Require Import MiniCET TaintTracking MapsFunctor TestingLib TestingSemantics.
 
-Module Import MCC := MiniCETSemantics(ListTotalMap).
-Module Import TS := TestingStrategies(MCC).
-Module Import TT := TaintTracking(MCC).
+(*! Section testing_ETE *)
+
+Module Import MCC := MiniCETSemantics ListTotalMap.
+Module Import TS := TestingStrategies MCC.
+Module Import TT := TaintTracking MCC.
 
 Definition max_block_size := 3.
 Definition max_program_length := 8.
