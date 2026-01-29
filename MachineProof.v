@@ -1,7 +1,6 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
-From SECF Require Import TestingLib.
 From SECF Require Import Utils.
 From SECF Require Import MiniCET Machine.
 From Stdlib Require Import Bool.Bool.
