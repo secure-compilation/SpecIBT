@@ -260,10 +260,6 @@ Fixpoint max n m := match n, m with
                    | S n', S m' => S (max n' m')
                    end.
 
-(*! Section testing_ETE *)
-
-
-
 Derive (Arbitrary, Shrink) for ty.
 
 Definition ty_eqb (x y: ty) := match x, y with
