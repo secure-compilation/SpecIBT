@@ -32,10 +32,10 @@ From SECF Require Import
   LinearProof.
 From SECF Require Export Generation Printing Shrinking.
 
+(* TERSE: HIDEFROMHTML *)
 Definition max_block_size := 3.
 Definition max_program_length := 8.
 
-(* TERSE: HIDEFROMHTML *)
 Module MCC := MiniCETCommon ListTotalMap.
 Module LCC := LinearCommon ListTotalMap.
 
