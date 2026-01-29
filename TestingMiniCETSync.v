@@ -339,7 +339,7 @@ Definition single_step_ideal_sf := (
 
 
 
-Definition single_step_gilles := (
+Definition single_step := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 =>
   forAll (gen_reg_wt c pst) (fun rs2 =>
@@ -374,7 +374,7 @@ Definition single_step_gilles := (
   end
   ))))))))).
 
-(*! QuickChick single_step_gilles. *)
+(*! QuickChick single_step. *)
 
 
 Definition single_step_seq_ideal := (
