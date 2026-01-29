@@ -21,15 +21,12 @@ Import MonadNotation.
 From SECF Require Import 
   ListMaps 
   MapsFunctor
-  Linear
   MiniCET
   MiniCET_Index
-  Machine
   Utils
   Safe
   TaintTracking 
-  TestingSemantics
-  LinearProof.
+  TestingSemantics.
 From SECF Require Export Generation Printing Shrinking.
 
 (* TERSE: HIDEFROMHTML *)
@@ -37,37 +34,6 @@ Definition max_block_size := 3.
 Definition max_program_length := 8.
 
 Module MCC := MiniCETCommon ListTotalMap.
-Module LCC := LinearCommon ListTotalMap.
-
-Definition match_regb (p : MiniCET.prog) (rs : MCC.reg) (rt : LCC.reg) : bool :=
-  let rsv := map_dom (snd rs) in
-  let rtv := map_dom (snd rt) in
-  list_eqb _ rsv rtv && allb (fun x => val_injectb p (t_apply rs x) (t_apply rt x)) rsv.
-
-Definition match_memb (p : MiniCET.prog) (ms mt : mem) : bool :=
-  (Datatypes.length ms =? Datatypes.length mt)%bool &&
-  allb (fun '(s, t) => val_injectb p s t) (combine ms mt).
-
-(* See "match_states" in "Linear.v" for the prop reference *)
-Definition match_statesb (p : MiniCET.prog) (ss : state MCC.spec_cfg) (st : state LCC.spec_cfg) : bool :=
-  match ss, st with
-  | S_Term, S_Term => true
-  | S_Fault, S_Fault => true
-  | S_Running (spc, sreg, smem, sstk, sct, sms), S_Running (tpc, treg, tmem, tstk, tct, tms) =>
-    match_regb p sreg treg 
-    && match_memb p smem tmem 
-    && sct ==b tct 
-    && sms ==b tms
-    && (match pc_inj p spc with Some pc => pc ==b tpc | None => false end)
-    && (match map_opt (pc_inj p) sstk with Some stk => stk ==b tstk | None => false end)
-  | _, _ => false
-  end. 
-
-Instance match_dirDec : forall p ds dt, Dec (match_dir p ds dt).
-Proof. 
-  intros. dec_eq. unfold match_dir.
-  destruct ds, dt; auto; dec_eq.
-Defined.
 
 Print Forall2.
 
@@ -86,17 +52,6 @@ Proof.
         ++ right. intros contra. inversion contra; subst. contradiction.
       -- right. intros contra. inversion contra; subst. contradiction.
 Qed.
-
-Instance match_dirsDec p ds dt : Dec (match_dirs p ds dt).
-Proof. unfold match_dirs. apply Forall2Dec. apply match_dirDec. Defined.
-
-Instance match_obDec p os ot : Dec (match_ob p os ot).
-Proof. dec_eq. unfold match_ob.
-  destruct os, ot; auto; dec_eq.
-Defined.
-
-Instance match_obsDec p ds dt : Dec (match_obs p ds dt).
-Proof. unfold match_obs. apply Forall2Dec. apply match_obDec. Defined.
 
 (** * Reusable testing strategies, which are based on generators from this library.  *)
 

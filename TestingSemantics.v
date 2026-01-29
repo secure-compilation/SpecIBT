@@ -9,7 +9,6 @@ Set Default Goal Selector "!".
 From SECF Require Import 
     MapsFunctor
     MiniCET
-    Machine
     Utils
     ListMaps.
 Require Import Stdlib.Classes.EquivDec.
