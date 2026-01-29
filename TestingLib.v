@@ -32,6 +32,9 @@ From SECF Require Import
   LinearProof.
 From SECF Require Export Generation Printing Shrinking.
 
+Definition max_block_size := 3.
+Definition max_program_length := 8.
+
 (* TERSE: HIDEFROMHTML *)
 Module MCC := MiniCETCommon ListTotalMap.
 Module LCC := LinearCommon ListTotalMap.
@@ -219,7 +222,7 @@ Definition spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (ds: dirs) : spec_exe
   _spec_steps_acc f p sc [] ds.
 
 Definition load_store_trans_basic_blk := (
-    forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+    forAll (gen_prog_wt_with_basic_blk max_block_size max_program_length) (fun '(c, tm, pst, p) =>
       List.forallb basic_block_checker (map fst (transform_load_store_prog c tm p)))
 ).
 
@@ -234,7 +237,7 @@ Definition stuck_free (f : nat) (p : prog) (c: cfg) : exec_result :=
   steps_taint_track f p ist [].
 
 Definition load_store_trans_stuck_free := (
-  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_prog_wt_with_basic_blk max_block_size max_program_length) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let p' := transform_load_store_prog c tm p in
@@ -303,7 +306,7 @@ Definition gen_pub_equiv_is_pub_equiv := (forAll gen_pub_vars (fun P =>
   )))).
 
 Definition gen_reg_wt_is_wt := (
-  forAll (gen_prog_ty_ctx_wt' 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_prog_ty_ctx_wt' max_block_size max_program_length) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs => rs_wtb rs c))).
 
 Definition gen_pub_mem_equiv_is_pub_equiv := (forAll gen_pub_mem (fun P =>
@@ -313,11 +316,11 @@ Definition gen_pub_mem_equiv_is_pub_equiv := (forAll gen_pub_mem (fun P =>
     )))).
 
 Definition gen_mem_wt_is_wt := (
-  forAll (gen_prog_ty_ctx_wt' 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_prog_ty_ctx_wt' max_block_size max_program_length) (fun '(c, tm, pst, p) =>
   forAll (gen_wt_mem tm pst) (fun m => m_wtb m tm))).
 
 Definition test_ni (transform : rctx -> tmem -> prog -> prog) := (
-  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_prog_wt_with_basic_blk max_block_size max_program_length) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
@@ -341,7 +344,7 @@ Definition test_ni (transform : rctx -> tmem -> prog -> prog) := (
 Definition test_safety_preservation `{Show dir} 
   (harden : prog -> prog) 
   (gen_dbr : G dir) (gen_dcall : list nat -> G dir) := (
-  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_prog_wt_with_basic_blk max_block_size max_program_length) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
   forAll (gen_wt_mem tm pst) (fun m =>
   let icfg := (ipc, rs, m, istk) in
@@ -362,9 +365,7 @@ Definition test_safety_preservation `{Show dir}
 Definition test_relative_security `{Show dir} 
   (harden : prog -> prog) 
   (gen_dbr : G dir) (gen_dcall : list nat -> G dir) := (
-  (* TODO: should make sure shrink indeed satisfies invariants of generator;
-           or define a better shrinker *)
-  forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>
+  forAll (gen_prog_wt_with_basic_blk max_block_size max_program_length) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 =>
   forAll (gen_wt_mem tm pst) (fun m1 =>
   let icfg1 := (ipc, rs1, m1, istk) in

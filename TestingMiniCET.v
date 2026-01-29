@@ -19,6 +19,9 @@ Module Import MCC := MiniCETSemantics(ListTotalMap).
 Module Import TS := TestingStrategies(MCC).
 Module Import TT := TaintTracking(MCC).
 
+Definition max_block_size := 3.
+Definition max_program_length := 8.
+
 Definition gen_dbr : G dir :=
   b <- arbitrary;; ret (DBranch b).
 
@@ -53,9 +56,9 @@ Definition wt_exp_is_defined := (forAll arbitrary (fun (c : rctx) =>
 Definition basic_block_test := (forAll (basic_block_gen_example) (fun (blk: list inst) => (basic_block_checker blk))).
 (*! QuickChick basic_block_test. *)
 
-Definition wt_wf := (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf p))).
+Definition wt_wf := (forAll (gen_prog_wt max_block_size max_program_length) (fun (p : prog) => (wf p))).
 (*! QuickChick wt_wf. *)
-Definition wt_uslh_wf := (forAll (gen_prog_wt 3 8) (fun (p : prog) => (wf (uslh_prog p)))).
+Definition wt_uslh_wf := (forAll (gen_prog_wt max_block_size max_program_length) (fun (p : prog) => (wf (uslh_prog p)))).
 (*! QuickChick wt_uslh_wf. *)
 
 (* The well-typed expression "always evaluates" in the register set produces by "gen_reg_wt " *)
@@ -71,7 +74,7 @@ Definition wt_expr_is_defined := (
 (*! QuickChick wt_expr_is_defined. *)
 
 Definition ty_prog_wf := 
-  (forAll (gen_prog_ty_ctx_wt 3 8) (fun '(c, tm, p) => 
+  (forAll (gen_prog_ty_ctx_wt max_block_size max_program_length) (fun '(c, tm, p) => 
     ((ty_prog c tm p) && (wf p)))).
 
 (* "+++ Passed 10000 tests (0 discards)" *)
