@@ -46,7 +46,6 @@ Definition match_memb (p : MiniCET.prog) (ms mt : mem) : bool :=
   allb (fun '(s, t) => val_injectb p s t) (combine ms mt).
 
 (* See "match_states" in "Linear.v" for the prop reference *)
-(* YF: to review this; maybe write a decidable match reg and mem properties and try to use them in LinearProof to reduce discrepancies? *)
 Definition match_statesb (p : MiniCET.prog) (ss : state MCC.spec_cfg) (st : state LCC.spec_cfg) : bool :=
   match ss, st with
   | S_Term, S_Term => true
@@ -58,7 +57,7 @@ Definition match_statesb (p : MiniCET.prog) (ss : state MCC.spec_cfg) (st : stat
     && sms ==b tms
     && (match pc_inj p spc with Some pc => pc ==b tpc | None => false end)
     && (match map_opt (pc_inj p) sstk with Some stk => stk ==b tstk | None => false end)
-  | _, _ => false (* YF: Is this correct? *)
+  | _, _ => false
   end. 
 
 Instance match_dirDec : forall p ds dt, Dec (match_dir p ds dt).
@@ -267,7 +266,6 @@ Definition gen_prog_and_unused_var : G (rctx * tmem * list nat * prog * string) 
     x <- elems_ "X0"%string unused_vars;;
     ret (c, tm, pst, p, x).
 
-(* TODO YF: I think we need a TransformSemantics type class  *)
 Definition unused_var_no_leak 
   (transform_prog : rctx -> tmem -> prog -> prog) := (
   forAll gen_prog_and_unused_var (fun '(c, tm, pst, p, unused_var) =>

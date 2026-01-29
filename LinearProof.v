@@ -130,7 +130,7 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
       nth_error p pc = Some <{{ call e }}> ->
       to_nat (eval r e) = Some l ->
-      ms' = ms || negb ((pc' =? l) (* && (snd pc' =? 0) *)) (* YH: (snd pc' =? 0) ??? *) ->
+      ms' = ms || negb ((pc' =? l)) ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->m_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (add pc 1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ct ms,
       nth_error p pc = Some <{{ ctarget }}> ->
@@ -762,7 +762,7 @@ Qed.
 Definition spec_same_obs_machine p pc r1 r2 m1 m2 stk b : Prop :=
   forall ds n m os1 os2 c1 c2 (WFDS: wf_ds p ds),
   p |- <(( S_Running (pc, r1, m1, stk, b, false) ))> -->m*_ds^^os1^^n <(( c1 ))> ->
-  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->m*_ds^^ os2^^m <(( c2 ))> -> (* YH: Yan said this can be generalized different numbers of steps. *)
+  p |- <(( S_Running (pc, r2, m2, stk, b, false) ))> -->m*_ds^^ os2^^m <(( c2 ))> ->
   (Utils.prefix os1 os2) \/ (Utils.prefix os2 os1).
 
 Definition relative_secure_machine (p:MiniCET.prog) (tp: prog) (trans : MiniCET.prog -> option prog)
