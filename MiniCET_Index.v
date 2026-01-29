@@ -1,6 +1,6 @@
-(*** UltimateSLH: Relative Security Against Speculation Attacks*)
 
-(* TERSE: HIDEFROMHTML *)
+
+
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
 From SECF Require Import Utils.
@@ -16,7 +16,7 @@ From SECF Require Import Maps.
 From SECF Require Import MapsFunctor.
 
 Set Default Goal Selector "!".
-(* TERSE: /HIDEFROMHTML *)
+
 
 Module MCC := MiniCETCommon(TotalMap).
 Import MCC.
@@ -25,9 +25,9 @@ Import FunctionalExtensionality.
 Notation t_update_eq := TotalMap.t_update_eq.
 Notation t_update_neq := TotalMap.t_update_neq.
 
-(* %s/\s\+$//e to strip trailing whitespace *)
 
-(** Sequential small-step semantics for MiniCET *)
+
+
 
 Reserved Notation
   "p '|-' '<((' c '))>' '-->^' os '<((' ct '))>'"
@@ -72,7 +72,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
   where "p |- <(( c ))> -->^ os <(( ct ))>" :=
       (seq_eval_small_step_inst p c ct os).
 
-(** Sequential multi-step relation *)
+
 
 Reserved Notation
   "p '|-' '<((' c '))>' '-->*^' os '<((' ct '))>'"
@@ -88,7 +88,7 @@ Inductive multi_seq_inst (p : prog) (c : @state cfg) : @state cfg -> obs -> Prop
   where "p |- <(( c ))> -->*^ os <(( ct ))>" :=
       (multi_seq_inst p c ct os).
 
-(** Speculative small-step semantics for MiniCET *)
+
 
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->_' ds '^^' os '<((' sct '))>'"
@@ -133,7 +133,7 @@ Inductive spec_eval_small_step (p:prog):
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
   | SpecSMI_Term : forall pc r m ms,
-      p[[pc]] = Some <{{ ret }}> -> 
+      p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, []), false, ms) ))> -->_[]^^[] <(( S_Term ))>
   | SpecSMI_Fault : forall pc r m sk ms i,
       i <> <{{ ctarget }}> ->
@@ -143,7 +143,7 @@ Inductive spec_eval_small_step (p:prog):
   where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
     (spec_eval_small_step p sc sct ds os).
 
-(** Speculative multi-step relation *)
+
 
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->*_' ds '^^' os '^^' n '<((' sct '))>'"
@@ -160,7 +160,7 @@ Inductive multi_spec_inst (p:prog) :
   where "p |- <(( sc ))> -->*_ ds ^^ os ^^ n <(( sct ))>" :=
     (multi_spec_inst p sc sct ds os n).
 
-(** Ideal small-step semantics for MiniCET *)
+
 
 Reserved Notation
   "p '|-' '<((' ic '))>' '-->i_' ds '^^' os '<((' ict '))>'"
@@ -218,7 +218,7 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   where "p |- <(( ic ))> -->i_ ds ^^ os  <(( ict ))>" :=
     (ideal_eval_small_step_inst p ic ict ds os).
 
-(** Ideal multi-step relation *)
+
 
 Reserved Notation
   "p '|-' '<((' ic '))>' '-->i*_' ds '^^' os '<((' ict '))>'"
@@ -234,9 +234,9 @@ Inductive multi_ideal_inst (p:prog) :
   where "p |- <(( ic ))> -->i*_ ds ^^ os <(( ict ))>" :=
     (multi_ideal_inst p ic ict ds os).
 
-(** * Backwards Compiler Correctness of Ultimate Speculative Load Hardening *)
 
-(* Synchronization Relation *)
+
+
 
 Definition msf_lookup_sc (sc: spec_cfg) : val :=
   let '(c, ct, ms) := sc in
@@ -264,7 +264,7 @@ Definition ms_true_sc (sc: spec_cfg) : bool :=
 Definition ms_true_ic (ic: ideal_cfg) : bool :=
   let '(c, ms) := ic in ms.
 
-(* Section BCC. *)
+
 
 Definition is_br_or_call (i : inst) :=
   match i with
@@ -272,7 +272,7 @@ Definition is_br_or_call (i : inst) :=
   | _                                  => false
   end.
 
-(* given src pc and program, obtain tgt pc *)
+
 Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
   match nth_error p (fst pc) with
   | Some blk => match nth_error (fst blk) (snd pc) with
@@ -289,7 +289,7 @@ Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
   | _ => None
   end.
 
-(* sync src and tgt registers *)
+
 Definition r_sync (r: reg) (ms: bool) : reg :=
    msf !-> N (if ms then 1 else 0); r.
 
@@ -318,7 +318,7 @@ Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
              end
   end.
 
-(* given src state and program, obtain tgt state *)
+
 Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   let '(c, ms) := ic in
   let '(pc, r, m, stk) := c in
@@ -328,7 +328,7 @@ Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   end.
 
 Definition Rsync (sr tr: reg) (ms: bool) : Prop :=
-   (forall x, x <> msf /\ x <> callee -> sr ! x = tr ! x) /\ 
+   (forall x, x <> msf /\ x <> callee -> sr ! x = tr ! x) /\
    (tr ! msf = N (if ms then 1 else 0)).
 
 Variant match_cfgs (p: prog) : ideal_cfg -> spec_cfg -> Prop :=
@@ -342,7 +342,7 @@ Variant match_cfgs (p: prog) : ideal_cfg -> spec_cfg -> Prop :=
 Definition steps_to_sync_point' (p: prog) (ic: ideal_cfg) (ds: dirs) : option nat :=
   let '(c, ms) := ic in
   let '(pc, r, m, sk) := c in
-  (* check pc is well-formed *)
+
   match p[[pc]] with
   | Some i => match i with
              | IBranch e l => match ds with
@@ -408,7 +408,7 @@ Definition is_terminator (i: inst) : Prop :=
 
 Definition last_inst_terminator (blk: (list inst * bool)) : Prop :=
   match (rev (fst blk)) with
-  | [] => False (* unreachable *)
+  | [] => False
   | h::t => is_terminator h
   end.
 
@@ -455,7 +455,7 @@ Definition wf_ic (p: prog) (ic: ideal_cfg) : Prop :=
   let '(pc, r, m, stk, ms) := ic in
   wf_reg p r /\ wf_mem p m.
 
-(* Aux Lemmas *)
+
 
 Lemma wf_ds_app p ds1 ds2
     (WF: wf_ds' p (ds1 ++ ds2)) :
@@ -481,9 +481,9 @@ Proof.
     { subst. rewrite app_assoc. auto. }
 Qed.
 
-(* Tactics *)
 
-(* using this *)
+
+
 Lemma rev_fetch : forall (p: prog) (pc: cptr) (blk: list inst * bool) (i: inst),
   nth_error p (fst pc) = Some blk ->
   nth_error (fst blk) (snd pc) = Some i ->
@@ -495,7 +495,7 @@ Proof.
   - rewrite Hpc in *. ss. des_ifs.
 Qed.
 
-(* using this *)
+
 Lemma blk_not_empty_list : forall (blk: list inst * bool),
   nonempty_block blk -> (fst blk) <> [].
 Proof.
@@ -521,7 +521,7 @@ Proof.
   intros. simpl. reflexivity.
 Qed.
 
-(* equivalence of Utils rev and Lists rev *)
+
 
 
 Lemma utils_rev_append_and_rev : forall {X : Type} (l1 l2 : list X),
@@ -564,12 +564,12 @@ Proof.
   destruct WFB. destruct H0.
   red in H0. des_ifs.
   destruct (le_dec o (Datatypes.length (fst b) - 1)).
-  (* o <= Datatypes.length (fst b) - 1: this is the in-bounds case *)
+
   { assert (i <> i0).
     { unfold not; intros. unfold is_terminator in *.
       destruct i eqn:Hi; destruct i0 eqn:Hi0; clarify. }
   destruct (eq_dec o (Datatypes.length (fst b) - 1)).
-    (* o = Datatypes.length (fst b) - 1: not possible bc i ≠ i0 and i0 is last element *)
+
     { assert (rev (i0 :: l) = rev l ++ [i0]). { simpl. auto. }
       assert (rev (rev (fst b)) = rev (i0 :: l)). { rewrite Heq. simpl. auto. }
       rewrite rev_involutive in H4. simpl in H4.
@@ -593,7 +593,7 @@ Proof.
       }
       rewrite INST in H5. injection H5; intros. clarify.
     }
-    (* this is the correct case, where o points to some non-last instruction in the block *)
+
     assert (rev (i0 :: l) = rev l ++ [i0]). { simpl. auto. }
     assert (rev (rev (fst b)) = rev (i0 :: l)). { rewrite Heq. simpl. auto. }
     rewrite rev_involutive in H4. simpl in H4. rewrite H4 in INST, l0, n. rewrite H4.
@@ -607,7 +607,7 @@ Proof.
     rewrite <- nth_error_Some in H7.
     destruct (nth_error (rev l ++ [i0]) (add o 1)); clarify. exists i1. auto.
   }
-  (* o OOB *)
+
   exfalso. clear - n INST. eapply not_le in n.
   assert (nth_error (fst b) o <> None).
   { ii. clarify. }
@@ -652,7 +652,7 @@ Variant match_simple_inst_uslh : inst -> inst -> Prop :=
   match_simple_inst_uslh IRet IRet
 .
 
-(* Move to other file *)
+
 Definition _branch_in_block (blk: list inst) : nat :=
   fold_left (fun acc i => add acc (match i with
                                 | IBranch _ _ => 1
@@ -674,7 +674,7 @@ Definition _offset_branch_before (blk: list inst) (ofs: nat) : nat :=
 Definition offset_branch_before (blk: list inst * bool) (ofs: nat) : nat :=
   _offset_branch_before (fst blk) ofs.
 
-(* pc: branch's pc *)
+
 Definition match_branch_target (p: prog) (pc: nat * nat) : option nat :=
   let '(l, o) := pc in
   match nth_error p l with
@@ -711,7 +711,7 @@ Proof.
   des_ifs; ss; unfold MiniCET.uslh_ret in *;  clarify; esplits; econs; eauto.
 Qed.
 
-(* Move to other file *)
+
 Lemma mapM_nth_error {A B} (f: A -> M B) l c l' np o blk
     (MM: mapM f l c = (l', np))
     (SRC: nth_error l o = Some blk) :
@@ -725,7 +725,7 @@ Proof.
     destruct (f blk c) eqn:F.
     destruct (mapM f l (c + Datatypes.length p)) eqn:MF.
     ss. clarify. esplits; eauto. }
-  ss. unfold uslh_bind in MM. 
+  ss. unfold uslh_bind in MM.
   destruct (f a c) eqn:F.
   destruct (mapM f l (c + Datatypes.length p)) eqn:MF. ss. clarify.
   exploit IHl; eauto.
@@ -753,7 +753,7 @@ Proof.
     ss. clarify. esplits; eauto.
     unfold len_before, mapM. des_ifs. ss.
     unfold MiniCET.uslh_ret in Heq. clarify. ss. lia. }
-  ss. unfold uslh_bind in MM. 
+  ss. unfold uslh_bind in MM.
   destruct (f a c) eqn:F.
   destruct (mapM f l (c + Datatypes.length p)) eqn:MF. ss. clarify.
   exploit IHl; eauto. i. des.
@@ -990,7 +990,7 @@ Proof.
     + exists IRet; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
 Qed.
 
-(* Move to other file *)
+
 
 Lemma uslh_inst_np_length_aux
     i c is' np
@@ -1204,14 +1204,14 @@ Proof.
   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn:Huslh.
   exploit mapM_perserve_len; eauto. intros LEN.
 
-  (* destruct pc_sync *)
+
   destruct pc as [l o]. dup PS.
   unfold pc_sync in PS. ss. des_ifs_safe.
   destruct p0 as [blk is_proc]. ss.
   replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk)
              (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
 
-  (* find corresponding target block *)
+
   exploit mapM_nth_error_strong; eauto.
   { instantiate (2:= l). instantiate (1:= (l, (blk, is_proc))).
     eapply nth_error_add_index. auto. }
@@ -1226,7 +1226,7 @@ Proof.
   unfold MiniCET.uslh_ret in x4. clarify.
 
   destruct i; ss.
-  (* branch *)
+
   - unfold uslh_bind in x5. ss. clarify.
     remember (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p) +
                 len_before uslh_inst blk o (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p))) as c'.
@@ -1261,21 +1261,18 @@ Proof.
       * des_ifs_safe. f_equal.
         do 2 rewrite <- add_assoc. rewrite add_cancel_l.
 
-        (* The number of branches in previous blocks and
-         the number of new blocks created during `uslh_blk` are equal. *)
+
         assert (branch_in_prog_before p l = len_before uslh_blk (add_index p) l (Datatypes.length p)).
         { eapply uslh_blk_np_length. }
         i. rewrite <- H.
 
-        (* The number of branches before the current offset and
-         the number of blocks created when `uslh` is applied
-         to the current block up to the current offset are equal. *)
+
         assert (offset_branch_before (blk, is_proc) o =
                   len_before uslh_inst blk o (Datatypes.length p + branch_in_prog_before p l)).
         { eapply uslh_inst_np_length. }
         lia.
       * eauto.
-      (* TODO: lemma? #2 *)
+
       * ss. unfold uslh_prog. rewrite Huslh.
         rewrite nth_error_app1.
         2:{ rewrite <- nth_error_Some. ii. clarify. }
@@ -1303,8 +1300,8 @@ Proof.
             exploit mapM_perserve_len; eauto. i. rewrite x1.
             eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
           rewrite <- H. auto. }
-  (* call *)
-  (* TODO: existential case also could be a lemma *)
+
+
   - unfold MiniCET.uslh_ret in x5. clarify.
     exists <{{ callee := (msf = 1) ? & 0 : fp }}>.
     split.
@@ -1329,7 +1326,7 @@ Proof.
           exploit mapM_perserve_len; eauto. i. rewrite x1.
           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
         rewrite <- H. auto. }
-    (* TODO: lemma? #2 *)
+
     + econs 3; eauto. ss. unfold uslh_prog. rewrite Huslh.
       rewrite nth_error_app1.
       2:{ rewrite <- nth_error_Some. ii. clarify. }
@@ -1357,7 +1354,7 @@ Proof.
           exploit mapM_perserve_len; eauto. i. rewrite x1.
           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
         rewrite <- H. auto. }
-  (* ctarget *)
+
   - exists <{{ ctarget }}>. exfalso. eapply (no_ct_prog_src p (l, o)); eauto.
     ss. des_ifs.
 Qed.
@@ -1533,7 +1530,7 @@ Lemma no_ctarget_exists p l blk
   forall o, (uslh_prog p)[[(l, o)]] <> Some <{{ ctarget }}>.
 Proof.
   unfold uslh_prog. des_ifs. ii.
-  (* unfold uslh_prog, add_index in CT. des_ifs. *)
+
   assert (NCT0: no_ct_prog p0).
   { eapply new_prog_no_ct; eauto. }
   eapply new_prog_ct_cut in H; eauto.
@@ -1628,7 +1625,7 @@ Lemma ultimate_slh_bcc_single_cycle_refactor (p: prog) : forall ic1 sc1 sc2 n ds
   steps_to_sync_point' p ic1 ds = Some n ->
   match_cfgs p ic1 sc1 ->
   uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( S_Running sc2 ))> ->
-      exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))> 
+      exists ic2, p |- <(( S_Running ic1 ))> -->i_ ds ^^ os <(( S_Running ic2 ))>
                   /\ match_cfgs p ic2 sc2.
 Proof.
   intros until os. intros nct wfp unused_p_msf unused_p_callee ms_msf n_steps cfg_sync tgt_steps.
@@ -1641,17 +1638,17 @@ Proof.
   { ss. des_ifs. }
   inv cfg_sync. exploit src_inv; try eapply ISRC; eauto. i. des.
   destruct i.
-  (* skip *)
+
   - assert (n = 1) by (ss; des_ifs). subst.
-    (* generate step *)
+
     inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
     clear n_steps. esplits; econs; eauto.
-    (* restore match *)
+
     exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
     unfold pc_sync in *. ss. des_ifs_safe. replace (add o 1) with (S o) by lia.
     erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
     rewrite add_1_r. auto.
-  (* asgn *)
+
   - assert (n = 1) by (ss; des_ifs). subst.
     inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
     clear n_steps.
@@ -1669,15 +1666,15 @@ Proof.
         { do 2 rewrite t_update_eq. apply eval_regs_eq; eauto. }
         { rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
       * erewrite t_update_neq; eauto.
-  (* branch *)
+
   - inv x1; try simpl in SIMPL; clarify.
     unfold steps_to_sync_point' in n_steps. rewrite ISRC in n_steps.
     des_ifs_safe. inv tgt_steps.
-    (* first step *)
+
     inv H5; clarify. simpl in H1. clarify. rename H10 into ITGT1.
 
     destruct b'; clarify.
-    (* true branch: 2 more steps *)
+
     + assert (ITGT2: (uslh_prog p)[[(l', 0)]] =
                 Some <{{ msf := (~ (msf = 1) ? 0 : e) ? 1 : msf }}>).
       { clear - IN. ss. rewrite IN. ss. }
@@ -1690,7 +1687,7 @@ Proof.
       rewrite Heq. simpl in ms_msf. simpl. rewrite ms_msf in *. ss.
 
       destruct ms eqn:Hms.
-      { (* already speculating *)
+      {
         unfold not_zero in *. rewrite Nat.eqb_refl in *.
         simpl in Heq0. injection Heq0; i; subst. clear Heq0.
         simpl in Heq. injection Heq; i; subst. clear Heq.
@@ -1701,7 +1698,7 @@ Proof.
           dup H1.
           unfold wf_instr in H2. des. unfold wf_lbl in H3. unfold fetch. cbn.
           destruct (nth_error p l0) as [l0blk|] eqn:Hl0; clarify.
-          specialize (nth_error_In p l0 Hl0); i. 
+          specialize (nth_error_In p l0 Hl0); i.
           unfold wf_block in H0. rewrite Forall_forall in H0.
           apply H0 in H4. des. apply blk_not_empty_list in H4. destruct (fst l0blk); clarify.
           exists i. auto.
@@ -1711,37 +1708,37 @@ Proof.
         split.
         { econs; eauto. }
         { econs; eauto.
-          { unfold pc_sync. simpl. des. 
-            unfold fetch in H1. simpl in H1. 
+          { unfold pc_sync. simpl. des.
+            unfold fetch in H1. simpl in H1.
             destruct (nth_error p l0) eqn:Hl0; clarify. destruct (fst p0); clarify.
             assert (wf_instr p <{{ branch e to l0 }}>) by (eapply wf_prog_lookup with (pc:=(l, o)); eauto).
-            unfold wf_instr in H1. des. unfold wf_lbl in H2. unfold fetch. cbn.  
+            unfold wf_instr in H1. des. unfold wf_lbl in H2. unfold fetch. cbn.
             rewrite Hl0 in H2. destruct p0. rewrite <- H2. simpl. auto.
           }
           { econs; eauto; i. inv REG. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
             des. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2.
-            apply H3. rewrite String.eqb_sym, String.eqb_neq in H2. 
+            apply H3. rewrite String.eqb_sym, String.eqb_neq in H2.
             split; auto.
           }
         }
       }
-      { (* not yet speculating *)
+      {
         unfold not_zero in *. rewrite Nat.eqb_refl in *.
         simpl in Heq0. injection Heq0; i; subst. clear Heq0.
-        simpl in Heq. simpl. rewrite negb_involutive. 
+        simpl in Heq. simpl. rewrite negb_involutive.
         des_ifs.
-        { (* initiate speculation *)
+        {
           destruct (Nat.eqb n0 0) eqn:Hn0; clarify. simpl in *. clear Heq0.
 
           assert (exists i', p[[(l0, 0)]] = Some i').
-          { assert (wf_instr p <{{ branch e to l0 }}>). 
+          { assert (wf_instr p <{{ branch e to l0 }}>).
             { eapply wf_prog_lookup with (pc:=(l, o)); eauto.
               unfold fetch. cbn. des_ifs.
             }
             dup H1.
             unfold wf_instr in H2. des. unfold wf_lbl in H3. unfold fetch. cbn.
             destruct (nth_error p l0) as [l0blk|] eqn:Hl0; clarify.
-            specialize (nth_error_In p l0 Hl0); i. 
+            specialize (nth_error_In p l0 Hl0); i.
             unfold wf_block in H0. rewrite Forall_forall in H0.
             apply H0 in H4. des. apply blk_not_empty_list in H4. destruct (fst l0blk); clarify.
             exists i. auto.
@@ -1750,7 +1747,7 @@ Proof.
           des.
           exists (l0, 0, r, m, sk, true).
           split.
-          { econs; eauto. 
+          { econs; eauto.
             - unfold fetch. cbn. destruct (nth_error p l); clarify.
               destruct (nth_error (fst p0) o); clarify.
             - assert (to_nat (eval r' e) = Some n0) by (rewrite Heq; auto).
@@ -1766,7 +1763,7 @@ Proof.
           { econs; eauto.
             - unfold pc_sync. cbn. dup H1. unfold fetch in H2. cbn in H2.
               destruct (nth_error p l) eqn:Hfst; clarify.
-              rename p0 into iblk. 
+              rename p0 into iblk.
               specialize (nth_error_In p l Hfst); i.
               rewrite Forall_forall in H0. apply H0 in H3. unfold wf_block in H3. des.
               rewrite Forall_forall in H5.
@@ -1778,22 +1775,22 @@ Proof.
             - econs; eauto. i. inv REG.
               unfold TotalMap.t_apply, TotalMap.t_update, t_update.
               des. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2.
-              apply H3. rewrite String.eqb_sym, String.eqb_neq in H2. 
+              apply H3. rewrite String.eqb_sym, String.eqb_neq in H2.
               split; auto.
           }
         }
-        { (* don't initiate speculation *)
+        {
           destruct (Nat.eqb n0 0) eqn:Hn0; clarify. simpl in *. clear Heq0.
 
           assert (exists i', p[[(l0, 0)]] = Some i').
-          { assert (wf_instr p <{{ branch e to l0 }}>). 
+          { assert (wf_instr p <{{ branch e to l0 }}>).
             { eapply wf_prog_lookup with (pc:=(l, o)); eauto.
               unfold fetch. cbn. des_ifs.
             }
             dup H1.
             unfold wf_instr in H2. des. unfold wf_lbl in H3. unfold fetch. cbn.
             destruct (nth_error p l0) as [l0blk|] eqn:Hl0; clarify.
-            specialize (nth_error_In p l0 Hl0); i. 
+            specialize (nth_error_In p l0 Hl0); i.
             unfold wf_block in H0. rewrite Forall_forall in H0.
             apply H0 in H4. des. apply blk_not_empty_list in H4. destruct (fst l0blk); clarify.
             exists i. auto.
@@ -1802,7 +1799,7 @@ Proof.
           des.
           exists (l0, 0, r, m, sk, false).
           split.
-          { econs; eauto. 
+          { econs; eauto.
             - unfold fetch. cbn. destruct (nth_error p l); clarify.
               destruct (nth_error (fst p0) o); clarify.
             - assert (to_nat (eval r' e) = Some n0) by (rewrite Heq; auto).
@@ -1818,7 +1815,7 @@ Proof.
           { econs; eauto.
             - unfold pc_sync. cbn. dup H1. unfold fetch in H2. cbn in H2.
               destruct (nth_error p l) eqn:Hfst; clarify.
-              rename p0 into iblk. 
+              rename p0 into iblk.
               specialize (nth_error_In p l Hfst); i.
               rewrite Forall_forall in H0. apply H0 in H3. unfold wf_block in H3. des.
               rewrite Forall_forall in H5.
@@ -1830,19 +1827,19 @@ Proof.
             - econs; eauto. i. inv REG.
               unfold TotalMap.t_apply, TotalMap.t_update, t_update.
               des. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2.
-              apply H3. rewrite String.eqb_sym, String.eqb_neq in H2. 
+              apply H3. rewrite String.eqb_sym, String.eqb_neq in H2.
               split; auto.
           }
         }
       }
-    (* false branch 1 more steps *)
+
     + inv H7. inv H8. inv H2; clarify. simpl.
-      
+
       unfold to_nat in H14. des_ifs_safe. simpl in Heq. des_ifs_safe.
       rewrite Heq. simpl in ms_msf. simpl. rewrite ms_msf in *. ss.
 
       destruct ms eqn:Hms; ss.
-      { (* speculating *)
+      {
         injection Heq0; i; subst; ss. injection Heq; i; subst.
         clear Heq0. clear Heq. unfold not_zero. rewrite Nat.eqb_refl. ss.
 
@@ -1850,7 +1847,7 @@ Proof.
         split.
         { econs; eauto. }
         { econs; eauto.
-          { unfold pc_sync in *. ss. 
+          { unfold pc_sync in *. ss.
             destruct (nth_error p l) as [iblk|] eqn:Hfst; clarify.
             destruct (nth_error (fst iblk) o) eqn:Hsnd; clarify.
             specialize (rev_fetch p (l, o) iblk <{{ branch e to l0 }}> Hfst Hsnd); i.
@@ -1858,24 +1855,24 @@ Proof.
             { unfold not, is_terminator; i. destruct H2. }
             specialize (block_always_terminator_prog p (l, o) <{{ branch e to l0 }}> wfp0 H1 H2); i.
             des. unfold fetch in H3. cbn in H3. rewrite Hfst in H3.
-            rewrite H3. rewrite add_1_r. 
+            rewrite H3. rewrite add_1_r.
             specialize (firstnth_error (fst iblk) o <{{ branch e to l0 }}> Hsnd); i.
-            rewrite H4. rewrite fold_left_app. cbn. 
+            rewrite H4. rewrite fold_left_app. cbn.
             unfold cptr. assert (forall n, (add n 1) = S n). { lia. }
             rewrite <- H5. rewrite add_assoc. auto.
           }
           { econs; eauto; i. unfold TotalMap.t_apply, TotalMap.t_update, t_update.
-            dup H1. destruct H2. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2. 
+            dup H1. destruct H2. rewrite <- String.eqb_neq, String.eqb_sym in H2. rewrite H2.
             inv REG. apply H4 in H1. unfold TotalMap.t_apply, TotalMap.t_update, t_update in H1.
             assumption.
           }
         }
       }
-      { (* not speculating *)
+      {
         unfold not_zero in *. injection Heq0; i; subst. clear Heq0.
         rewrite Nat.eqb_refl in *. ss.
         des_ifs.
-        { (* initiate speculation *)
+        {
           simpl. exists (l, (add o 1), r, m, sk, true).
           split.
           { econs; eauto.
@@ -1891,7 +1888,7 @@ Proof.
             }
           }
           { econs; eauto.
-            { unfold pc_sync in *. ss. 
+            { unfold pc_sync in *. ss.
               destruct (nth_error p l) as [iblk|] eqn:Hfst; clarify.
               rename p0 into iblk.
               destruct (nth_error (fst iblk) o) eqn:Hsnd; clarify.
@@ -1900,9 +1897,9 @@ Proof.
               { unfold not, is_terminator; i. destruct H2. }
               specialize (block_always_terminator_prog p (l, o) <{{ branch e to l0 }}> wfp0 H1 H2); i.
               des. unfold fetch in H3. cbn in H3. rewrite Hfst in H3.
-              rewrite H3. rewrite add_1_r. 
+              rewrite H3. rewrite add_1_r.
               specialize (firstnth_error (fst iblk) o <{{ branch e to l0 }}> Hsnd); i.
-              rewrite H4. rewrite fold_left_app. cbn. 
+              rewrite H4. rewrite fold_left_app. cbn.
               unfold cptr. assert (forall n, (add n 1) = S n). { lia. }
               rewrite <- H5. rewrite add_assoc. auto.
             }
@@ -1914,7 +1911,7 @@ Proof.
             }
           }
         }
-        { (* don't initiate speculation *) 
+        {
           simpl. exists (l, (add o 1), r, m, sk, false).
           specialize (rev_fetch p (l, o) p0 <{{ branch e to l0 }}> Heq1 ISRC); i.
           split.
@@ -1930,7 +1927,7 @@ Proof.
             }
           }
           { econs; eauto.
-            { unfold pc_sync in *. ss. 
+            { unfold pc_sync in *. ss.
               destruct (nth_error p l) as [iblk|] eqn:Hfst; clarify.
               rename p0 into iblk.
               destruct (nth_error (fst iblk) o) eqn:Hsnd; clarify.
@@ -1939,9 +1936,9 @@ Proof.
               { unfold not, is_terminator; i. destruct H2. }
               specialize (block_always_terminator_prog p (l, o) <{{ branch e to l0 }}> wfp0 H1 H2); i.
               des. unfold fetch in H3. cbn in H3. rewrite Hfst in H3.
-              rewrite H3. rewrite add_1_r. 
+              rewrite H3. rewrite add_1_r.
               specialize (firstnth_error (fst iblk) o <{{ branch e to l0 }}> Hsnd); i.
-              rewrite H4. rewrite fold_left_app. cbn. 
+              rewrite H4. rewrite fold_left_app. cbn.
               unfold cptr. assert (forall n, (add n 1) = S n). { lia. }
               rewrite <- H5. rewrite add_assoc. auto.
             }
@@ -1954,7 +1951,7 @@ Proof.
           }
         }
       }
-  (* jump *)
+
   - assert (n = 1) by (ss; des_ifs). subst.
     inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
     clear n_steps.
@@ -1966,7 +1963,7 @@ Proof.
     subst. inv wfp0. rewrite Forall_forall in H2.
     eapply nth_error_In in Heq. eapply H2 in Heq.
     red in Heq. des. ss.
-  (* load *)
+
   - assert (n = 1) by (ss; des_ifs). subst.
     inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
     clear n_steps.
@@ -1990,7 +1987,7 @@ Proof.
         { rewrite t_update_neq; eauto. rewrite t_update_neq; eauto.
           inv REG. eauto. }
       * ss. des. rewrite t_update_neq; eauto.
-  (* store *)
+
   - assert (n = 1) by (ss; des_ifs). subst.
     inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
     clear n_steps.
@@ -2011,7 +2008,7 @@ Proof.
       unfold pc_sync in *. ss. des_ifs_safe. replace (add o 1) with (S o) by lia.
       erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
       rewrite add_1_r. auto.
-  (* call *)
+
   - inv x1; try simpl in SIMPL; clarify.
     unfold steps_to_sync_point' in n_steps. rewrite ISRC in n_steps.
     des_ifs_safe. inv tgt_steps.
@@ -2101,9 +2098,9 @@ Proof.
         erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
         rewrite add_1_r. f_equal. f_equal.
         rewrite pair_equal_spec. split; auto. lia.
-  (* ctarget *)
+
   - exfalso. eapply no_ct_prog_src; eauto.
-  (* ret *)
+
   - assert (n = 1) by (ss; des_ifs). subst.
     inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
     clear n_steps.
@@ -2147,7 +2144,7 @@ Proof.
       exploit unused_prog_lookup; try eapply H2; eauto. intros UNUSED1.
       exploit unused_prog_lookup; try eapply H3; eauto. intros UNUSED2.
       destruct i; ss; clarify; try lia.
-      (* brnach *)
+
       * inv x1; try (sfby (simpl in SIMPL; clarify)).
         des_ifs_safe. inv H6; clarify. inv H10; clarify.
         ss. clarify.
@@ -2165,7 +2162,7 @@ Proof.
           inv H6; clarify. esplits. econs; eauto. ss. econs. }
         destruct n; [|lia].
         inv H12. esplits. econs; eauto. econs.
-      (* call *)
+
       * inv x1; try (sfby (simpl in SIMPL; clarify)). clarify.
         destruct n.
         { inv H6. inv H12. inv H7; clarify. }
@@ -2297,7 +2294,7 @@ Proof.
             inv H7; clarify. inv H13. ss. clarify. inv H7.
             2:{ inv H12. inv H11. inv H6. }
             inv H12. inv H11. inv H6.
-          (* ret. stack is empty *)
+
           + inv H6. inv H12. inv H7; clarify. esplits.
             econs 2; [|econs].
             assert (l = []).
@@ -2339,7 +2336,7 @@ Qed.
 
 Definition first_blk_call (p: prog) : Prop :=
   match nth_error p 0 with
-  | None => False (* unreachable *)
+  | None => False
   | Some (blk, b) => if b then True else False
   end.
 
@@ -2377,7 +2374,7 @@ Proof.
     + rewrite t_update_eq. simpl. rewrite INIT2. ss.
 Qed.
 
-(** * Definition of Relative Secure *)
+
 
 Definition seq_same_obs p pc r1 r2 m1 m2 stk : Prop :=
   forall os1 os2 c1 c2,
@@ -2403,7 +2400,7 @@ Definition relative_secure (p:prog) (trans1 : prog -> prog)
   Rsync r1 r1' false -> Rsync r2 r2' false ->
   spec_same_obs (trans1 p) (0,0) r1' r2' m1 m2 [] true.
 
-(** * Ultimate Speculative Load Hardening *) 
+
 
 Require Import Stdlib.Program.Equality.
 
@@ -2662,22 +2659,20 @@ Proof.
     2: eapply multi_ideal_inst_refl.
     2: left; repeat split.
     3: now left.
-    all: eassumption. 
+    all: eassumption.
   - inversion H; inversion H0; try congruence; subst; cbn in *; subst.
-    (* 
-       Decided that (at least for now) it would likely be easier to handle all cases directly, instead of performing a case distinction on the type of directive consumed.
-    *)
+
     + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?).
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
       repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
-      all: change ds2 with ([] ++ ds2). 
+      all: change ds2 with ([] ++ ds2).
       1: change os0 with ([] ++ os0).
       2: change os3 with ([] ++ os3).
       all: econstructor; eassumption.
     * repeat eexists. 3: right; eassumption.
-      all: change x7 with ([] ++ x7).  (* TODO: this is very fragile. it would be much better to have a consistent name for these *)
+      all: change x7 with ([] ++ x7).
       1: change x8 with ([] ++ x8).
       2: change x9 with ([] ++ x9).
       all: econstructor; eassumption.
@@ -2686,12 +2681,12 @@ Proof.
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
       repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
-      all: change ds2 with ([] ++ ds2). 
+      all: change ds2 with ([] ++ ds2).
       1: change os0 with ([] ++ os0).
       2: change os3 with ([] ++ os3).
       all: econstructor; eassumption.
     * repeat eexists. 3: right; eassumption.
-      all: change x9 with ([] ++ x9). 
+      all: change x9 with ([] ++ x9).
       1: change x10 with ([] ++ x10).
       2: change x11 with ([] ++ x11).
       all: econstructor; eassumption.
@@ -2711,11 +2706,11 @@ Proof.
       }
       rewrite H1 in *. clear H1.
       destruct (Bool.eqb (not_zero n'0) b').
-    * cbn in *. 
+    * cbn in *.
       eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?).
       repeat eexists.
-      1,2: change (DBranch b' :: ds2) with ([DBranch b'] ++ ds2). 
+      1,2: change (DBranch b' :: ds2) with ([DBranch b'] ++ ds2).
       1: change (OBranch (not_zero n'0) :: os0) with ([OBranch (not_zero n'0)] ++ os0).
       2: change (OBranch (not_zero n'0) :: os3) with ([OBranch (not_zero n'0)] ++ os3).
       1,2: econstructor 2; eassumption.
@@ -2734,12 +2729,12 @@ Proof.
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
       repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
-      all: change ds2 with ([] ++ ds2). 
+      all: change ds2 with ([] ++ ds2).
       1: change os0 with ([] ++ os0).
       2: change os3 with ([] ++ os3).
       all: econstructor; eassumption.
     * repeat eexists. 3: right; eassumption.
-      all: change x7 with ([] ++ x7). 
+      all: change x7 with ([] ++ x7).
       1: change x8 with ([] ++ x8).
       2: change x9 with ([] ++ x9).
       all: econstructor; eassumption.
@@ -2748,14 +2743,14 @@ Proof.
       destruct H3 as [H3 | H3].
       * repeat destruct H3 as [-> H3].
       repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
-      all: change ds2 with ([] ++ ds2). 
+      all: change ds2 with ([] ++ ds2).
       1: change (OLoad n :: os0) with ([OLoad n] ++ os0).
       2: change (OLoad n0 :: os3) with ([OLoad n0] ++ os3).
       all: econstructor; eassumption.
     * repeat destruct H3 as [? H3]. subst. repeat eexists. 3: {
       right. do 3 eexists. repeat (match goal with | |- ?A /\ ?B => split end). 7: eassumption. 2, 3: rewrite app_comm_cons; reflexivity. all: try reflexivity. simpl. f_equal. assumption.
     }
-      all: change x9 with ([] ++ x9). 
+      all: change x9 with ([] ++ x9).
       1: change (OLoad n :: x10) with ([OLoad n] ++ x10).
       2: change (OLoad n0 :: x11) with ([OLoad n0] ++ x11).
       all: econstructor; eassumption.
@@ -2764,7 +2759,7 @@ Proof.
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
       repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
-      all: change ds2 with ([] ++ ds2). 
+      all: change ds2 with ([] ++ ds2).
       1: change (OStore n :: os0) with ([OStore n] ++ os0).
       2: change (OStore n0 :: os3) with ([OStore n0] ++ os3).
       all: econstructor; eassumption.
@@ -2773,11 +2768,11 @@ Proof.
       all: try reflexivity.
       simpl. f_equal. assumption.
     }
-      all: change x7 with ([] ++ x7). 
+      all: change x7 with ([] ++ x7).
       1: change (OStore n :: x8) with ([OStore n] ++ x8).
       2: change (OStore n0 :: x9) with ([OStore n0] ++ x9).
       all: econstructor; eassumption.
-    + (* Call case *)
+    +
       inv x. rewrite H20 in H6. inv H6.
       assert (l = l0).
       {
@@ -2798,7 +2793,7 @@ Proof.
       eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?).
       repeat eexists.
-      1,2: change (DCall pc' :: ds2) with ([DCall pc'] ++ ds2). 
+      1,2: change (DCall pc' :: ds2) with ([DCall pc'] ++ ds2).
       1: change (OCall l :: os0) with ([OCall l] ++ os0).
       2: change (OCall l :: os3) with ([OCall l] ++ os3).
       1,2: econstructor 2. 2: exact H2. 1: exact H. 2: exact H3. 1: exact H0.
@@ -2806,17 +2801,17 @@ Proof.
       -- repeat destruct H4 as [-> H4]. left. repeat split ; try reflexivity;  apply H4.
       -- right. repeat destruct H4 as [? H4]. subst.
          repeat eexists. 2: exact H4.
-         simpl. f_equal. assumption. 
+         simpl. f_equal. assumption.
     * repeat eexists. 1, 2: econstructor.
       right. repeat eexists. right.
       repeat eexists. all: eassumption.
-    + (* Call case, only one fault *)
+    +
       inv x. apply H25 in H12 as [H12 | H12].
       all: congruence.
-    + (* Call case, only one fault *)
+    +
       inv x. apply H11 in H23 as [H23 | H23].
       all: congruence.
-    + (* Call case - both fault *)
+    +
       repeat eexists. 1, 2: constructor.
       right. repeat eexists.
       left.
@@ -2824,26 +2819,26 @@ Proof.
       inv Hexec2. 2: inv H1.
       repeat split; try reflexivity. 1: assumption.
       inv x. assumption.
-    + (* ret case (non-term) *)
+    +
       inv H14.
       eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
       destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?).
       destruct H3 as [H3 | H3].
     * repeat destruct H3 as [-> H3].
       repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
-      all: change ds2 with ([] ++ ds2). 
+      all: change ds2 with ([] ++ ds2).
       1: change os0 with ([] ++ os0).
       2: change os3 with ([] ++ os3).
       all: econstructor; eassumption.
     * repeat eexists. 3: right; eassumption.
-      all: change x7 with ([] ++ x7).  (* TODO: this is very fragile. it would be much better to have a consistent name for these *)
+      all: change x7 with ([] ++ x7).
       1: change x8 with ([] ++ x8).
       2: change x9 with ([] ++ x9).
       all: econstructor; eassumption.
-    + (* ret case (term) *)
+    +
       repeat eexists.
       1, 2: econstructor.
-      left. inv Hexec1. 2: inv H1. (* S_Term can't step *)
+      left. inv Hexec1. 2: inv H1.
       inv Hexec2. 2: inv H2.
       repeat split; try reflexivity. all: right; split; [reflexivity |].
       all: assumption.
@@ -2884,8 +2879,8 @@ Proof.
     + eapply IHHexec1; try eassumption. reflexivity.
     + inv x. rewrite H6 in H5; inv H5. inv H10. inv  H11.
       edestruct IHHexec1. 1: reflexivity. 1: eassumption.
-      * left. destruct H. exists x. cbn. f_equal. assumption.  
-      * right. destruct H. exists x. cbn. f_equal. assumption.  
+      * left. destruct H. exists x. cbn. f_equal. assumption.
+      * right. destruct H. exists x. cbn. f_equal. assumption.
     + eapply IHHexec1; try eassumption. rewrite H9 in H8. inv H8. reflexivity.
     + rewrite H9 in H8. inv H8. inv H11. inv H13.
       edestruct IHHexec1. 1: reflexivity. 1: eassumption.
@@ -3018,7 +3013,7 @@ Lemma spec_eval_relative_secure
   (CALLEE1: r1' ! callee = FP 0)
   (CALLEE2: r2' ! callee = FP 0)
   (UNUSED1: unused_prog msf p)
-  (UNUSED2: unused_prog callee p) : 
+  (UNUSED2: unused_prog callee p) :
   relative_secure p (uslh_prog) r1 r2 r1' r2' m1 m2.
 Proof.
   red. ii. eapply spec_eval_relative_secure_init_aux.

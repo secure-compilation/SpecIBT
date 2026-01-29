@@ -18,18 +18,18 @@ Require Import ExtLib.Data.List.
 Require Import ExtLib.Data.Monads.OptionMonad.
 Import MonadNotation.
 
-From SECF Require Import 
-  ListMaps 
+From SECF Require Import
+  ListMaps
   MapsFunctor
   MiniCET
   MiniCET_Index
   Utils
   Safe
-  TaintTracking 
+  TaintTracking
   TestingSemantics.
 From SECF Require Export Generation Printing Shrinking.
 
-(* TERSE: HIDEFROMHTML *)
+
 Definition max_block_size := 3.
 Definition max_program_length := 8.
 
@@ -37,13 +37,13 @@ Module MCC := MiniCETCommon ListTotalMap.
 
 Print Forall2.
 
-Instance Forall2Dec {A B : Type} (R : A -> B -> Prop) 
-  (H : forall (a : A) (b : B), Dec (R a b)) 
+Instance Forall2Dec {A B : Type} (R : A -> B -> Prop)
+  (H : forall (a : A) (b : B), Dec (R a b))
   (l1 : list A) (l2 : list B) : Dec (Forall2 R l1 l2).
 Proof.
   dec_eq. generalize dependent l2. induction l1.
   - destruct l2; [left; auto | right; intros contra; inversion contra].
-  - intros l2. 
+  - intros l2.
     destruct l2.
     + right; intros contra; inversion contra.
     + destruct (IHl1 l2).
@@ -53,20 +53,15 @@ Proof.
       -- right. intros contra. inversion contra; subst. contradiction.
 Qed.
 
-(** * Reusable testing strategies, which are based on generators from this library.  *)
+
 
 Module TestingStrategies(Import ST : Semantics ListTotalMap).
-(* Extract Constant defNumTests => "1000000". *)
+
 
 Module Import MTT := TaintTracking(ST).
 
-(* ** Direction generators *)
-(* 
-Definition gen_dbr : G direction :=
-  b <- arbitrary;; ret (DBranch b).
 
-Definition gen_dcall (pst: list nat) : G direction :=
-  l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)). *)
+
 
 Variant sc_output_st : Type :=
   | SRStep : obs -> dirs -> spec_cfg -> sc_output_st
@@ -82,7 +77,7 @@ Definition gen_step_direction (i: inst) (c: cfg) (pst: list nat)
   | _ => ret []
   end.
 
-Definition gen_spec_step (p: prog) (sc:spec_cfg) (pst: list nat) 
+Definition gen_spec_step (p: prog) (sc:spec_cfg) (pst: list nat)
   (gen_dbr : G dir) (gen_dcall : list nat -> G dir): G sc_output_st :=
   let '(c, ct, ms) := sc in
   let '(pc, r, m, sk) := c in
@@ -122,7 +117,7 @@ Variant spec_exec_result : Type :=
   | SEOutOfFuel (sc: spec_cfg) (os: obs) (ds: dirs).
 
 #[export] Instance showSER `{Show dir} : Show spec_exec_result :=
-  {show :=fun ser => 
+  {show :=fun ser =>
       match ser with
       | SETerm sc os ds => show ds
       | SEError _ _ ds => ("error!!"%string ++ show ds)%string
@@ -130,7 +125,7 @@ Variant spec_exec_result : Type :=
       end
   }.
 
-Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc: spec_cfg) (os: obs) (ds: dirs) 
+Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc: spec_cfg) (os: obs) (ds: dirs)
   (gen_dbr : G dir) (gen_dcall : list nat -> G dir) : G (spec_exec_result) :=
   match f with
   | 0 => ret (SEOutOfFuel sc os ds)
@@ -140,28 +135,28 @@ Fixpoint _gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc: spec_cfg)
       | SRStep os1 ds1 sc1 =>
           _gen_spec_steps_sized f' p pst sc1 (os ++ os1) (ds ++ ds1) gen_dbr gen_dcall
       | SRError os1 ds1 sc1 =>
-          (* trace ("ERROR STATE: " ++ show sc1)%string *)
+
           (ret (SEError sc1 (os ++ os1) (ds ++ ds1)))
       | SRTerm  os1 ds1 sc1 =>
           ret (SETerm sc1 (os ++ os1) (ds ++ ds1))
       end
   end.
 
-Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg) 
+Definition gen_spec_steps_sized (f : nat) (p:prog) (pst: list nat) (sc:spec_cfg)
   (gen_dbr : G dir) (gen_dcall : list nat -> G dir) : G (spec_exec_result) :=
   _gen_spec_steps_sized f p pst sc [] [] gen_dbr gen_dcall.
 
-(* Speculative Step functions *)
+
 Definition spec_step_acc (p:prog) (sc:spec_cfg) (ds: dirs) : sc_output_st :=
   match spec_step p (S_Running sc) ds with
-  | (S_Running sc', ds', os) => SRStep os ds' sc' (* sc': current spec_cfg, os: observations, ds': remaining dirs *)
+  | (S_Running sc', ds', os) => SRStep os ds' sc'
   | (S_Term, _, _) => SRTerm [] [] sc
   | _ => SRError [] [] sc
   end.
 
 Fixpoint _spec_steps_acc (f : nat) (p:prog) (sc:spec_cfg) (os: obs) (ds: dirs) : spec_exec_result :=
   match f with
-  | 0 => SEOutOfFuel sc os ds (* sc: current spec_cfg, os: observations, ds: remaining dirs *)
+  | 0 => SEOutOfFuel sc os ds
   | S f' =>
       match spec_step_acc p sc ds with
       | SRStep os1 ds1 sc1 =>
@@ -224,7 +219,7 @@ Definition gen_prog_and_unused_var : G (rctx * tmem * list nat * prog * string) 
     x <- elems_ "X0"%string unused_vars;;
     ret (c, tm, pst, p, x).
 
-Definition unused_var_no_leak 
+Definition unused_var_no_leak
   (transform_prog : rctx -> tmem -> prog -> prog) := (
   forAll gen_prog_and_unused_var (fun '(c, tm, pst, p, unused_var) =>
   forAll (gen_reg_wt c pst) (fun rs =>
@@ -244,7 +239,7 @@ Definition gen_pub_equiv_same_ty (P : total_map label) (s: total_map val) : G (t
   let f := fun v => match v with
                  | N _ => n <- arbitrary;; ret (N n)
                  | FP _ => l <- arbitrary;; ret (FP l)
-                 | UV => ret UV (* shouldn't happen *)
+                 | UV => ret UV
                  end in
   let '(d, m) := s in
   new_m <- List.fold_left (fun (acc : G (Map val)) (c : string * val) => let '(k, v) := c in
@@ -291,13 +286,13 @@ Definition test_ni (transform : rctx -> tmem -> prog -> prog) := (
       let r2 := taint_tracking 100 p' icfg' in
       match r2 with
       | Some (os2', _, _) => checker (obs_eqb os1' os2')
-      | None => checker false (* fail *)
+      | None => checker false
       end))
-   | None => checker tt (* discard *)
+   | None => checker tt
   end)))).
 
-Definition test_safety_preservation `{Show dir} 
-  (harden : prog -> prog) 
+Definition test_safety_preservation `{Show dir}
+  (harden : prog -> prog)
   (gen_dbr : G dir) (gen_dcall : list nat -> G dir) := (
   forAll (gen_prog_wt_with_basic_blk max_block_size max_program_length) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs =>
@@ -317,8 +312,8 @@ Definition test_safety_preservation `{Show dir}
    end))
   )))).
 
-Definition test_relative_security `{Show dir} 
-  (harden : prog -> prog) 
+Definition test_relative_security `{Show dir}
+  (harden : prog -> prog)
   (gen_dbr : G dir) (gen_dcall : list nat -> G dir) := (
   forAll (gen_prog_wt_with_basic_blk max_block_size max_program_length) (fun '(c, tm, pst, p) =>
   forAll (gen_reg_wt c pst) (fun rs1 =>
@@ -336,7 +331,7 @@ Definition test_relative_security `{Show dir}
       let r2 := taint_tracking 1000 p' icfg2 in
       match r2 with
       | Some (os2', _, _) =>
-          if (obs_eqb os1' os2') (* The source program produces the same leakage for a pair of inputs. *)
+          if (obs_eqb os1' os2')
           then (let harden := harden p' in
                 let rs1' := spec_rs rs1 in
                 let icfg1' := (ipc, rs1', m1, istk) in
@@ -345,7 +340,7 @@ Definition test_relative_security `{Show dir}
                 forAll (gen_spec_steps_sized 1000 harden h_pst iscfg1' gen_dbr gen_dcall) (fun ods1 =>
                 (match ods1 with
                  | SETerm _ os1 ds =>
-                     (* checker true *)
+
                      let rs2' := spec_rs rs2 in
                      let icfg2' := (ipc, rs2', m2, istk) in
                      let iscfg2' := (icfg2', true, false) in
@@ -353,25 +348,25 @@ Definition test_relative_security `{Show dir}
                      match sc_r2 with
                      | SETerm _ os2 _ => checker (obs_eqb os1 os2)
                      | SEOutOfFuel _ _ _ => collect "se2 oof"%string (checker tt)
-                     | _ => collect "2nd speculative execution fails!"%string (checker tt) (* discard -- doesn't seem to happen *)
+                     | _ => collect "2nd speculative execution fails!"%string (checker tt)
                      end
-                 | SEOutOfFuel _ os1 ds => 
+                 | SEOutOfFuel _ os1 ds =>
                      let rs2' := spec_rs rs2 in
                      let icfg2' := (ipc, rs2', m2, istk) in
                      let iscfg2' := (icfg2', true, false) in
                      let sc_r2 := spec_steps_acc 1000 harden iscfg2' ds in
                      match sc_r2 with
-                     | SETerm _ os2 _ => collect "se1 oof but se2 term"%string (checker tt) (* this would be very weird *)
-                     | SEOutOfFuel _ os2 _ => checker (obs_eqb os1 os2) (* equality should hold because essentially lockstep *)
-                     | _ => collect "2nd speculative execution fails!"%string (checker tt) (* discard -- doesn't seem to happen *)
+                     | SETerm _ os2 _ => collect "se1 oof but se2 term"%string (checker tt)
+                     | SEOutOfFuel _ os2 _ => checker (obs_eqb os1 os2)
+                     | _ => collect "2nd speculative execution fails!"%string (checker tt)
                      end
-                 | _ =>  collect "1st speculative execution fails!"%string (checker tt) (* discard -- doesn't seem to happen *)
+                 | _ =>  collect "1st speculative execution fails!"%string (checker tt)
                  end))
                )
-          else collect "seq obs differ"%string (checker tt) (* discard *)
-      | None => collect "tt2 failed"%string (checker tt) (* discard *)
+          else collect "seq obs differ"%string (checker tt)
+      | None => collect "tt2 failed"%string (checker tt)
       end))
-   | None => collect "tt1 failed"%string (checker tt) (* discard *)
+   | None => collect "tt1 failed"%string (checker tt)
   end)))).
 
 End TestingStrategies.

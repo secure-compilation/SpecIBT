@@ -1,4 +1,4 @@
-(** * Define Linearized Machine *)
+
 
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
@@ -27,15 +27,15 @@ From SECF Require Import MapsFunctor.
 From SECF Require Import MiniCET.
 From SECF Require Import sflib.
 
-(* memory injection *)
 
-(* mem only contains data. *)
 
-(* m : mem *)
-(* 0 ~ |m| - 1 : data area *)
-(* |m| ~ |m| + |p| - 1 : code area *)
 
-(** Linearized machine level semantics *)
+
+
+
+
+
+
 Inductive ty : Type := TNum.
 
 Derive (Arbitrary, Shrink) for ty.
@@ -45,7 +45,7 @@ Definition ty_eqb (x y: ty) := match x, y with
                                | TNum, TNum => true
                                end.
 
-(* Aux function : move to Utils.v *)
+
 Fixpoint coord_to_flat_idx {X} (ll: list (list X)) (c: nat * nat) : option nat :=
   let '(a, b) := c in
   match ll with
@@ -103,7 +103,7 @@ Proof.
   - eapply IHll in Heq0. clarify.
 Qed.
 
-(* l: data memory length *)
+
 Definition pc_inj (p: MiniCET.prog) (len: nat) (pc: MiniCET.cptr) : option nat :=
   let fstp := map fst p in
   match coord_to_flat_idx fstp pc with
@@ -144,11 +144,11 @@ Definition pc_inj_inv (p: MiniCET.prog) (l: nat) (pc: nat) : option cptr :=
 Definition flat_fetch (p: MiniCET.prog) (l: nat) (pc: nat) : option inst :=
   match pc_inj_inv p l pc with
   | Some pc' => fetch p pc'
-  | _ => None (* out-of-bound code access *)
+  | _ => None
   end.
 
-(* Sanity Check *)
-(* lemma -> if pc is inbound -> pc_inj is a total function. *)
+
+
 Lemma pc_inj_total p len pc i
   (INBDD: fetch p pc = Some i) :
   exists pc', pc_inj p len pc = Some pc'.
@@ -159,7 +159,7 @@ Proof.
   - rewrite nth_error_cons in INBDD.
     destruct l as [|l'] eqn:Hl.
     + assert (nth_error (fst a) o <> None) by (unfold not; i; clarify).
-      rewrite nth_error_Some in H. 
+      rewrite nth_error_Some in H.
       rewrite <- ltb_lt in H. rewrite H.
       eauto.
     + specialize IHp with (l:=l') (o:=o) (i:=i).
@@ -225,12 +225,12 @@ Definition reg_init := M.init UV.
 Definition dir := direction.
 Definition dirs := dirs.
 Definition pc := nat.
-Definition cfg : Type := ((pc * reg)* mem) * list pc. (* (pc, register set, memory, stack frame) *)
+Definition cfg : Type := ((pc * reg)* mem) * list pc.
 Definition spec_cfg : Type := ((cfg * bool) * bool).
 Definition ideal_cfg : Type := (cfg * bool)%type.
 Definition ipc: pc := 0.
 Definition istk: list pc := [].
-Definition icfg (ipc : pc) (ireg : reg) (mem : mem) (istk : list pc): cfg := 
+Definition icfg (ipc : pc) (ireg : reg) (mem : mem) (istk : list pc): cfg :=
   (ipc, ireg, mem, istk).
 
 Definition fetch := MoreLinear.fetch.
@@ -247,7 +247,7 @@ Fixpoint eval (st : reg) (e: exp) : val :=
   | AId x => M.t_apply st x
   | ABin b e1 e2 => eval_binop b (eval st e1) (eval st e2)
   | <{b ? e1 : e2}> =>
-      match to_nat (eval st b) with (* Can't branch on function pointers *)
+      match to_nat (eval st b) with
       | Some n1 => if not_zero n1 then eval st e1 else eval st e2
       | None => UV
       end
@@ -256,7 +256,7 @@ Fixpoint eval (st : reg) (e: exp) : val :=
 
 End MoreLinearCommon.
 
-(* transformation *)
+
 
 Fixpoint machine_exp (p: MiniCET.prog) (len: nat) (e: exp) : option exp :=
   match e with
@@ -377,7 +377,7 @@ Proof.
   - des_ifs. ss. clarify.
 Qed.
 
-(* common simulation *)
+
 
 End SimCommon.
 

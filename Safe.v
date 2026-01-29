@@ -33,8 +33,8 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
 | match_cfgs_ext_intro ic sc
   (MATCH: match_cfgs p ic sc) :
   match_cfgs_ext p (S_Running ic) (S_Running sc)
-| match_cfgs_ext_ct1 (* call target *)
-  l blk r m stk ms r' stk'      
+| match_cfgs_ext_ct1
+  l blk r m stk ms r' stk'
   (CT: nth_error p l = Some (blk, true))
   (CT1: (uslh_prog p)[[(l, 0)]] = Some <{{ ctarget }}>)
   (REG: Rsync1 r r' ms)
@@ -42,7 +42,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   (MS: eval r' <{{ (callee = (& l)) ? msf : 1 }}> = N (if ms then 1 else 0)) :
   match_cfgs_ext p (S_Running (((l, 0), r, m, stk), ms))
                    (S_Running (((l, 0), r', m, stk'), true, ms))
-| match_cfgs_ext_ct2 (* call target msf *)
+| match_cfgs_ext_ct2
   l blk r m stk ms r' stk'
   (CT: nth_error p l = Some (blk, true))
   (CT1: (uslh_prog p)[[(l, 0)]] = Some <{{ ctarget }}>)
@@ -76,7 +76,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   (TO: (uslh_prog p) [[(l', 0)]] =
          Some <{{ msf := (~((msf = 1) ? 0 : e)) ? 1 : msf }}>)
   (MS: eval r' <{{ (~ ((msf = 1) ? 0 : e)) ? 1 : msf }}> = N (if ms then 1 else 0))
-  (* (BT1: Datatypes.length p <= l') *)
+
   (BT2: (uslh_prog p)[[(l', 1)]] = Some <{{ jump l }}>)
   (REG: Rsync1 r r' ms)
   (STK: map_opt (pc_sync p) stk = Some stk') :
@@ -84,7 +84,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
                    (S_Running (((l', 0), r', m, stk'), false, ms))
 | match_cfgs_ext_br_true2
   pc e l l' r m stk ms r' stk'
-  (* (BT1: Datatypes.length p <= l') *)
+
   (BR: p[[pc]] = Some <{{ branch e to l }}>)
   (BT2: (uslh_prog p)[[(l', 1)]] = Some <{{ jump l }}>)
   (REG: Rsync r r' ms)
@@ -93,7 +93,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
                    (S_Running (((l', 1), r', m, stk'), false, ms))
 | match_cfgs_ext_br_false
   pc pc' l e  r r' m stk stk' (ms:bool)
-  (* (BR: p[[pc]] = Some <{{ branch e to l }}>) *)
+
   (FROM: (uslh_prog p) [[pc']] = Some <{{ branch ((msf = 1) ? 0 : e) to l }}>)
   (TO: (uslh_prog p) [[pc'+1]] = Some <{{ msf := ((msf = 1) ? 0 : e) ? 1 : msf }}>)
   (MS: eval r' <{{ ((msf = 1) ? 0 : e) ? 1 : msf }}> = N (if ms then 1 else 0))
@@ -109,8 +109,8 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
 .
 
 Lemma src_lookup
-  p pc pc' (* i' *)
-  (* (TGT: (uslh_prog p) [[pc']] = Some i') *)
+  p pc pc'
+
   (SYNC: pc_sync p pc = Some pc') :
   exists i, p[[pc]] = Some i.
 Proof.
@@ -141,9 +141,9 @@ Lemma ultimate_slh_bcc_single (p: prog) ic1 sc1 sc2 ds os
       /\ match_cfgs_ext p ic2 sc2.
 Proof.
   inv MATCH; try sfby inv TGT.
-  (* common match *)
+
   - inv TGT; inv MATCH0; clarify.
-    (* skip *)
+
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
       replace (@nil direction) with ((@nil direction) ++ []) by ss.
       replace (@nil observation) with ((@nil observation) ++ []) by ss.
@@ -155,9 +155,9 @@ Proof.
       replace (add n0 1) with (S n0) by lia.
       erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
       rewrite add_1_r. auto.
-    (* asgn *)
+
     + exploit tgt_inv; eauto. i. des. inv x0.
-      (* normal asgn *)
+
       * inv MATCH.
         replace (@nil direction) with ((@nil direction) ++ []) by ss.
         replace (@nil observation) with ((@nil observation) ++ []) by ss.
@@ -176,7 +176,7 @@ Proof.
             { do 2 rewrite t_update_eq. apply eval_regs_eq; eauto. }
             { rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
           - erewrite t_update_neq; eauto. }
-      (* callee asgn *)
+
       * clarify. esplits; [econs|].
         eapply match_cfgs_ext_call; eauto.
         { inv REG. split; i.
@@ -184,7 +184,7 @@ Proof.
           - rewrite t_update_neq; eauto. ii; clarify. }
         { rewrite t_update_eq. rewrite eval_unused_update; eauto.
           exploit unused_prog_lookup; try eapply x1; eauto. i. ss. }
-    (* branch *)
+
     + exploit tgt_inv; eauto. i. des. inv x1.
       { inv MATCH. }
       clarify.
@@ -198,7 +198,7 @@ Proof.
         ss. rewrite <- H1. destruct ms; ss. erewrite eval_regs_eq; eauto. }
       destruct pc as [b o]. destruct pc0 as [b0 o0].
       destruct b'.
-      (* true *)
+
       * eapply match_cfgs_ext_br_true1; eauto.
         { simpl. rewrite IN. ss. }
         { clear -H1 REG. inv REG. rewrite H0 in H1. ss. rewrite H0. ss.
@@ -206,13 +206,13 @@ Proof.
           destruct n; ss; clarify. }
         { ss. rewrite IN. ss. }
         { inv REG. red. eauto. }
-      (* false *)
+
       * eapply match_cfgs_ext_br_false; try eapply H0; eauto.
         { clear -H1 REG. inv REG. rewrite H0 in H1. ss. rewrite H0. ss.
           destruct ms; ss. unfold to_nat in H1. des_ifs_safe.
           destruct n; ss; clarify. }
         { inv REG. red. eauto. }
-    (* jump *)
+
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
       replace (@nil direction) with ((@nil direction) ++ []) by ss.
       replace (@nil observation) with ((@nil observation) ++ []) by ss.
@@ -225,7 +225,7 @@ Proof.
         subst. inv WFP. rewrite Forall_forall in H1.
         eapply nth_error_In in Heq. eapply H1 in Heq.
         red in Heq. des. ss.
-    (* load *)
+
     + exploit tgt_inv; eauto. i. des. inv x0. inv MATCH.
       exists (S_Running ((pc0 + 1), x !-> v'; r0, m, stk, ms)).
 
@@ -249,7 +249,7 @@ Proof.
             { rewrite t_update_neq; eauto. rewrite t_update_neq; eauto.
               inv REG. eauto. }
           - inv REG. ss. des. rewrite t_update_neq; eauto. }
-    (* store *)
+
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
       eapply unused_prog_lookup in UNUSED1; eauto.
       eapply unused_prog_lookup in UNUSED2; eauto. ss. des.
@@ -271,11 +271,11 @@ Proof.
         unfold pc_sync in *. ss. des_ifs_safe. replace (add o0 1) with (S o0) by lia.
         erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
         rewrite add_1_r. auto.
-    (* call *)
+
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
-    (* ctarget *)
+
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
-    (* ret - return *)
+
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
       destruct stk; try sfby ss.
       replace (@nil direction) with ((@nil direction) ++ []) by ss.
@@ -283,7 +283,7 @@ Proof.
       esplits.
       * econs 2; [|econs]. eapply ISMI_Ret; eauto.
       * econs. simpl in STK. des_ifs.
-    (* ret - term *)
+
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
       destruct stk.
       2:{ ss. des_ifs. }
@@ -292,14 +292,14 @@ Proof.
       esplits.
       * econs 2; [|econs]. eapply ISMI_Term; eauto.
       * econs.
-  (* target = ctarget *)
+
   - inv TGT; clarify. esplits.
     + econs.
     + eapply match_cfgs_ext_ct2; eauto.
       exploit head_call_target; eauto. i. des; clarify; eauto.
-  (* target = msf := (callee = (& (fst pc))) ? msf : 1 *)
-  - (* exploit head_call_target; eauto. i. des; clarify. *)
-    (* replace ((l0, 0) + 1) with (l0, 1) in x2 by ss. *)
+
+  -
+
     inv TGT; clarify.
     esplits; econs.
     econs; eauto.
@@ -310,7 +310,7 @@ Proof.
     + red in REG. econs.
       * i. des. rewrite t_update_neq; eauto.
       * rewrite t_update_eq. eauto.
-  (* call *)
+
   - inv TGT; clarify.
     destruct pc'0 as [l' o'].
     red in WFDS. inv WFDS. inv H2. red in H1. unfold is_some in H1.
@@ -385,7 +385,7 @@ Proof.
               rewrite H2. destruct ms; ss.
               erewrite eval_regs_eq; eauto.
             - ii. ss. clarify. }
-          econs; eauto. }      
+          econs; eauto. }
       esplits.
       { econs.
         - eapply ISMI_Call_F; eauto.
@@ -459,7 +459,7 @@ Lemma ultimate_slh_bcc' (p: prog) ic1 sc1 sc2 ds os
   (MATCH: match_cfgs_ext p ic1 sc1)
   n
   (TGT: uslh_prog p |- <(( sc1 ))> -->*_ ds^^os^^n <(( sc2 ))>) :
-     exists ic2, p |- <(( ic1 ))> -->i*_ ds ^^ os <(( ic2 ))> 
+     exists ic2, p |- <(( ic1 ))> -->i*_ ds ^^ os <(( ic2 ))>
           /\ match_cfgs_ext p ic2 sc2.
 Proof.
   ginduction n; ii.
@@ -472,27 +472,27 @@ Proof.
   eapply multi_ideal_inst_trans2; eauto.
 Qed.
 
-(** * Safety Presevation *)
+
 
 Definition safe_imm_seq (p: prog) (st: state cfg) : Prop :=
   match st with
   | S_Running c => exists os stt, p |- <(( S_Running c ))> -->^ os <(( stt ))>
   | S_Fault | S_Term => True
-  | S_Undef => False (* Unreachable *)
+  | S_Undef => False
   end.
 
 Definition safe_imm_ideal (p: prog) (st: state ideal_cfg) : Prop :=
   match st with
   | S_Running sc => exists ds os stt, p |- <(( S_Running sc ))> -->i_ ds ^^ os  <(( stt ))>
   | S_Fault | S_Term => True
-  | S_Undef => False (* Unreachable *)
+  | S_Undef => False
   end.
 
 Definition safe_imm_spec (p: prog) (st: state spec_cfg) : Prop :=
   match st with
   | S_Running sc => exists ds os stt, p |- <(( S_Running sc ))> -->_ ds ^^ os  <(( stt ))>
   | S_Fault | S_Term => True
-  | S_Undef => False (* Unreachable *)
+  | S_Undef => False
   end.
 
 Definition seq_nostep (p: prog) (st: state cfg) : Prop :=
@@ -504,7 +504,7 @@ Definition ideal_nostep (p: prog) (st: state ideal_cfg) : Prop :=
 Definition spec_nostep (p: prog) (st: state spec_cfg) : Prop :=
   ~ (exists ds os stt, p |- <(( st ))> -->_ ds ^^ os  <(( stt ))>).
 
-(* Arbitrary Running state that reachable from initial state can progress *)
+
 Definition seq_exec_safe (p: prog) (c: cfg) : Prop :=
   forall os ct,
     p |- <(( S_Running c ))> -->*^ os <(( S_Running ct ))> ->
@@ -600,7 +600,7 @@ Lemma ideal_res_pc_exists
   p pc r m stk ms pc' r' m' stk' ms' ds os
   (WFSTK: wf_stk p stk)
   (WFP: wf_prog p)
-  (* (WFDS: wf_ds' (uslh_prog p) ds) *)
+
   (STEP: p |- <(( S_Running (pc, r, m, stk, ms) ))> -->i_ ds ^^ os <((S_Running (pc', r', m', stk', ms') ))>):
   exists i, p[[pc']] = Some i.
 Proof.
@@ -695,7 +695,7 @@ Lemma seq_ideal_safety_preservation
   ideal_exec_safe p (c, false).
 Proof.
   red. ii. destruct ict as [c' ms]. subst.
-  (* destruct c as [cl stk]. destruct cl as [cl m]. destruct cl as [pc r]. *)
+
   destruct c' as [cl' stk']. destruct cl' as [cl' m']. destruct cl' as [pc' r'].
   destruct ms; cycle 1.
   { red in SEQ.
@@ -753,7 +753,7 @@ Proof.
   exploit ultimate_slh_bcc'; eauto.
   i. des. destruct ic2.
   - exploit SEQ; eauto. i. des.
-    (* match -> source progress -> target progress *)
+
     inv x1.
     + inv MATCH0. inv x2.
       * exploit src_inv; eauto. i. des. inv x2. inv MATCH0.

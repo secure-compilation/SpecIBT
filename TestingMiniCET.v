@@ -1,4 +1,4 @@
-(** * Testing MiniCET *)
+
 
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
@@ -29,9 +29,9 @@ Definition gen_dcall (pst: list nat) : G dir :=
   l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
 
 Instance ShowDirection : Show dir := {
-  show dir := match dir with 
+  show dir := match dir with
     | DBranch b => ("DBranch " ++ show b)%string
-    | DCall cptr => ("DCall " ++ show cptr)%string 
+    | DCall cptr => ("DCall " ++ show cptr)%string
   end
 }.
 
@@ -61,11 +61,11 @@ Definition wt_wf := (forAll (gen_prog_wt max_block_size max_program_length) (fun
 Definition wt_uslh_wf := (forAll (gen_prog_wt max_block_size max_program_length) (fun (p : prog) => (wf (uslh_prog p)))).
 (*! QuickChick wt_uslh_wf. *)
 
-(* The well-typed expression "always evaluates" in the register set produces by "gen_reg_wt " *)
+
 Definition wt_expr_is_defined := (
     forAll arbitrary (fun (c : rctx) =>
     forAll arbitrary (fun (pl : nat) =>
-    forAll (choose (2, 5)) (fun (exp_sz : nat) => 
+    forAll (choose (2, 5)) (fun (exp_sz : nat) =>
     pst <- gen_partition pl;;
     forAll (gen_reg_wt c pst) (fun (r : reg) =>
     forAll (gen_exp_wt exp_sz c pst) (fun (e : exp) =>
@@ -73,33 +73,33 @@ Definition wt_expr_is_defined := (
   )))))).
 (*! QuickChick wt_expr_is_defined. *)
 
-Definition ty_prog_wf := 
-  (forAll (gen_prog_ty_ctx_wt max_block_size max_program_length) (fun '(c, tm, p) => 
+Definition ty_prog_wf :=
+  (forAll (gen_prog_ty_ctx_wt max_block_size max_program_length) (fun '(c, tm, p) =>
     ((ty_prog c tm p) && (wf p)))).
 
-(* "+++ Passed 10000 tests (0 discards)" *)
 
-(* Extract Constant defNumTests => "1000000". *)
 
-(* check 0: load/store transformation creates basic blocks *)
+
+
+
 
 Definition load_store_trans_basic_blk := TS.load_store_trans_basic_blk.
 
 (*! QuickChick load_store_trans_basic_blk. *)
 
-(* check 1: generated program is stuck-free. *)
+
 
 Definition load_store_trans_stuck_free := TS.load_store_trans_stuck_free.
 
 (*! QuickChick load_store_trans_stuck_free. *)
 
-(* +++ Passed 10000 tests (6173 discards) *)
+
 
 Definition no_obs_prog_no_obs := TS.no_obs_prog_no_obs.
 
 (*! QuickChick no_obs_prog_no_obs. *)
 
-(* check 3: implicit flow *)
+
 
 Example implicit_flow_test p rs icfg
   (P: p = [([ IBranch (AId "x") 1; IJump 1 ], true); ([ IAsgn "y"%string (ANum 1); IRet], false)])
@@ -116,18 +116,18 @@ Proof.
   subst. simpl. reflexivity.
 Qed.
 
-(* check 4: unused variables never leaked *)
 
-Definition unused_var_no_leak_transform_load_store := 
+
+Definition unused_var_no_leak_transform_load_store :=
   unused_var_no_leak (fun c tm p => transform_load_store_prog c tm p).
 
 (*! QuickChick unused_var_no_leak_transform_load_store. *)
 
-(* check 5: gen_pub_equiv_same_ty works *)
+
 
 Definition gen_pub_equiv_same_ty := TS.gen_pub_equiv_same_ty.
 
-(* check 6: generated register set is well-typed. *)
+
 
 Definition gen_pub_equiv_is_pub_equiv := TS.gen_pub_equiv_is_pub_equiv.
 
@@ -137,41 +137,41 @@ Definition gen_reg_wt_is_wt := TS.gen_reg_wt_is_wt.
 
 (*! QuickChick gen_reg_wt_is_wt. *)
 
-(* check 5: gen_pub_mem_equiv_same_ty works *)
+
 
 Definition gen_pub_mem_equiv_is_pub_equiv := TS.gen_pub_mem_equiv_is_pub_equiv.
 
 (*! QuickChick gen_pub_mem_equiv_is_pub_equiv. *)
 
-(* check 7: generated memory is well-typed. *)
+
 
 Definition gen_mem_wt_is_wt := TS.gen_mem_wt_is_wt.
 
 (*! QuickChick gen_mem_wt_is_wt. *)
 
-(* check 8: non-interference *)
 
-(** Safety Preservation *)
 
-Definition test_ni_transform_load_store := 
+
+
+Definition test_ni_transform_load_store :=
   test_ni (fun c tm p => transform_load_store_prog c tm p).
 (*! QuickChick test_ni_transform_load_store. *)
 
-(* +++ Passed 1000000 tests (639813 discards) *)
-(* Time Elapsed: 152.683837s *)
+
+
 
 Definition test_safety_preservation_uslh := test_safety_preservation uslh_prog gen_dbr gen_dcall.
 
 (*! QuickChick test_safety_preservation_uslh. *)
 
-(* +++ Passed 1000000 tests (431506 discards) *)
-(* Time Elapsed: 137.819446s *)
 
-(** Testing Relative Security *)
+
+
+
 
 Definition test_relative_security_uslh := test_relative_security uslh_prog gen_dbr gen_dcall.
 
 (*! QuickChick test_relative_security_uslh. *)
 
-(* +++ Passed 1000000 tests (0 discards) *)
-(* Time Elapsed: 1308.843714s *)
+
+

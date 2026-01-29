@@ -6,7 +6,7 @@ From Stdlib Require Import List
   Lia.
 Import Nat ListNotations.
 Set Default Goal Selector "!".
-From SECF Require Import 
+From SECF Require Import
     MapsFunctor
     MiniCET
     Utils
@@ -44,14 +44,14 @@ Module MiniCETSemantics (M : TMap) <: Semantics M.
 Module Import Common := MiniCETCommon(M).
 
 Definition reg := M.t val.
-Definition cfg : Type := ((cptr*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
+Definition cfg : Type := ((cptr*reg)*mem)*list cptr.
 Definition spec_cfg : Type := ((cfg * bool) * bool).
 Definition ideal_cfg : Type := cfg * bool.
 
 Definition pc := cptr.
 Definition ipc : cptr := (0, 0).
 Definition istk : list cptr := [].
-Definition icfg (ipc : pc) (ireg : reg) (mem : mem) (istk : list pc): cfg := 
+Definition icfg (ipc : pc) (ireg : reg) (mem : mem) (istk : list pc): cfg :=
   (ipc, ireg, mem, istk).
 
 Definition dir := direction.
@@ -64,7 +64,7 @@ Fixpoint eval (st : reg) (e: exp) : val :=
   | AId x => M.t_apply st x
   | ABin b e1 e2 => eval_binop b (eval st e1) (eval st e2)
   | <{b ? e1 : e2}> =>
-      match to_nat (eval st b) with (* Can't branch on function pointers *)
+      match to_nat (eval st b) with
       | Some n1 => if not_zero n1 then eval st e1 else eval st e2
       | None => UV
       end
@@ -139,7 +139,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
         | Some i =>
             match i with
             | <{{branch e to l}}> =>
-              if ct then (*untrace "ct set at branch"*) (S_Fault, ds, []) else
+              if ct then   (S_Fault, ds, []) else
               match
                 if seq.nilp ds then
                   untrace "Branch: Directions are empty!" None
@@ -156,7 +156,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
               | Some (c, ds, os) => (c, ds, os)
               end
             | <{{call e}}> =>
-              if ct then (*untrace "ct set at call"*) (S_Fault, ds, []) else
+              if ct then   (S_Fault, ds, []) else
               match
                 if seq.nilp ds then
                   untrace "Call: Directions are empty!" None
@@ -175,7 +175,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
               end
             | <{{ctarget}}> =>
               match
-                is_true ct;; (* ctarget can only run after call? (CET) Maybe not? *)
+                is_true ct;;
                 (*! *)
                 (ret (S_Running ((pc+1, r, m, sk), false, ms), ds, []))
                 (*!! spec_ctarget_no_clear *)
@@ -185,7 +185,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
               | Some (c, ds, os) => (c, ds, os)
               end
             | _ =>
-              if ct then (*untrace ("ct set at " ++ show i)*) (S_Fault, ds, [])
+              if ct then   (S_Fault, ds, [])
               else
                 match step p (S_Running c) with
                 | (S_Running c', o) => (S_Running (c', false, ms), ds, o)
@@ -213,7 +213,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
         (sc, ds, [])
     end.
 
-  (* Morally state+output monad hidden in here: step p >> steps f' p  *)
+
   Fixpoint steps (f:nat) (p:prog) (sc: state cfg) : (state cfg * obs) :=
     match f with
     | S f' =>
@@ -233,15 +233,15 @@ End MiniCETSemantics.
 Module IdealStepSemantics (Import ST : Semantics ListTotalMap with Definition pc := cptr).
 
 Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds: dirs) : (state ideal_cfg * dirs * obs) :=
-  match sic with 
-  | S_Running ic => 
-      let '(c, ms) := ic in 
+  match sic with
+  | S_Running ic =>
+      let '(c, ms) := ic in
       let '(pc, r, m, sk) := c in
-      match fetch p pc with 
+      match fetch p pc with
         None => untrace "lookup fail" (S_Undef, ds, [])
-      | Some i => 
-          match i with 
-            | <{{branch e to l}}> => 
+      | Some i =>
+          match i with
+            | <{{branch e to l}}> =>
               if seq.nilp ds then
                 untrace "idealBranch: directions are empty!" (S_Undef, ds, [])
               else
@@ -254,13 +254,13 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds: dirs) : (state ideal
                   let ms' := ms || negb (Bool.eqb b b') in
                   (*!! ideal_branch_bad_update_ms *)
                   (*! let ms' := negb (Bool.eqb b b') in *)
-                  let _ := I in (* just to separate the two mutants *)
+                  let _ := I in
                   (*! *)
                   let pc' := if b' then (l, 0) else (pc+1) in
                   (*!! ideal_branch_ignore_directive *)
                   (*! let pc' := if b then (l, 0) else (pc+1) in *)
                   ret ((S_Running ((pc', r, m, sk), ms'), tl ds), [OBranch b])
-                with 
+                with
                 | None => (S_Undef, ds, [])
                 | Some (c, ds, os) => (c, ds, os)
                 end
@@ -280,7 +280,7 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds: dirs) : (state ideal
                     let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
                     ret ((S_Running ((pc', r, m, (pc+1)::sk), ms'), tl ds), [OCall l])
                   else Some (S_Fault, ds, [OCall l])
-                with 
+                with
                 | None => (S_Undef, ds, [])
                 | Some (c, ds, os) => (c, ds, os)
                 end
@@ -294,7 +294,7 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds: dirs) : (state ideal
                 v' <- nth_error m n;;
                 let c := (pc+1, (x !-> v'; r), m, sk) in
                 ret (S_Running (c, ms), ds, [OLoad n])
-              with 
+              with
               | None => (S_Undef, ds, [])
               | Some (c, ds, os) => (c, ds, os)
               end
@@ -307,12 +307,12 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds: dirs) : (state ideal
                 n <- to_nat (eval r i);;
                 let c:= (pc+1, r, upd n m (eval r e'), sk) in
                 ret (S_Running (c, ms), ds, [OStore n])
-              with 
+              with
               | None => (S_Undef, ds, [])
               | Some (c, ds, os) => (c, ds, os)
               end
           | _ =>
-              match step p (S_Running c) with 
+              match step p (S_Running c) with
               | (S_Running c', o) => (S_Running (c', ms), ds, o)
               | (S_Undef, o) => (S_Undef, ds, o)
               | (S_Fault, o) => (S_Fault, ds, o)
@@ -325,9 +325,9 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds: dirs) : (state ideal
 
 Fixpoint ideal_steps (f: nat) (p: prog) (sic: state ideal_cfg) (ds: dirs)
   : (state ideal_cfg * dirs * obs) :=
-  match f with 
-  | S f' => 
-      match sic with 
+  match f with
+  | S f' =>
+      match sic with
       | S_Running ic =>
           let '(c1, ds1, o1) := ideal_step p sic ds in
           let '(c2, ds2, o2) := ideal_steps f' p c1 ds1 in

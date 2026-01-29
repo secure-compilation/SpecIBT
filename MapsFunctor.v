@@ -25,13 +25,13 @@ Module Type TMap.
 
 End TMap.
 
-(* Total Map From SF *)
+
 Module TotalMap <: TMap.
   Definition t := Maps.total_map.
   Definition init := @Maps.t_empty.
   Definition t_apply {A: Type} (m: t A) (i: string) : A := m i.
   Definition t_update {A: Type} (m: t A) (i: string) (v: A) := Maps.t_update m i v.
-  Definition t_map_values {A B : Type} (f : A -> B) (m : t A) : t B := 
+  Definition t_map_values {A B : Type} (f : A -> B) (m : t A) : t B :=
     fun k => f (m k).
 
   Lemma t_update_eq : forall {A : Type} (m : t A) x v,
@@ -45,13 +45,13 @@ Module TotalMap <: TMap.
 
 End TotalMap.
 
-(* ListMaps *)
+
 Module ListTotalMap <: TMap.
   Definition t := ListMaps.total_map.
   Definition init := @ListMaps.t_empty.
   Definition t_apply {A: Type} (m: t A) (i: string) : A := ListMaps.apply m i.
   Definition t_update {A: Type} (m: t A) (i: string) (v: A) := ListMaps.t_update m i v.
-  Definition t_map_values {A B : Type} (f : A -> B) (m : t A) : t B := 
+  Definition t_map_values {A B : Type} (f : A -> B) (m : t A) : t B :=
     let '(d, m) := m in
     (f d, map (fun '(k, v) => (k, f v)) m).
 

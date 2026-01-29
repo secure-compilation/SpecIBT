@@ -1,6 +1,6 @@
 From Stdlib Require Import List. Import ListNotations.
 
-(* Tail recursive append to prevent stack overflows when testing *)
+
 Fixpoint rev_append {A:Type} (l1 l2 : list A) : list A :=
   match l1 with
   | [] => l2
@@ -144,12 +144,10 @@ Qed.
 
 From Stdlib Require Import String.
 
-(* Same type as trace, so that you can easily "disable" trace using find+replace *)
+
 Definition untrace {A : Type} (s : string) (a : A) : A := a.
 
-(* Simple utility function to check if a value is Some.
-  TODO: Check if there is an Stdlib or Extlib function with the same
-  functionality. *)
+
 
 Definition is_some {A} (v : option A) : bool := match v with
   | Some _ => true

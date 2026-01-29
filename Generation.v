@@ -92,7 +92,7 @@ Definition val_eqb (v1 v2: val) : bool :=
   match v1, v2 with
   | N n1, N n2 => Nat.eqb n1 n2
   | FP l1, FP l2 => Nat.eqb l1 l2
-  | UV, UV => true (* don't use this in the semantics *)
+  | UV, UV => true
   | _, _ => false
   end.
 
@@ -172,7 +172,7 @@ Fixpoint _gen_pub_mem_equiv (P : list label) {X: Type} `{Gen X} (m: list X) : G 
       hd <- (if hdp then ret hdm else arbitrary);;
       tl <-_gen_pub_mem_equiv tlp tlm;;
       ret (hd::tl)
-  | _, _ => ret [] (* unreachable *)
+  | _, _ => ret []
   end.
 
 Fixpoint gen_pub_mem_equiv (P : list label) {X: Type} `{Gen X} (m: list X) : G (list X) :=
@@ -189,7 +189,7 @@ Fixpoint remove_one_secret (P: list label) {X: Type} (s: list X) : list (list X)
         if hp
         then add_hd
         else tr :: removed_one_items
-    | _, _ => [] (* unreachable *)
+    | _, _ => []
     end.
 
 Definition list_minus {X : Type} `{EqDec X} (l1 l2 : list X) : list X :=
@@ -206,8 +206,7 @@ Qed.
 
 Definition eitherOf {A} (a : G A) (b : G A) : G A := freq [(1, a); (1, b)].
 
-(* [TestingStaticIFC.v]: The ;; notation didn't work with oneOf, probably related to monadic
-   bind also using ;;. So I redefined the notation using ;;;. *)
+
 Notation " 'oneOf' ( x ;;; l ) " :=
   (oneOf_ x (cons x l))  (at level 1, no associativity) : qc_scope.
 
@@ -215,9 +214,9 @@ Notation " 'oneOf' ( x ;;; y ;;; l ) " :=
   (oneOf_ x (cons x (cons y l)))  (at level 1, no associativity) : qc_scope.
 
 
-(** TestingMiniCET-related Gen and Show instances *)
 
-(* As in [TestingStaticIFC.v], we generate a finite total map which we use as state. *)
+
+
 #[export] Instance genTotalMap (A:Type) `{Gen A} : Gen (ListTotalMap.t A) :=
   {arbitrary := (d <- arbitrary;;
                  v0 <- arbitrary;;
@@ -238,8 +237,7 @@ Notation " 'oneOf' ( x ;;; y ;;; l ) " :=
                              (1, ret 5)];;
                  ret ("X" ++ show n)%string) }.
 
-(* [TestingStaticIFC.v]: The ;; notation didn't work with oneOf, probably related to monadic
-   bind also using ;;. So I redefined the notation using ;;;. *)
+
 Notation " 'oneOf' ( x ;;; l ) " :=
   (oneOf_ x (cons x l))  (at level 1, no associativity) : qc_scope.
 
@@ -256,7 +254,7 @@ Definition is_defined (v:val) : bool :=
   | _ => true
   end.
 
-Fixpoint max n m := match n, m with 
+Fixpoint max n m := match n, m with
                    | 0, _ => m
                    | _, 0 => n
                    | S n', S m' => S (max n' m')
@@ -264,7 +262,7 @@ Fixpoint max n m := match n, m with
 
 (*! Section testing_ETE *)
 
-(** Type system for soundenss *)
+
 
 Derive (Arbitrary, Shrink) for ty.
 
@@ -281,7 +279,7 @@ Fixpoint ty_of_exp (c : rctx) (e : exp) : ty :=
   | ANum _ => TNum
   | AId x => c ! x
   | ABin _ _ _ => TNum
-  (* Here we assume that "e" is well-typed and infer the type by the second branch of "ACTIf"  *)
+
   | ACTIf _ _ x => ty_of_exp c x
   | FPtr _ => TPtr
 end.
@@ -295,17 +293,16 @@ Definition is_ptr (c : rctx) (var : string) :=
   | _ => false
   end.
 
-(* predicate for fold *)
+
 Definition is_br_or_call (i : inst) :=
   match i with
   | <{{branch _ to _}}> | <{{call _}}> => true
   | _                                  => false
   end.
 
-(** Well-formed Program Generator *)
 
-(* This auxiliary function, given a program length, generates the length of procedures in this program, counted in blocks.
-   It therefore partitions the program in procedures. *)
+
+
 Fixpoint _gen_partition (fuel program_length: nat) : G (list nat) :=
   match fuel with
   | 0 => ret [program_length]
@@ -328,7 +325,7 @@ Fixpoint proc_hd (pst: list nat) : list nat :=
   end.
 
 Compute (proc_hd [3; 3; 1; 1]).
-(* = <{{ i[ 0; 3; 6; 7] }}> *)
+
 
 Definition gen_callable (pl : nat) : G (list nat) :=
   pst <- gen_partition pl ;; ret (proc_hd pst).
@@ -354,8 +351,7 @@ Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
                 tm <- arbitrary;;
                 ret (t :: tm) }.
 
-(* Similar to the previous expressions generators, we now generate the well-typed leaves, which
-  differentiate between different types of values in the program. *)
+
 Definition gen_exp_leaf_wt (t: ty) (c: rctx) (pst: list nat) : G exp :=
   match t with
   | TNum =>
@@ -384,18 +380,18 @@ Fixpoint gen_exp_no_ptr_wt (sz : nat) (c : rctx) (pst: list nat) : G exp :=
 with gen_exp_ptr_wt (sz : nat) (c : rctx) (pst: list nat) : G exp :=
   match sz with
   | O => gen_exp_leaf_wt TPtr c pst
-  | S sz' => 
+  | S sz' =>
       freq [ (2, gen_exp_leaf_wt TPtr c pst);
              (sz, liftM3 ACTIf (gen_exp_no_ptr_wt sz' c pst) (gen_exp_ptr_wt sz' c pst) (gen_exp_ptr_wt sz' c pst))
           ]
   end.
 
 Fixpoint gen_exp_wt (sz: nat) (c: rctx) (pst: list nat) : G exp :=
-  match sz with 
+  match sz with
   | O =>
       t <- arbitrary;;
       gen_exp_leaf_wt t c pst
-  | S sz' => 
+  | S sz' =>
       freq [
           (2, t <- arbitrary;; gen_exp_leaf_wt t c pst);
           (sz, binop <- arbitrary;; match binop with
@@ -444,17 +440,17 @@ Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) (default : nat) : G
   let vars := (map_dom (snd c)) in
   let jlst := (list_minus (seq 0 pl) (proc_hd pst)) in
   e <- gen_exp_ty_wt TNum 1 c pst;;
-  l <- elems_ default jlst;; (* 0 is unreachable *)
+  l <- elems_ default jlst;;
   ret <{ branch e to l }>.
 
 Definition gen_jump_wt (pl: nat) (pst: list nat) (default : nat) : G inst :=
-  l <- elems_ default (list_minus (seq 0 pl) (proc_hd pst));; (* 0 is unreachable *)
+  l <- elems_ default (list_minus (seq 0 pl) (proc_hd pst));;
   ret <{ jump l }>.
 
-Definition filter_typed {A : Type} (t : ty) (l : list (A * ty)): list A := 
+Definition filter_typed {A : Type} (t : ty) (l : list (A * ty)): list A :=
   map fst (filter (fun '(_, t') => ty_eqb t t') l).
 
-Notation " 'elems' ( h ;;; tl )" := (elems_ h (cons h tl)) 
+Notation " 'elems' ( h ;;; tl )" := (elems_ h (cons h tl))
   (at level 1, no associativity) : qc_scope.
 
 Definition gen_load_wt (t: ty) (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst :=
@@ -481,13 +477,13 @@ Definition gen_store_wt (c: rctx) (tm: tmem) (pl: nat) (pst: list nat) : G inst 
 Definition compose_load_store_guard (t : ty) (id_exp : exp) (mem : tmem) : exp :=
   let indices := seq 0 (Datatypes.length mem) in
   let idx := filter_typed t (combine indices mem) in
-  let tc := fold_left 
+  let tc := fold_left
             (fun acc x => BOr x acc)
             (map (fun id => <{{ id_exp = ANum id }}>) idx)
             <{{ false }}> in
   let mem_sz := ANum (Datatypes.length mem) in
   let guardc := BLt id_exp mem_sz in
-  BAnd tc guardc. 
+  BAnd tc guardc.
 Eval compute in (compose_load_store_guard TNum <{ AId "X0"%string }> [TNum ; TPtr; TNum ]).
 
 Definition transform_load_store_inst (c : rctx) (mem : tmem) (acc : list inst) (i : inst) : M (bool * list inst) :=
@@ -507,13 +503,13 @@ Definition transform_load_store_inst (c : rctx) (mem : tmem) (acc : list inst) (
 Definition split_and_merge (c : rctx) (mem : tmem) (i : inst) (acc : list inst) : M (list inst) :=
   tr <- transform_load_store_inst c mem acc i;;
   let '(is_split, new_insts) := tr in
-  (* If we split the block in two because of "load"/"store", then all previous instructions *)
-  (* get saved in the new block. New ones stay, and the "merge" lnk gets updated. *)
+
+
   if is_split then
     ret new_insts
-  (* If we don't split, than we concat new instructions to previous instructions and last "merge" link stays the same *)
+
   else
-  (* NOTE: We are folding from the right, so new instructions are appended to the beginning of current block *)
+
     ret (new_insts ++ acc).
 
 Definition transform_load_store_blk (c : rctx) (mem : tmem) (nblk : list inst * bool): M (list inst * bool) :=
@@ -525,10 +521,7 @@ Definition transform_load_store_prog (c : rctx) (mem : tmem) (p : prog) :=
   let '(p', newp) := mapM (transform_load_store_blk c mem) p (Datatypes.length p) in
   (p' ++ newp).
 
-(* Example transform := transform_load_store_prog [TPtr; TNum; TPtr]%list [(<{{ i[ ctarget; X := 0; Y <- load[X]; store[Y] <- X] }}>, true)]. 
-Eval compute in transform.
-Eval compute in (Datatypes.length transform).
-Eval compute in (nth_error transform 3). *)
+
 
 Definition gen_call_wt (c: rctx) (pst: list nat) : G inst :=
   e <- gen_exp_ptr_wt 1 c pst;;
@@ -541,7 +534,7 @@ Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
                         (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
                         (gen_call : rctx -> list nat -> G inst)
                         (c: rctx) (tm: tmem) (sz:nat) (pl: nat) (pst: list nat) : G inst :=
-  let insts := 
+  let insts :=
      [ (1, ret ISkip);
        (1, ret IRet);
        (sz, t <- arbitrary;; gen_asgn t c pst);
@@ -551,10 +544,10 @@ Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
   let non_proc_labels := list_minus (seq 0 pl) (proc_hd pst) in
   match non_proc_labels with
   | nil => freq_ (ret ISkip) insts
-  | hd :: _ => freq_ (ret ISkip) (insts ++ [ (2, gen_branch c pl pst hd)(* ; (sz, gen_jump pl pst hd) *)])
+  | hd :: _ => freq_ (ret ISkip) (insts ++ [ (2, gen_branch c pl pst hd) ])
   end.
 
-(* redundant functions *)
+
 Definition gen_nonterm_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
                           (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
                           (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
@@ -568,7 +561,7 @@ Definition gen_nonterm_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
 
 Definition _gen_term_wt (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
                       (gen_jump : nat -> list nat -> nat -> G inst)
-                      (c: rctx) (tm: tmem) (* (sz:nat) *) (pl: nat) (pst: list nat) : G inst :=
+                      (c: rctx) (tm: tmem)   (pl: nat) (pst: list nat) : G inst :=
   let non_proc_labels := list_minus (seq 0 pl) (proc_hd pst) in
   match non_proc_labels with
   | nil => ret IRet
@@ -618,7 +611,7 @@ Fixpoint _gen_proc_with_term_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: lis
 
 Definition gen_proc_with_term_wt (c: rctx) (tm: tmem) (fsz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match fsz with
-  | O => ret [] (* unreachable *)
+  | O => ret []
   | S fsz' => n <- choose (1, max 1 bsz);;
              blk <- gen_blk_with_term_wt c tm n pl pst;;
              rest <- _gen_proc_with_term_wt c tm fsz' bsz pl pst;;
@@ -643,9 +636,7 @@ Definition gen_prog_with_term_wt_example (pl: nat) :=
 Definition prog_basic_block_checker (p: prog) : bool :=
   forallb (fun bp => (basic_block_checker (fst bp))) p.
 
-(* Similarly to "_gen_proc_wf", we generate a procedure with all expressions well-typed (with respect to
-  statuc register context "c : rctx"). Here, "fsz" is the number of blocks in procedure, "bsz" is the
-  number of instructions in the block, and "pl" is the program length. *)
+
 Fixpoint _gen_proc_wt (c: rctx) (tm: tmem) (psz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match psz with
   | O => ret []
@@ -657,7 +648,7 @@ Fixpoint _gen_proc_wt (c: rctx) (tm: tmem) (psz bsz pl: nat) (pst: list nat) : G
 
 Definition gen_proc_wt (c: rctx) (tm: tmem) (psz bsz pl: nat) (pst: list nat) : G (list (list inst * bool)) :=
   match psz with
-  | O => ret [] (* unreachable *)
+  | O => ret []
   | S psz' => n <- choose (1, max 1 bsz);;
              blk <- gen_blk_wt c tm n pl pst;;
              rest <- _gen_proc_wt c tm psz' bsz pl pst;;
@@ -693,8 +684,7 @@ Definition gen_prog_wt' (c : rctx) (pst : list nat) (bsz pl : nat) :=
   tm <- arbitrary;;
   _gen_prog_wt c tm bsz pl pst pst.
 
-(* To evaluate our generator, we proceed by creating a predicate, which checks kind of type checks the
-  program. *)
+
 
 Fixpoint ty_exp (c: rctx) (e: exp) : option ty :=
   match e with
@@ -721,8 +711,7 @@ Fixpoint ty_exp (c: rctx) (e: exp) : option ty :=
                      end
   end.
 
-(* The "ty_inst" predicate checks if the instruction "i" in the program "p" is well-typed with respect to
-  register context "c" and a typed memory "tm". *)
+
 Fixpoint ty_inst (c: rctx) (tm: tmem) (p: prog) (i: inst) : bool :=
   match i with
   | ISkip | ICTarget | IRet => true
@@ -735,7 +724,7 @@ Fixpoint ty_inst (c: rctx) (tm: tmem) (p: prog) (i: inst) : bool :=
                   | _ => false
                   end
   | IJump l => wf_label p false l
-  (* let's trust generator. *)
+
   | ILoad x e => match e with
                 | ANum n =>
                     match nth_error tm n with
@@ -780,9 +769,9 @@ Definition gen_prog_ty_ctx_wt (bsz pl: nat) : G (rctx * tmem * prog) :=
   p <- _gen_prog_wt c tm bsz pl pst pst;;
   ret (c, tm, p).
 
-(** Relative Security *)
 
-(* Taint Tracker for input pairs *)
+
+
 
 Definition join (l1 l2 : label) : label := l1 && l2.
 
@@ -820,9 +809,9 @@ Definition vars_prog (p: prog) : list string :=
 Definition label_of_exp (P:pub_vars) (e:exp) : label :=
   List.fold_left (fun l a => join l (P ! a)) (vars_exp e) public.
 
-(* Copied from TestingFlexSLH.v *)
 
-(** Some generators *)
+
+
 
 Definition gen_prog_ty_ctx_wt' (bsz pl: nat) : G (rctx * tmem * list nat * prog) :=
   c <- arbitrary;;
@@ -845,7 +834,7 @@ Definition gen_wt_mem (tm: tmem) (pst: list nat) : G mem :=
   r <- gen_binds;;
   ret (snd (split r)).
 
-(** Some common definitions *)
+
 
 Definition all_possible_vars : list string := (["X0"%string; "X1"%string; "X2"%string; "X3"%string; "X4"%string; "X5"%string]).
 
@@ -861,13 +850,13 @@ Fixpoint _tms_to_pm (tms: list nat) (len: nat) (cur: nat) : list label :=
   | S len' => member cur tms :: _tms_to_pm tms len' (S cur)
   end.
 
-(* Calculate public memory from taint memory *)
+
 Definition tms_to_pm (len: nat) (tms: list nat) : list label :=
   _tms_to_pm tms len 0.
 
 Compute (tms_to_pm 8 [3; 4; 5]).
 
-(* well-type checkers *)
+
 Definition wt_valb (v: val) (t: ty) : bool :=
   match v, t with
   | N _, TNum | FP _, TPtr => true
@@ -883,7 +872,7 @@ Fixpoint _gen_pub_mem_equiv_same_ty (P : list label) (m: list val) : G (list val
   let f := fun v => match v with
                  | N _ => n <- arbitrary;; ret (N n)
                  | FP _ => l <- arbitrary;; ret (FP l)
-                 | UV => ret UV (* shouldn't happen *)
+                 | UV => ret UV
                  end in
   match P, m with
   | [], [] => ret []
@@ -891,7 +880,7 @@ Fixpoint _gen_pub_mem_equiv_same_ty (P : list label) (m: list val) : G (list val
       hd <- (if hdp then ret hdm else f hdm);;
       tl <-_gen_pub_mem_equiv_same_ty tlp tlm;;
       ret (hd::tl)
-  | _, _ => ret [] (* unreachable *)
+  | _, _ => ret []
   end.
 
 Fixpoint gen_pub_mem_equiv_same_ty (P : list label) (m: list val) : G (list val) :=
@@ -903,7 +892,7 @@ Definition m_wtb (m: mem) (tm: tmem) : bool :=
   let mtm := combine m tm in
   forallb (fun '(v, t) => wt_valb v t) mtm.
 
-(* check 2: no observation -> no leaked *)
+
 
 Definition gen_inst_no_obs (pl: nat) (pst: list nat) : G inst :=
   let jlb := (list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
@@ -948,15 +937,15 @@ Fixpoint _gen_prog_no_obs (bsz pl: nat) (pst pst': list nat) : G (list (list ins
   end.
 
 Definition gen_no_obs_prog : G prog :=
-  pl <- choose(2, 6);; (* Generate small but non-trivial programs *)
+  pl <- choose(2, 6);;
   pst <- gen_partition pl;;
-  let bsz := 3 in (* Max instructions per block *)
+  let bsz := 3 in
   _gen_prog_no_obs bsz pl pst pst.
 
 Definition empty_mem : mem := [].
 
 Definition empty_rs : reg := t_empty (FP 0).
 
-(** Tests for Speculative Execution *)
+
 
 Definition spec_rs (rs: reg) := (callee !-> (FP 0); (msf !-> (N 0); rs)).

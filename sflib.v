@@ -115,19 +115,19 @@ Hint Unfold not iff id : core.
 
 Export ListNotations.
 
-(* Notation "~ x" := (forall (FH : x), False) : type_scope. *)
 
-(* Function composition *)
+
+
 Notation "f <*> g" := (compose f g) (at level 49, left associativity).
 
-(* ************************************************************************** *)
-(** * Coersion of [bool] into [Prop] *)
-(* ************************************************************************** *)
 
-(** Coersion of bools into Prop *)
+
+
+
+
 Coercion is_true : bool >-> Sortclass.
 
-(** Hints for auto *)
+
 Lemma sflib__true_is_true : true.
 Proof. reflexivity. Qed.
 
@@ -142,15 +142,15 @@ Proof. intros [] []; try discriminate; auto. Qed.
 
 Hint Resolve sflib__true_is_true sflib__not_false_is_true : core.
 
-(* ************************************************************************** *)
-(** * Basic automation tactics *)
-(* ************************************************************************** *)
 
-(** Set up for basic simplification *)
+
+
+
+
 
 Create HintDb sflib discriminated.
 
-(** Adaptation of the ss-reflect "[done]" tactic. *)
+
 
 Ltac sflib__basic_done :=
   solve [trivial with sflib | apply sym_equal; trivial | discriminate | contradiction].
@@ -163,7 +163,7 @@ Ltac done := unfold not in *; trivial with sflib; hnf; intros;
          try sflib__basic_done; split; sflib__basic_done
     | match goal with H : _ -> False |- _ => solve [case H; trivial] end].
 
-(** A variant of the ssr "done" tactic that performs "eassumption". *)
+
 
 Ltac edone := try eassumption; trivial; hnf; intros;
   solve [try eassumption; try sflib__basic_done; split;
@@ -203,7 +203,7 @@ Ltac sflib__clarify1 :=
   | [H : ?f _ _ _ _ _ _ _ = ?f _ _ _ _ _ _ _ |- _] => sflib__complaining_inj f H
   end); try done.
 
-(** Perform injections & discriminations on all hypotheses *)
+
 
 Ltac clarify :=
   sflib__clarify1;
@@ -212,9 +212,9 @@ Ltac clarify :=
     | H1 : ?x = Some _, H2 : ?x = Some _ |- _ => rewrite H2 in H1; sflib__clarify1
   end.
 
-(** Kill simple goals that require up to two econstructor calls. *)
 
-(* from CompCert-2.4/lib/Coqlib.v *)
+
+
 Ltac inv H := inversion H; clear H; subst.
 
 Ltac hinv x := move x at bottom; inversion x; clarify.
@@ -250,9 +250,9 @@ Tactic Notation "case_eq" constr(x) "as" simple_intropattern(H) :=
   destruct x as [] eqn : H; try done.
 
 
-(* ************************************************************************** *)
-(** * Basic simplication tactics *)
-(* ************************************************************************** *)
+
+
+
 
 Ltac sflib__clarsimp1 :=
   clarify; (autorewrite with sflib in * ); try done;
@@ -267,13 +267,13 @@ Ltac clarsimp := intros; simpl in *; sflib__clarsimp1.
 
 Ltac autos   := clarsimp; auto with sflib.
 
-(* hdesH, hdes : more general des *)
+
 
 Definition  NW A (P : () -> A) : A := P ().
 
 Notation "<< x : t >>" := (NW (fun x => (t):Prop)) (at level 80, x name, no associativity).
-Notation "<< t >>" := (NW (fun _ => t)) (at level 79, no associativity, only printing). 
-Notation "<< t >>" := (NW (fun _ => (t):Prop)) (at level 79, no associativity, only printing). 
+Notation "<< t >>" := (NW (fun _ => t)) (at level 79, no associativity, only printing).
+Notation "<< t >>" := (NW (fun _ => (t):Prop)) (at level 79, no associativity, only printing).
 
 Ltac unnw := unfold NW in *.
 Ltac rednw := red; unnw.
@@ -347,12 +347,12 @@ Ltac nbdes1 :=
       destruct H as [x' y'];
       match p with | NW _ => unfold NW at 1 in x'; red in y' | _ => idtac end;
       match q with | NW _ => unfold NW at 1 in y'; red in x' | _ => idtac end
-    (* | H : ?p \/ ?q |- _ => *)
-    (*   let x' := match p with | NW (fun z => _) => fresh z | _ => H end in *)
-    (*   let y' := match q with | NW (fun z => _) => fresh z | _ => H end in *)
-    (*   destruct H as [x' | y']; *)
-    (*   [ match p with | NW _ => red in x' | _ => idtac end *)
-    (*   | match q with | NW _ => red in y' | _ => idtac end] *)
+
+
+
+
+
+
   end.
 
 Ltac nbdes := hrepeat do 1 nbdes1.
@@ -417,21 +417,7 @@ Ltac hdesHP H P :=
 
 Ltac hdesH H := let P := type of H in hdesHP H P; unfold _HID_ in *.
 
-(*
-(* It works, but too slows *)
-Ltac hdesF P :=
-  match P with
-  | fun _ => _ /\ _ => idtac
-  | fun _ => _ <-> _ => idtac
-  | fun x => forall y : @?ty x, @?f x y =>
-    let P' := eval cbv beta in (fun p : sigT ty => f (projT1 p) (projT2 p)) in
-      hdesF P'
-  end.
 
-Ltac hdes :=
-  (hrepeat do 1 match goal with | H : ?P |- _ => hdesF (fun _ : unit => P)); hdesHP H P end;
-  unfold _HID_ in *.
-*)
 
 Ltac hdesF P :=
   match P with | _ /\ _ => idtac | _ <-> _ => idtac | forall _, _ =>
@@ -457,10 +443,10 @@ Ltac hdesF P :=
   match P with | forall _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _, _ /\ _ => idtac | forall _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _, _ <-> _ => idtac
   end end end end end end end end end end end end end end end end end end end end end.
 
-(** Fail if hypothesis [H] doesn't exist. *)
+
 Ltac check_hyp H := match H with _ => idtac end.
 
-(** Fail if hypothesis [H1] is not [H2]. *)
+
 Ltac check_equal H1 H2 := match H1 with H2 => idtac end.
 
 Ltac hdes :=
@@ -480,23 +466,23 @@ Tactic Notation "rrdes" ident(a) ident(b) ident(c) :=
 Tactic Notation "rrdes" ident(a) ident(b) ident(c) ident(d) :=
   (rrdes a b; rrdes c d).
 
-(** Destruct the condition of an [if] expression occuring in the goal. *)
+
 Ltac des_if :=
   match goal with
     | [ |- context[if ?X then _ else _] ] => destruct X
   end.
-(* Ltac desE_if := *)
-(*   match goal with *)
-(*     | [ |- context[if ?X then _ else _] ] => let E := fresh X in destruct X eqn:E *)
-(*   end. *)
 
-(** Destruct the condition of an [if] expression occuring in the given hypothesis. *)
+
+
+
+
+
 Ltac des_ifH H :=
   match goal with
     | [ H' : context[if ?X then _ else _] |- _ ] => check_equal H' H; destruct X
   end.
 
-(* TODO tactics such as these should always do clean at the end to remove junk like [H : x = x] *)
+
 Ltac des_ifs :=
  clarify;
  hrepeat do 1
@@ -516,13 +502,13 @@ Ltac des_ifs :=
 Ltac desf := clarify; des; des_ifs.
 Ltac isd := ins; desf.
 
-(** Create a copy of hypothesis [H]. *)
+
 Tactic Notation "dup" hyp(H) :=
   let H' := fresh H in assert (H' := H).
 
-(* (** Call tactic [tac] on a copy of [H]. *) *)
-(* Tactic Notation "dup" hyp(H) tactic(tac) := *)
-(*   let H' := fresh H in assert (H' := H); tac H'. *)
+
+
+
 
 Ltac clarassoc := clarsimp; autorewrite with sflib sflibA in *; try done.
 
@@ -543,11 +529,11 @@ Ltac hacksimp :=
    | _ => solve [f_equal; clarsimp]
    end.
 
-(* ************************************************************************** *)
-(** * Delineating cases in proofs *)
-(* ************************************************************************** *)
 
-(** Named case tactics (taken from Libtactics) *)
+
+
+
+
 
 Tactic Notation "assert_eq" ident(x) constr(v) :=
   let H := fresh in
@@ -566,7 +552,7 @@ Ltac SSCase name := Case_aux subsubcase name.
 Ltac SSSCase name := Case_aux subsubsubcase name.
 Ltac SSSSCase name := Case_aux subsubsubsubcase name.
 
-(** Lightweight case tactics (without names) *)
+
 
 Tactic Notation "-" tactic(c) :=
   first [
@@ -588,11 +574,11 @@ Tactic Notation ":" tactic(c) :=
     assert (WithinCaseC := True); move WithinCaseC at top
   | fail 1 "because we are working on a different case." ]; c.
 
-(* ************************************************************************** *)
-(** * Exploiting a hypothesis *)
-(* ************************************************************************** *)
 
-(** Exploit an assumption (adapted from CompCert). *)
+
+
+
+
 
 Tactic Notation "exploit" uconstr(t) :=
     refine ((fun x y => y x) (t _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) _)
@@ -630,7 +616,7 @@ Tactic Notation "exploit" uconstr(t) :=
  || refine ((fun x y => y x) (t _ _) _)
  || refine ((fun x y => y x) (t _) _).
 
-(* When 'exploit x' generates too many sub goals, try 'hexploit x' *)
+
 
 Lemma mp : forall P Q : Type, P -> (P -> Q) -> Q.
 Proof. intuition. Defined.
@@ -641,15 +627,15 @@ Proof. intuition. Qed.
 Ltac hexploit x := eapply mp; [eapply x|].
 Ltac hexploit' x := let H := fresh in set (H := x); clear H; eapply mp; [eapply x|].
 
-(* set_prop N T A performs 'assert (A : P); [|set (N := T A)]' when T is a term of type (P -> _) *)
+
 
 Ltac set_prop N T A :=
   let b := fresh in let ty := type of T in
   match ty with (forall (_:?P), _) => assert (A : P); [|set (N := T A)] end.
 
-(* ************************************************************************** *)
-(** * Induction tactics *)
-(* ************************************************************************** *)
+
+
+
 
 Tactic Notation "induction" "[" ident_list(y) "]" ident(x)  :=
   first [ try (intros until x); revert y; induction x
@@ -659,7 +645,7 @@ Tactic Notation "induction" "[" ident_list(y) "]" ident(x) "[" ident(z) "]"  :=
   first [ try (intros until x); revert y; induction x; destruct z
         | red; try (intros until x); revert y; induction x; destruct z ].
 
-(** Versions with hacksimp *)
+
 
 Tactic Notation "induct" ident(x) := induction x; hacksimp.
 
@@ -740,7 +726,7 @@ Tactic Notation "depdes" ident(a) ident(b) ident(c) ident(d) ident(e) ident(f) i
 
 Tactic Notation "depgen" ident(x) := generalize dependent x.
 
-(* eappleft, eappright *)
+
 
 Ltac eappleft H :=
   let X := fresh "__lem__" in let X1 := fresh "__lem__" in let X2 := fresh "__lem__" in
@@ -752,9 +738,9 @@ Ltac eappright H :=
   assert (X:= H); let P := type of X in hdesHi X P X1 X2;
   eapply X2; clear X1 X2.
 
-(* guard for simpl *)
 
-(* for Coq8.4 *)
+
+
 
 Definition __guard__ A (a : A) : A := a.
 Definition __GUARD__ A (a : A) : A := a.
@@ -800,7 +786,7 @@ Lemma all_conj_dist : forall A (P Q : A -> Prop),
   (forall a, P a /\ Q a) -> (forall a, P a) /\ (forall a, Q a).
 Proof. intros; hdes; eauto. Qed.
 
-(* extensionalities *)
+
 
 Tactic Notation "extensionalities" :=
   hrepeat do 1 let x := fresh in extensionality x.
@@ -817,9 +803,9 @@ Tactic Notation "extensionalities" ident(a) ident(b) ident(c) ident(d) ident(e) 
 Tactic Notation "extensionalities" ident(a) ident(b) ident(c) ident(d) ident(e) ident(f) :=
   (extensionality a; extensionalities b c d e f).
 
-(* short for common tactics *)
 
-(* Tactic Notation "inst" := instantiate. *)
+
+
 Tactic Notation "econs" := econstructor.
 Tactic Notation "econs" int_or_var(x) := econstructor x.
 Tactic Notation "i" := intros.
@@ -834,7 +820,7 @@ Tactic Notation "r" "in" hyp(H) := red in H.
 Tactic Notation "rr" := hrepeat do 1 red.
 Tactic Notation "rr" "in" hyp(H) := hrepeat do 1 red in H.
 
-(* running a tactic selectively on subgoals *)
+
 
 Definition __mark__ A (a : A) : A := a.
 
@@ -850,7 +836,7 @@ Tactic Notation "Mskip" tactic(tac) :=
 Tactic Notation "Mfirst" tactic(main) ";;" tactic(post) :=
    main; (Mdo (post; M)); (Mskip post).
 
-(* revert until *)
+
 
 Ltac on_last_hyp tac :=
   match goal with [ H : _ |- _ ] => first [ tac H | fail 1 ] end.
@@ -883,13 +869,9 @@ Ltac clear_upto H :=
 
 Definition _Evar_sflib_ (A:Type) (x:A) := x.
 
-(* Tactic Notation "hide_evar" int_or_var(n) := let QQ := fresh "QQ" in
-  hget_evar n; intro;
-  lazymatch goal with [ H := ?X |- _] =>
-    set (QQ := X) in *; fold (_Evar_sflib_ X) in QQ; clear H
-  end. *)
 
-(* Ltac hide_evars := hrepeat do 1 (hide_evar 1). *)
+
+
 
 Ltac show_evars := hrepeat do 1 (match goal with [ H := @_Evar_sflib_ _ _ |- _ ] => unfold
  _Evar_sflib_ in H; unfold H in *; clear H end).
@@ -908,13 +890,13 @@ Tactic Notation "greflgen" constr(t) "as" ident(g)  :=
   ; intros ? EQ ?; revert EQ.
 
 Ltac special H :=
-  (* eapply mp; refine (H _). *)
+
   match type of H with
     | ?A -> ?B =>
       let a := fresh in assert (a : A); [|specialize (H a)]
   end.
 
-(** Useful for e.g. [ex @nil]. *)
+
 Ltac ex x := eapply (ex_intro _ (x _)).
 
 Ltac inst_pairs :=
@@ -929,32 +911,32 @@ Ltac inst_pairs :=
     |instantiate (2 := (_, _))
     |instantiate (1 := (_, _))].
 
-(* Problem : unfold fst doesn't always result in a lambda *)
-(* Ltac fold_proj := *)
-(*   try match goal with |- context[fun _ : ?A * ?B => _] => *)
-(*     first [fold (@fst A B) | fold (@snd A B)]; fail *)
-(*   end. *)
-(* Ltac fold_projH H := *)
-(*   match type of H with | context[fun _ : ?A * ?B => _] => *)
-(*     first [fold (@fst A B) in H | fold (@snd A B) in H]; fail *)
-(*   end. *)
-(* Ltac simpl_proj := *)
-(*   unfold fst in *; Hdo fold_projH; fold_proj. *)
 
-(* Lemma simpl_fst : forall A (a : A) B (b : B), *)
-(*   fst (a, b) = a. *)
-(* Proof. *)
-(*   auto. *)
-(* Qed. *)
 
-(* Lemma simpl_snd : forall B (b : B) A (a : A), *)
-(*   snd (a, b) = b. *)
-(* Proof. *)
-(*   auto. *)
-(* Qed. *)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 Ltac simpl_proj :=
-  (* do 5 *) (simpl (fst (_, _)) in *; simpl (snd (_, _)) in * ).
+    (simpl (fst (_, _)) in *; simpl (snd (_, _)) in * ).
 
 Ltac clean :=
   (hrepeat do 1 match goal with
@@ -965,8 +947,7 @@ Ltac clean :=
          change x with y in H; clear H
   end)
   ; simpl_proj.
-  (* without the evar check, clean removes equations such as the following:
-     X : length (getVal ?28711 ?28712 ?28713 ?28714) = S n *)
+
 
 
 Tactic Notation "lhs" tactic(tac) :=
@@ -974,13 +955,7 @@ Tactic Notation "lhs" tactic(tac) :=
     let tmp := fresh in set (tmp := rhs); tac; unfold tmp; clear tmp
   end.
 
-(* Variant of lhs that allows prover to combine lhs/rhs tactics in
- * tacticals. For example:
- * lhs (rewrite blah); rhs (rewrite blah).
- * is allowed. lhs fails because the precedence for the tactic
- * was higher than the ";" and so tac = rewrite blah; rhs (rewrite blah).
- * TODO : Check whether it's safe to override the definition of lhs/rhs.
- *)
+
 Tactic Notation "lhs3" tactic3(tac) :=
   match goal with |- ?op ?lhs ?rhs =>
     let tmp := fresh in set (tmp := rhs); tac; unfold tmp; clear tmp
@@ -991,34 +966,33 @@ Tactic Notation "rhs" tactic(tac) :=
     let tmp := fresh in set (tmp := lhs); tac; unfold tmp; clear tmp
   end.
 
-(* See the comment for lhs3. *)
+
 Tactic Notation "rhs3" tactic3(tac) :=
   match goal with |- ?op ?lhs ?rhs =>
     let tmp := fresh in set (tmp := lhs); tac; unfold tmp; clear tmp
   end.
 
 
-(* TODO generalize to hyps *)
 
 
-(** Execute a tactic only if the goal contains no evars. *)
+
+
 Tactic Notation "safe" tactic(tac) :=
   try match goal with |- ?G => try (has_evar G; fail 2); tac end.
 
 
-(** Rename a hypothesis to a fresh name. *)
+
 Ltac ren H :=
   let X := fresh H in rename H into X.
 
-(* (** Instantiate consecutive evars. *) *)
-(* Tactic Notation "insts" constr(terms) := *)
-(*   Hdo (fun x => instantiate (1 := x)) terms. *)
-(* (* TODO this is not very useful after all *) *)
 
 
 
-(** Automation using econstructor.
-    What it does is clear from the definition below. *)
+
+
+
+
+
 Tactic Notation "econsby" tactic(tac) :=
   first [econstructor  1; (sfby tac)
         |econstructor  2; (sfby tac)
@@ -1106,7 +1080,7 @@ Ltac has_inside_strict A B :=
 Ltac is_inside_others_body TARGET :=
   tryif (hrepeat do 1 multimatch goal with
                 | [ |- context[?f ?x] ] =>
-                  (* idtac f; idtac x; *)
+
                   tryif (has_inside_strict x TARGET)
                   then fail 2
                   else fail
@@ -1124,19 +1098,19 @@ Ltac on_leftest_function TAC :=
       tryif (is_inside_others_body f)
       then fail
       else TAC f
-  (* else TAC constr:(f) *)
-  (* TODO : What is the difference? *)
+
+
   end
 .
-(* TODO : more cannonical way to get leftest function? *)
-(* I tried match reverse but it was not good *)
-(* TODO : I want to define "get_leftest_function" *)
-(* TODO : try tactic notation ? *)
+
+
+
+
 
 Ltac leftest_rpapply H :=
   on_leftest_function ltac:(fun f =>
      (idtac f; first
-                 (* TODO : why rewrite "with" doesn't work? *)
+
                  [ erewrite (f_equal8 f)
                  | erewrite (f_equal7 f)
                  | erewrite (f_equal6 f)
@@ -1155,7 +1129,7 @@ Ltac is_type x :=
      match type of x with
      | Type => idtac
      | Set => idtac
-     | Prop => idtac (* TODO : needed? *)
+     | Prop => idtac
      | _ => fail
      end.
 
@@ -1182,7 +1156,7 @@ Ltac on_leftest_function_with_type TAC :=
 Ltac rpapply H :=
   on_leftest_function_with_type ltac:(fun f =>
      (idtac f; first
-                 (* TODO : why rewrite "with" doesn't work? *)
+
                  [ erewrite (f_equal8 f)
                  | erewrite (f_equal7 f)
                  | erewrite (f_equal6 f)
@@ -1195,7 +1169,7 @@ Ltac rpapply H :=
 
 
 
-(* it may run infinite loop *)
+
 Ltac all TAC :=
   (hrepeat do 1 multimatch goal with
          | H : _ |- _ => TAC H
@@ -1220,7 +1194,7 @@ Ltac hide_goal :=
   match goal with
   | [ |- ?G ] => let name := fresh "HIDDEN_GOAL" in
                  set (name := G); replace G with name by reflexivity
-  (* ; move name at top <---- it breaks "unhide (hide X) = X". User may do it manually *)
+
   end.
 Ltac unhide_goal :=
   match goal with
@@ -1249,15 +1223,15 @@ Proof.
   clear_unused.
 Abort.
 
-(* TODO : Currently I use "is_local_definition" filter, but it may replaced with checking if it is Prop *)
+
 Ltac clear_tautology :=
   hrepeat do 1 multimatch goal with
          | [H : ?A = ?B, H2 : ?B = ?A |- _] => clear H2
-         (* | [H : True |- _] => clear H *) (* clear_universal_truth takes care of this now *)
+
          | [H : ?X, H2 : ?X |- _] =>
            negate ltac:(is_local_definition H2);
            clear H2
-         (* | [H : ?A = ?A |- _] => clear H *) (* clear_universal_truth takes care of this now *)
+
          end
 .
 
@@ -1269,7 +1243,7 @@ Ltac clear_reducible_truth :=
            | Prop =>
              let temp := fresh "temp" in
              tryif assert(temp : P) by (clear H; smart_tac)
-             (* check if it is reducible from other premises *)
+
              then clear temp; clear H
              else idtac
            | _ => idtac
@@ -1285,7 +1259,7 @@ Ltac clear_universal_truth :=
            | Prop =>
              let temp := fresh "temp" in
              tryif assert(temp : P) by (all clear; smart_tac)
-             (* check if it is reducible without any premise *)
+
              then clear temp; clear H
              else idtac
            | _ => idtac
@@ -1341,15 +1315,11 @@ Ltac des_safe_aux TAC :=
 Tactic Notation "des_safe" := des_safe_aux clarify.
 Tactic Notation "des_safe" tactic(TAC) := des_safe_aux TAC.
 
-(* Copied from SoftwareFoundations - LibTactics.v *)
-(* ---------------------------------------------------------------------- *)
-(** ** Generalization *)
 
-(** [gen X1 .. XN] is a shorthand for calling [generalize dependent]
-    successively on variables [XN]...[X1]. Note that the variables
-    are generalized in reverse order, following the convention of
-    the [generalize] tactic : it means that [X1] will be the first
-    quantified variable in the resulting goal. *)
+
+
+
+
 
 Tactic Notation "gen" ident(X1) :=
   generalize dependent X1.
@@ -1377,12 +1347,12 @@ Tactic Notation "gen" ident(X1) ident(X2) ident(X3) ident(X4) ident(X5)
  ident(X6) ident(X7) ident(X8) ident(X9) ident(X10) :=
   gen X10; gen X9; gen X8; gen X7; gen X6; gen X5; gen X4; gen X3; gen X2; gen X1.
 
-(* ---------------------------------------------------------------------- *)
+
 
 Ltac exists_prop PROP :=
   tryif
     (hrepeat do 1 multimatch goal with
-            | [H : PROP |- _ ] => (* idtac "Found!"; idtac H; *) fail 2
+            | [H : PROP |- _ ] =>   fail 2
             end)
   then fail
   else idtac
@@ -1411,8 +1381,8 @@ Ltac propagate_eq :=
           end)
 .
 
-(* get equality's transitive closure *)
-(* TODO : it checks equality too naive way; "(0, 1).fst != 0" here. *)
+
+
 Ltac eq_closure_tac :=
   (hrepeat do 1 (propagate_eq; clarify)); clear_tac
 .

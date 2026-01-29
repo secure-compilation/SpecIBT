@@ -1,4 +1,4 @@
-(** * Define MiniCET *)
+
 
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String String.
@@ -25,7 +25,7 @@ Require Import Stdlib.Classes.EquivDec.
 Declare Custom Entry com.
 Declare Scope com_scope.
 
-(** The factoring of expressions is taken from the latest SpecCT chapter *)
+
 
 Inductive binop : Type :=
   | BinPlus
@@ -38,8 +38,8 @@ Inductive binop : Type :=
 
 Variant val : Type :=
   | N (n:nat)
-  | FP (l:nat) (* <- NEW: function pointer to procedure at label [l] *)
-  | UV. (* undefined value *)
+  | FP (l:nat)
+  | UV.
 
 Inductive ty : Type := | TNum | TPtr.
 
@@ -62,9 +62,9 @@ Inductive exp : Type :=
   | AId (x : string)
   | ABin (o : binop) (e1 e2 : exp)
   | ACTIf (b : exp) (e1 e2 : exp)
-  | FPtr (l : nat). (* <- NEW: function pointer to procedure at label [l] *)
+  | FPtr (l : nat).
 
-(** We encode all the previous arithmetic and boolean operations: *)
+
 
 Definition APlus := ABin BinPlus.
 Definition AMinus := ABin BinMinus.
@@ -86,8 +86,7 @@ Hint Unfold APlus AMinus AMult : core.
 Hint Unfold BTrue BFalse : core.
 Hint Unfold BAnd BImpl BNot BOr BEq BNeq BLe BGt BLt : core.
 
-(** The notations we use for expressions are the same as in Imp,
-    except the notation for [be?e1:e2] and [&l] which are new: *)
+
 Definition U : string := "U".
 Definition V : string := "V".
 Definition W : string := "W".
@@ -141,10 +140,9 @@ Notation "f x .. y" := (.. (f x) .. y)
 
 Open Scope com_scope.
 
-(** Now to the first interesting part, values instead of just numbers: *)
 
-(** Since type mismatches are now possible, evaluation of expressions can now
-    fail, so the [eval] function is in the option monad. *)
+
+
 
 Definition to_nat (v:val) : option nat :=
   match v with
@@ -164,10 +162,9 @@ Definition eval_binop (o:binop) (v1 v2 : val) : val :=
   | FP l1, FP l2 =>
       match o with
       | BinEq => N (bool_to_nat (l1 =? l2))
-      | _ => UV (* Function pointers can only be tested for equality *)
+      | _ => UV
       end
-  | _, _ => UV (* Type error; treating UV as a 3rd type; reasonable?
-                  - alternative: make && and || short-circuiting *)
+  | _, _ => UV
   end.
 
 Inductive inst : Type :=
@@ -214,8 +211,7 @@ Notation "'ret'"  :=
 
 Definition prog := list (list inst * bool).
 
-(** The inner [list inst] is a basic block, and the [bool] is telling us if the
-    basic block is a procedure start. *)
+
 
 Notation "'i[' x ; .. ; y ']'" := (cons x .. (cons y nil) ..)
   (in custom com at level 89, x custom com at level 99,
@@ -235,7 +231,7 @@ Check <{{ branch 42 to 42 }}>.
 Check <{{X<-load[8]}}>.
 Check <{{store[X + Y]<- (Y + 42)}}>.
 
-Definition cptr : Type := nat * nat. (* label(=(basic) block identifier) and offset *)
+Definition cptr : Type := nat * nat.
 
 Definition mem := list val.
 
@@ -301,7 +297,7 @@ Definition if_some {a:Type} (o:option a) (f:a->bool) : bool :=
   | None => true
   end.
 
-(* Writer monad *)
+
 Definition M (A: Type) := nat -> A * prog.
 
 Definition uslh_ret {A: Type} (x: A) : M A :=
@@ -334,8 +330,8 @@ Proof.
     destruct (f a x) eqn:X. ss.
   - extensionalities x. ss.
     unfold uslh_bind.
-    destruct (aM x) eqn:X; ss. 
-    unfold app. rewrite rev_append_correct. 
+    destruct (aM x) eqn:X; ss.
+    unfold app. rewrite rev_append_correct.
     rewrite app_nil_r. unfold rev. rewrite rev_append_correct.
     rewrite app_nil_r. rewrite rev_involutive. reflexivity.
   - extensionalities x. ss.
@@ -347,8 +343,8 @@ Proof.
         unfold rev. rewrite rev_append_correct. rewrite app_nil_r.
         rewrite rev_involutive. rewrite length_app. rewrite add_assoc. reflexivity.
       }
-    des_ifs. unfold app, rev. do 7 rewrite rev_append_correct. 
-    do 3 rewrite app_nil_r. do 3 rewrite rev_involutive. rewrite app_assoc. 
+    des_ifs. unfold app, rev. do 7 rewrite rev_append_correct.
+    do 3 rewrite app_nil_r. do 3 rewrite rev_involutive. rewrite app_assoc.
     reflexivity.
 Qed.
 
@@ -465,7 +461,7 @@ Proof.
     eapply IHl in X'. rewrite X'. clarify.
 Qed.
 
-(* SOONER: Try to use this to define our new uslh *)
+
 
 Definition uslh_inst (i: inst) : M (list inst) :=
   match i with
@@ -477,7 +473,7 @@ Definition uslh_inst (i: inst) : M (list inst) :=
       let e' := <{ (msf=1) ? 0 : e }> in
       ret [<{{store[e'] <- e1}}>]
   | <{{branch e to l}}> =>
-      let e' := <{ (msf=1) ? 0 : e }> in (* if misspeculating always leak False *)
+      let e' := <{ (msf=1) ? 0 : e }> in
       l' <- add_block_M <{{ i[(msf := ((~e') ? 1 : msf)); jump l] }}>;;
       ret <{{ i[branch e' to l'; (msf := (e' ? 1 : msf))] }}>
   | <{{call e}}> =>
@@ -518,12 +514,12 @@ Definition group_by_proc (p: prog) : list prog :=
   group_by_proc_impl p [].
 
 Definition sample_prog_for_grouping : prog := [
-  (nil, true);  (* Proc 1, Blk 0 *)
-  (nil, false); (* Proc 1, Blk 1 *)
-  (nil, false); (* Proc 1, Blk 2 *)
-  (nil, true);  (* Proc 2, Blk 3 *)
-  (nil, false); (* Proc 2, Blk 4 *)
-  (nil, true)   (* Proc 3, Blk 5 *)
+  (nil, true);
+  (nil, false);
+  (nil, false);
+  (nil, true);
+  (nil, false);
+  (nil, true)
 ].
 
 Compute (group_by_proc sample_prog_for_grouping).
@@ -536,13 +532,13 @@ Definition pst_calc (p: prog) : list nat := (map proc_map (group_by_proc p)).
 
 Compute (pst_calc sample_prog_for_grouping).
 
-(* SOONER: Run some unit tests *)
 
-(* Static checks for both source and target programs *)
+
+
 
 Definition wf_label (p:prog) (is_proc:bool) (l:nat) : bool :=
   match nth_error p l with
-  | Some (_,b) => Bool.eqb is_proc b (* also know l <? List.length p *)
+  | Some (_,b) => Bool.eqb is_proc b
   | None => false
   end.
 
@@ -568,7 +564,7 @@ Definition wf_blk (p:prog) (blb : list inst * bool) : bool :=
 Definition wf (p:prog) : bool :=
   forallb (wf_blk p) p.
 
-(* Additional wf definitions *)
+
 
 Definition nonempty_block (blk: list inst * bool) : bool :=
   negb (seq.nilp (fst blk)).
@@ -578,7 +574,7 @@ Definition nonempty_block_prog (p: prog) : bool :=
 
 Definition block_terminator (blk: list inst * bool) : bool :=
   match (rev (fst blk)) with
-  | [] => true (* unreachable *)
+  | [] => true
   | ihd::itl =>
       match ihd with
       | IRet | IJump _ => true
@@ -592,7 +588,7 @@ Definition block_terminator_prog (p: prog) : bool :=
 Definition wf_direction (pc: cptr) (p: prog) (d: direction) : bool :=
   match d, p[[pc]] with
   | DBranch b, Some (IBranch e l) => is_some p[[(l, 0)]]
-  (* We can ignore the fall-through case. See no_branch_end_prog *)
+
   | DCall pc', Some (ICall e) => is_some p[[pc']]
   | _, _ =>  false
   end.
@@ -600,12 +596,11 @@ Definition wf_direction (pc: cptr) (p: prog) (d: direction) : bool :=
 Definition wf_dirs (pc: cptr) (p: prog) (ds: dirs) : bool :=
   forallb (wf_direction pc p) ds.
 
-(* PROPERTY: uslh produces well-formed programs from well-formed programs
-   probably need generator for well-formed programs *)
 
-(* May (not) need separate check for no ctarget, only for source *)
 
-(* Some Auxiliary functions *)
+
+
+
 
 Definition nonempty_mem (m : mem) :Prop := (0 < Datatypes.length m)%nat.
 
@@ -680,18 +675,18 @@ Notation "x '!->' v ';' m" := (M.t_update m x v)
 Notation "m '!' x" := (M.t_apply m x)
     (at level 20, left associativity).
 
-(* Definition prog := prog. *)
+
 Definition reg := M.t val.
 Definition reg_init := M.init UV.
 
-(* before uslh *)
+
 Definition no_callee_msf (r: reg) : Prop :=
   match (r ! msf), (r ! callee) with
   | UV, UV => True
   | _, _ => False
   end.
 
-Definition cfg : Type := ((cptr*reg)*mem)*list cptr. (* (pc, register set, memory, stack frame) *)
+Definition cfg : Type := ((cptr*reg)*mem)*list cptr.
 Definition spec_cfg : Type := ((cfg * bool) * bool).
 Definition ideal_cfg : Type := cfg * bool.
 
@@ -701,23 +696,23 @@ Fixpoint eval (st : reg) (e: exp) : val :=
   | AId x => M.t_apply st x
   | ABin b e1 e2 => eval_binop b (eval st e1) (eval st e2)
   | <{b ? e1 : e2}> =>
-      match to_nat (eval st b) with (* Can't branch on function pointers *)
+      match to_nat (eval st b) with
       | Some n1 => if not_zero n1 then eval st e1 else eval st e2
       | None => UV
       end
   | <{&l}> => FP l
   end.
 
-(* ret with empty stackframe *)
+
 Definition final_spec_cfg (p: prog) (sc: spec_cfg) : bool :=
   let '(c, ct, ms) := sc in
   let '(pc, rs, m, stk) := c in
   match fetch p pc with
   | Some i => match i with
-             | IRet => if seq.nilp stk then true else false (* Normal Termination *)
+             | IRet => if seq.nilp stk then true else false
              | ICTarget => if ct
-                          then false (* Call target block: Unreachable *)
-                          else true (* TODO: Do we need to distinguish fault and normal termination? *)
+                          then false
+                          else true
              | _ => false
              end
   | None => false

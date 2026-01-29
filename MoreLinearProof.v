@@ -1,4 +1,4 @@
-(* TERSE: HIDEFROMHTML *)
+
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
 From SECF Require Import Utils.
@@ -14,15 +14,14 @@ Require Import ExtLib.Data.Monads.OptionMonad.
 From SECF Require Import Maps MapsFunctor.
 
 Set Default Goal Selector "!".
-(* TERSE: /HIDEFROMHTML *)
 
-(** Statement related with Linearized machine level semantics
-    for giving guidelines for testing. *)
+
+
 
 Module MLCC := MoreLinearCommon(TotalMap).
 Import MLCC.
 
-(** Sequential small-step semantics for Machine *)
+
 
 Reserved Notation
   "p '|-' '<((' c '))>' '-->^' os '<((' ct '))>'"
@@ -78,7 +77,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
   where "p |- <(( c ))> -->^ os <(( ct ))>" :=
       (seq_eval_small_step_inst p c ct os).
 
-(** Sequential multi-step relation *)
+
 
 Reserved Notation
   "p '|-' '<((' c '))>' '-->*^' os '<((' ct '))>'"
@@ -94,7 +93,7 @@ Inductive multi_seq_inst (p : prog) (c : @state cfg) : @state cfg -> obs -> Prop
   where "p |- <(( c ))> -->*^ os <(( ct ))>" :=
       (multi_seq_inst p c ct os).
 
-(** Speculative small-step semantics for Machine *)
+
 
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->m_' ds '^^' os '<((' sct '))>'"
@@ -139,7 +138,7 @@ Inductive spec_eval_small_step (p:prog):
       fetch p (Datatypes.length m) pc = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->m_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
   | SpecSMI_Term : forall pc r m ms,
-      fetch p (Datatypes.length m) pc = Some <{{ ret }}> -> 
+      fetch p (Datatypes.length m) pc = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, []), false, ms) ))> -->m_[]^^[] <(( S_Term ))>
   | SpecSMI_Fault : forall pc r m sk ms i,
       i <> <{{ ctarget }}> ->
@@ -149,7 +148,7 @@ Inductive spec_eval_small_step (p:prog):
   where "p |- <(( sc ))> -->m_ ds ^^ os  <(( sct ))>" :=
     (spec_eval_small_step p sc sct ds os).
 
-(** Speculative multi-step relation *)
+
 
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->m*_' ds '^^' os '^^' n '<((' sct '))>'"
@@ -245,7 +244,7 @@ Proof.
   intros A i n x v.
   generalize dependent n.
   induction i.
-  - intros n l BEQ NTH. destruct l; auto. 
+  - intros n l BEQ NTH. destruct l; auto.
     + rewrite nth_error_nil in NTH; inversion NTH.
     + simpl in *. destruct n.
       * contradiction.
@@ -254,13 +253,13 @@ Proof.
     + rewrite nth_error_nil in NTH. inversion NTH.
     + destruct n eqn:Heqb; auto.
       simpl. apply IHi.
-      * ss. 
-        assert (HL : Datatypes.length (upd n (a :: l) v) > 0). 
+      * ss.
+        assert (HL : Datatypes.length (upd n (a :: l) v) > 0).
         { rewrite upd_length. simpl. lia. }
         rewrite Heqb in HL. ss. lia.
       * ss.
 Qed.
-      
+
 Lemma store_match_mem p len v v' m m' n
   (MEM: match_mem p len m m')
   (INJ: val_inject p len v v') :
@@ -275,7 +274,7 @@ Proof.
   destruct (eq_decidable n i); subst.
   - destruct (nth_error (upd i m' v') i) eqn:Heqb.
     + rewrite nth_error_upd_eq in Heq.
-      -- rewrite nth_error_upd_eq in Heqb. 
+      -- rewrite nth_error_upd_eq in Heqb.
         +++ inv Heq. inv Heqb. assumption.
         +++ exists v2. assumption.
       -- exists v0. assumption.
@@ -299,7 +298,7 @@ Definition match_stk (p: MiniCET.prog) (len: nat) (stk: list cptr) (stk': list n
 Variant match_states (p: MiniCET.prog) (len: nat) : state MCC.spec_cfg -> state spec_cfg -> Prop :=
 | match_states_intro pc r m stk ct ms pc' r' m' stk'
   (PC: p[[pc]] <> None -> pc_inj p len pc = Some pc')
-  (MLEN: len = Datatypes.length m')  
+  (MLEN: len = Datatypes.length m')
   (REG: match_reg p len r r')
   (MEM: match_mem p len m m')
   (STK: match_stk p len stk stk') :
@@ -331,11 +330,11 @@ Definition match_ob (p: MiniCET.prog) (len: nat) (o: MiniCET.observation) (o': o
 Definition match_obs (p: MiniCET.prog) (len: nat) (ds: MiniCET.obs) (ds': obs) : Prop :=
   Forall2 (match_ob p len) ds ds'.
 
-(* wf *)
+
 
 Definition wf_dir (p: prog) (len: nat) (d: direction) : Prop :=
   match d with
-  | DCall pc' => is_some (nth_error p (pc' - len)) && (len <=? pc')%nat (* pc' should place in code area. *)
+  | DCall pc' => is_some (nth_error p (pc' - len)) && (len <=? pc')%nat
   | _ => True
   end.
 
@@ -497,7 +496,7 @@ Lemma match_dirs_unique p len ds1 ds2 dst
   (MATCH2: match_dirs p len ds2 dst):
   ds1 = ds2.
 Proof.
-  ginduction dst; i; inv MATCH1; inv MATCH2; auto.  
+  ginduction dst; i; inv MATCH1; inv MATCH2; auto.
   exploit (match_dir_unique p len x x0); eauto. i. subst.
   exploit (IHdst _ _ l l0); eauto. i. clarify.
 Qed.
@@ -766,8 +765,7 @@ Proof.
   { red. eapply Forall2_app; eauto. }
 Qed.
 
-(* |m1| = |m2| : The shorter data memory can be extended to match the length of the longer one.
-                 The extended portion is initialized with UV. *)
+
 Definition spec_same_obs_machine p pc r1 r2 len m1 m2 stk b : Prop :=
   forall ds n m os1 os2 c1 c2 (WFDS: wf_ds p len ds),
   p |- <(( S_Running (pc, r1, m1, stk, b, false) ))> -->m*_ds^^os1^^n <(( c1 ))> ->
@@ -834,7 +832,7 @@ Qed.
 Definition relative_secure_machine (p:MiniCET.prog) (len:nat) (tp: prog) (trans : MiniCET.prog -> option prog)
   (r1 r2 r1' r2' : reg) (m1 m2 m1' m2' : mem) : Prop :=
   seq_same_obs p (0,0) r1 r2 m1 m2 [] ->
-  (* Function pointers are mapped to integer addresses with respect to the ULSHed program. *)
+
   match_reg_src (uslh_prog p) len r1 r1' false -> match_reg_src (uslh_prog p) len r2 r2' false ->
   match_mem (uslh_prog p) len m1 m1' -> match_mem (uslh_prog p) len m2 m2' ->
   trans (uslh_prog p) = Some tp ->

@@ -18,9 +18,7 @@ From Stdlib Require Import String.
 From SECF Require Import ListMaps MapsFunctor MiniCET Utils TestingSemantics.
 Require Import Stdlib.Classes.EquivDec.
 
-(* For testing relative security we do taint tracking of sequential executions
-   (as a variant of Lucie's interpreter). We use this to track which initial
-   values of variables and arrays affect CT observations. *)
+
 Notation t_apply := ListTotalMap.t_apply.
 
 Definition reg_id := string.
@@ -54,10 +52,7 @@ Definition tstk := list tcptr.
 Definition tcfg := (tcptr * treg * tamem * tstk)%type.
 Definition input_st : Type := ST.cfg * tcfg * taint.
 
-(* Currently, we generate UB-free programs based on abstract states.
-   Going forward, we'll transition to execution-based program
-   generation, which also produces UB-free programs. Therefore,
-   we don't need to worry about UB in either case. *)
+
 
 Variant output_st (A : Type) : Type :=
   | RStep : A -> obs -> input_st -> output_st A
@@ -67,12 +62,11 @@ Variant output_st (A : Type) : Type :=
 Record evaluator (A : Type) : Type := mkEvaluator
   { evaluate : input_st -> output_st A }.
 
-(* An 'evaluator A'. This is the monad.
-   It transforms an input state into an output state, returning an A. *)
-(* An interpreter is a special kind of evaluator *)
+
+
 Definition interpreter: Type := evaluator unit.
 
-(* Generic monad operators *)
+
 #[export] Instance monadEvaluator: Monad evaluator :=
   { ret := fun A value => mkEvaluator A (fun (ist : input_st) => RStep A value [] ist);
     bind := fun A B e f =>
@@ -103,7 +97,7 @@ Variant taint_ctx :=
   | CMem (n: nat)
   | CDefault.
 
-(* None cases are unreachable. *)
+
 Definition taint_step (i: inst) (c: ST.cfg) (tc: tcfg) (tobs: taint) (tctx: taint_ctx) : option (tcfg * taint) :=
   let '(pc, rs, m, s) := c in
   let '(tpc, trs, tm, ts) := tc in
@@ -136,7 +130,7 @@ Definition taint_step (i: inst) (c: ST.cfg) (tc: tcfg) (tobs: taint) (tctx: tain
       match tctx with
       | CMem n =>
           let te := (_calc_taint_exp e trs) in
-          let tv := nth n tm [] in (* default case is unreachable: step already checked. *)
+          let tv := nth n tm [] in
           let tx := (join_taints (join_taints te tv) tpc) in
           let tc' := (tpc, (x !-> tx; trs), tm, ts) in
           let tobs' := (join_taints (join_taints te tpc) tobs) in
@@ -168,7 +162,7 @@ Definition taint_step (i: inst) (c: ST.cfg) (tc: tcfg) (tobs: taint) (tctx: tain
   | <{ ret }> =>
       match tctx with
       | CDefault =>
-          let tpc' := hd [] ts in (* default case is unreachable: step already checked. *)
+          let tpc' := hd [] ts in
           let ts' := tl ts in
           let tc' := (tpc', trs, tm, ts') in
           Some (tc', tobs)
@@ -185,12 +179,12 @@ Definition get_ctx (rs: ST.reg) (i: inst) : option taint_ctx  :=
   | _ => Some CDefault
   end.
 
-(* ret with empty stackframe *)
+
 Definition final_cfg (p: prog) (c: ST.cfg) : bool :=
   let '(pc, rs, m, stk) := c in
   match ST.fetch p pc with
   | Some i => match i with
-             | IRet => if seq.nilp stk then true else false (* Normal Termination *)
+             | IRet => if seq.nilp stk then true else false
              | _ => false
              end
   | None => false
@@ -207,9 +201,9 @@ Definition step_taint_track (p: prog) : evaluator unit :=
         | Some i => match get_ctx rs i with
                    | Some tctx => match taint_step i c tc tobs tctx with
                                  | Some (tc', tobs') => RStep _ tt os (c', tc', tobs')
-                                 | _ => RError _ [] ist (* context is inconsistent. *)
+                                 | _ => RError _ [] ist
                                  end
-                   | _ => RError _ [] ist (* For now, unreachable *)
+                   | _ => RError _ [] ist
                    end
         | _ => RError _ [] ist
         end

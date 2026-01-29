@@ -44,9 +44,8 @@ Definition t_update {A : Type} (m : total_map A)
 Notation "x '!->' v ';' m" := (t_update m x v)
   (at level 100, v at next level, right associativity).
 
-(* We can no longer just use function application for map lookups,
-   instead we define a combinator for this: *)
-Definition apply {A:Type} (m : total_map A) (x:string) : A := 
+
+Definition apply {A:Type} (m : total_map A) (x:string) : A :=
   match m with
   | (d, lm) => match map_get lm x with
                | Some v => v
