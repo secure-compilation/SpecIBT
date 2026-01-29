@@ -3,7 +3,7 @@ COQMFFLAGS := -Q . SECF
 EXCLUDE :=
 ALLVFILES := $(filter-out $(EXCLUDE), $(wildcard *.v))
 QC := quickChick # ../QuickChick/quickChickTool/quickChickTool.exe
-QCFLAGS := -color -top SECF -N 100 -failfast -cmd "make -j >/dev/null 2>&1 && echo 'compilation done'" # -ntests 100,1000,10000
+QCFLAGS := -color -top SECF -N 10000 -failfast -cmd "make -j >/dev/null 2>&1 && echo 'compilation done'" # -ntests 100,1000,10000
 
 build: Makefile.coq
 	$(MAKE) -f Makefile.coq
