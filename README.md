@@ -32,11 +32,14 @@ Fig. 3 --> `exp`, `inst` in MiniCET.v
 Fig. 4 --> `binop`, `eval_binop`, `eval` in MiniCET.v
 Fig. 5 --> `spec_eval_small_step` in MiniCET_Index.v
 Fig. 6 --> `uslh_inst`, `uslh_blk`, `uslh_prog` in MiniCET.v
-Fig. 7 --> `ideal_eval_small_step_inst` in MiniCET_Index.v
 
 ### Section 5: Formal Results for SpecIBT
 
+Fig. 7 --> `ideal_eval_small_step_inst` in MiniCET_Index.v
 Lemma 2 --> `ultimate_slh_bcc_init` in MiniCET_Index.v
+Definition 1 --> `seq_same_obs` in MiniCET_Index.v
+Definition 2 --> `spec_same_obs` in MiniCET_Index.v
+`observational equivalence in the ideal semantics` --> `ideal_same_obs` in in MiniCET_Index.v
 Lemma 3 --> `ideal_eval_relative_secure` in MiniCET_Index.v
 Theorem 1 --> `spec_eval_relative_secure` in MiniCET_Index.v
 
@@ -44,6 +47,7 @@ Theorem 1 --> `spec_eval_relative_secure` in MiniCET_Index.v
 
 Fig. 8 --> `spec_eval_small_step` in MoreLinearProof.v
 Lemma 4 --> `minicet_linear_bcc` in MoreLinearProof.v
+`\approx^{\texttt{mc}}_{\mathit{s}}` --> `spec_same_obs_machine` in MoreLinearProof.v
 Lemma 5 --> `spec_eval_relative_secure_spec_mir_mc` in MoreLinearProof.v
 Theorem 2 --> `spec_eval_relative_secure_machine` in MoreLinearProof.v
 
