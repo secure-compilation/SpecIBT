@@ -66,3 +66,6 @@ To execute all tests, run
 ```bash
 make test
 ```
+
+Note: Testing cleans build artifacts before running QuickChick.
+Run `make` afterward to rebuild the proofs.
