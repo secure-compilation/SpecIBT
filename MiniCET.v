@@ -36,9 +36,11 @@ Inductive binop : Type :=
   | BinAnd
   | BinImpl.
 
+Definition cptr : Type := nat * nat.
+
 Variant val : Type :=
   | N (n:nat)
-  | FP (l:nat)
+  | FP (pc: cptr)
   | UV.
 
 Inductive ty : Type := | TNum | TPtr.
@@ -62,7 +64,7 @@ Inductive exp : Type :=
   | AId (x : string)
   | ABin (o : binop) (e1 e2 : exp)
   | ACTIf (b : exp) (e1 e2 : exp)
-  | FPtr (l : nat).
+  | FPtr (l : cptr).
 
 
 
@@ -150,7 +152,7 @@ Definition to_nat (v:val) : option nat :=
   | _ => None
   end.
 
-Definition to_fp (v:val) : option nat :=
+Definition to_fp (v:val) : option cptr :=
   match v with
   | FP l => Some l
   | _ => None
@@ -161,7 +163,7 @@ Definition eval_binop (o:binop) (v1 v2 : val) : val :=
   | N n1, N n2 => N (eval_binop_nat o n1 n2)
   | FP l1, FP l2 =>
       match o with
-      | BinEq => N (bool_to_nat (l1 =? l2))
+      | BinEq => N (bool_to_nat ((fst l1 =? fst l2) && (snd l1 =? snd l2)))
       | _ => UV
       end
   | _, _ => UV
@@ -170,12 +172,14 @@ Definition eval_binop (o:binop) (v1 v2 : val) : val :=
 Inductive inst : Type :=
   | ISkip
   | IAsgn (x : string) (e : exp)
+  | IDiv (x : string) (e1 : exp) (e2: exp)
   | IBranch (e : exp) (l : nat)
   | IJump (l : nat)
   | ILoad (x : string) (a : exp)
   | IStore (a : exp) (e : exp)
   | ICall (fp:exp)
   | ICTarget
+  | IPeek (x : string)
   | IRet.
 
 Notation "'skip'"  :=
@@ -184,6 +188,11 @@ Notation "x := y"  :=
   (IAsgn x y)
     (in custom com at level 0, x constr at level 0,
       y custom com at level 85, no associativity) : com_scope.
+Notation "x '<-' 'div' e1 ',' e2" :=
+  (IDiv x e1 e2)
+    (in custom com at level 0, x constr at level 0,
+    e1 custom com, e2 custom com, (* JB: unsure of the levels here, automatic ones seem fine? *)
+      no associativity) : com_scope.
 Notation "'branch' e 'to' l"  :=
   (IBranch e l)
      (in custom com at level 0, e custom com at level 85,
@@ -206,6 +215,10 @@ Notation "'call' e" :=
     (in custom com at level 89, e custom com at level 99) : com_scope.
 Notation "'ctarget'"  :=
   ICTarget (in custom com at level 0) : com_scope.
+Notation "x '<-' 'peek'" :=
+  (IPeek x)
+    (in custom com at level 0, x constr at level 0,
+      no associativity) : com_scope.
 Notation "'ret'"  :=
   IRet (in custom com at level 0) : com_scope.
 
@@ -223,6 +236,7 @@ Check <{ 1 + 2 }>.
 Check <{ 2 = 1 }>.
 Check <{{ Z := X }}>.
 Check <{{ Z := X + 3 }}>.
+Check <{{ Z <- div X, 2 }}>.
 Check <{ true && ~(false && true) }>.
 Check <{{ call 0 }}>.
 Check <{{ ctarget }}>.
@@ -231,15 +245,16 @@ Check <{{ branch 42 to 42 }}>.
 Check <{{X<-load[8]}}>.
 Check <{{store[X + Y]<- (Y + 42)}}>.
 
-Definition cptr : Type := nat * nat.
 
 Definition mem := list val.
 
 Inductive observation : Type :=
+  | ODiv (n1 : nat) (n2 : nat)
   | OBranch (b:bool)
   | OLoad (n:nat)
   | OStore (n:nat)
-  | OCall (l: nat).
+  | OCall (l: cptr).
+  (*JB: We don't need an observation for returns, correct? *)
 
 Definition obs := list observation.
 
@@ -248,7 +263,7 @@ Definition observation_eqb (os1 : observation) (os2 : observation) : bool :=
   | OBranch b, OBranch b' => Bool.eqb b b'
   | OLoad i, OLoad i' => (i =? i')
   | OStore i, OStore i' => (i =? i')
-  | OCall v, OCall v' => (v =? v')
+  | OCall v, OCall v' => (fst v =? fst v') && (snd v =? snd v')
   | _, _ => false
   end.
 
@@ -269,7 +284,8 @@ Notation "pc '+' '1'" := (inc pc) : com_scope.
 
 Inductive direction : Type :=
   | DBranch (b':bool)
-  | DCall (lo:cptr).
+  | DCall (lo:cptr)
+  | DRet (lo:cptr).
 
 Definition dirs := list direction.
 
@@ -288,6 +304,12 @@ Definition is_dbranch (d:direction) : option bool :=
 Definition is_dcall (d:direction) : option cptr :=
   match d with
   | DCall pc => Some pc
+  | _ => None
+  end.
+
+Definition is_dret (d:direction) : option cptr :=
+  match d with
+  | DRet pc => Some pc
   | _ => None
   end.
 
@@ -466,6 +488,10 @@ Qed.
 Definition uslh_inst (i: inst) : M (list inst) :=
   match i with
   | <{{ctarget}}> => ret [<{{skip}}>]
+  | <{{x<-div e1,e2}}> => 
+      let e1' := <{ (msf=1) ? 0 : e1 }> in
+      let e2' := <{ (msf=1) ? 0 : e2}> in (*JB: Is masking to 0 fine here? *)
+      ret [<{{x<-div e1', e2'}}>]
   | <{{x<-load[e]}}> =>
       let e' := <{ (msf=1) ? 0 : e }> in
       ret [<{{x<-load[e']}}>]
@@ -477,7 +503,7 @@ Definition uslh_inst (i: inst) : M (list inst) :=
       l' <- add_block_M <{{ i[(msf := ((~e') ? 1 : msf)); jump l] }}>;;
       ret <{{ i[branch e' to l'; (msf := (e' ? 1 : msf))] }}>
   | <{{call e}}> =>
-      let e' := <{ (msf=1) ? &0 : e }> in
+      let e' := <{ (msf=1) ? &(0,0) : e }> in
       ret <{{ i[callee:=e'; call e'] }}>
   | _ => ret [i]
   end.
@@ -486,7 +512,7 @@ Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
   let '(l, (bl, is_proc)) := nblk in
   bl' <- concatM (mapM uslh_inst bl);;
   if is_proc then
-    ret (<{{ i[ctarget; msf := (callee = &l) ? msf : 1] }}> ++ bl', true)
+    ret (<{{ i[ctarget; msf := (callee = &(l,0)) ? msf : 1] }}> ++ bl', true)
   else
     ret (bl', false).
 
@@ -546,13 +572,14 @@ Fixpoint wf_exp (p:prog) (e : exp) : bool :=
   match e with
   | ANum _ | AId _ => true
   | ABin _ e1 e2  | <{_ ? e1 : e2}> => wf_exp p e1 && wf_exp p e2
-  | <{&l}> => wf_label p true l
+  | <{&l}> => (snd l =? 0) && wf_label p true (fst l)
   end.
 
 Definition wf_inst (p:prog) (i : inst) : bool :=
   match i with
-  | <{{skip}}> | <{{ctarget}}> | <{{ret}}> => true
+  | <{{skip}}> | <{{ctarget}}> | <{{ret}}> | <{{_<-peek}}> => true
   | <{{_:=e}}> | <{{_<-load[e]}}> | <{{call e}}> => wf_exp p e
+  | <{{_<-div e1, e2}}> => wf_exp p e1 && wf_exp p e2
   | <{{store[e]<-e'}}> => wf_exp p e && wf_exp p e'
   | <{{branch e to l}}> => wf_exp p e && wf_label p false l
   | <{{jump l}}> => wf_label p false l
@@ -590,6 +617,10 @@ Definition wf_direction (pc: cptr) (p: prog) (d: direction) : bool :=
   | DBranch b, Some (IBranch e l) => is_some p[[(l, 0)]]
 
   | DCall pc', Some (ICall e) => is_some p[[pc']]
+  | DRet (l, S o), Some (IRet) => match p[[(l, o)]] with 
+                                  | Some (ICall e) => true
+                                  | _ => false
+                                  end
   | _, _ =>  false
   end.
 
@@ -613,13 +644,15 @@ Fixpoint e_unused (x:string) (e:exp) : Prop :=
   | ABin _ e1 e2 => e_unused x e1 /\ e_unused x e2
   end.
 
-Fixpoint i_unused (x:string) (i:inst) : Prop :=
+Definition i_unused (x:string) (i:inst) : Prop :=
   match i with
   | <{{skip}}> | <{{jump _}}> | <{{ret}}> | <{{ctarget}}> => True
   | <{{y := e}}> => y <> x /\ e_unused x e
   | <{{branch e to l}}> => e_unused x e
   | <{{y <- load[i]}}> => y <> x /\ e_unused x i
   | <{{store[i] <- e}}> => e_unused x i /\ e_unused x e
+  | <{{y <- div e1, e2}}> => y <> x /\ e_unused x e1 /\ e_unused x e2
+  | <{{y <- peek}}> => y <> x
   | <{{call e}}> => e_unused x e
   end.
 

@@ -1,6 +1,3 @@
-
-
-
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
 From SECF Require Import Utils.
@@ -39,8 +36,18 @@ Inductive seq_eval_small_step_inst (p:prog) :
       p[[pc]] = Some <{{ skip }}> ->
       p |- <(( S_Running (pc, rs, m, stk) ))> -->^[] <(( S_Running (pc+1, rs, m, stk) ))>
   | SSMI_Asgn : forall pc r m sk e x,
-     p[[pc]] = Some <{{ x := e }}> ->
+      p[[pc]] = Some <{{ x := e }}> ->
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running (pc+1, (x !-> (eval r e); r), m, sk) ))>
+  | SSMI_Div : forall pc r m sk e1 e2 x v1 v2,
+      p[[pc]] = Some <{{ x <- div e1, e2 }}> ->
+      to_nat (eval r e1) = Some v1 ->
+      to_nat (eval r e2) = Some v2 ->
+      let res := match v2 with
+                | 0 => UV
+                | _ => N (div v1 v2)
+                end
+      in
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[ODiv v1 v2] <(( S_Running (pc+1, (x !-> res; r), m, sk) ))>
   | SSMI_Branch : forall pc pc' r m sk e n l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
@@ -61,10 +68,18 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Call : forall pc r m sk e l,
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running ((l,0), r, m, ((pc+1)::sk)) ))>
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[OCall l] <(( S_Running (l, r, m, ((pc+1)::sk)) ))>
   | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
+  | SSMI_Peek : forall pc r m sk x,
+      p[[pc]] = Some <{{x <- peek}}> ->
+      let val := match sk with 
+                | [] => UV
+                | pc' :: sk' => FP pc'
+                end
+      in
+      p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running (pc+1, (x !-> val; r), m, sk) ))>
   | SSMI_Term : forall pc r m,
       p[[pc]] = Some <{{ ret}}> ->
       p |- <(( S_Running (pc, r, m, []) ))> -->^[] <(( S_Term ))>
@@ -102,6 +117,16 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), false, ms) ))>
+  | SpecSMI_Div : forall pc r m sk ms e1 e2 x v1 v2,
+      p[[pc]] = Some <{{ x <- div e1, e2 }}> ->
+      to_nat (eval r e1) = Some v1 ->
+      to_nat (eval r e2) = Some v2 ->
+      let res := match v2 with
+                | 0 => UV
+                | _ => N (div v1 v2)
+                end
+      in
+      p |- <(( S_Running (pc, r, m, sk, false, ms) ))> -->_[]^^[ODiv v1 v2] <(( S_Running (pc+1, (x !-> res; r), m, sk, false, ms) ))>
   | SpecSMI_Branch : forall pc pc' r m sk ms ms' b (b': bool) e n l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       to_nat (eval r e) = Some n ->
@@ -124,7 +149,7 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Call : forall pc pc' r m sk e l ms ms',
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
-      ms' = ms || negb ((fst pc' =? l) && (snd pc' =? 0)) ->
+      ms' = ms || negb ((fst pc' =? fst l) && (snd pc' =? snd l)) ->
       p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ct ms,
       p[[pc]] = Some <{{ ctarget }}> ->
@@ -132,6 +157,14 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[]^^[] <(( S_Running ((pc', r, m, sk), false, ms) ))>
+  | SpecSMI_Peek : forall pc r m sk ms x,
+      p[[pc]] = Some <{{x <- peek}}> ->
+      let val := match sk with 
+                | [] => UV
+                | pc' :: sk' => FP pc'
+                end
+      in
+      p |- <(( S_Running (pc, r, m, sk, false, ms) ))> -->_[]^^[] <(( S_Running (pc+1, (x !-> val; r), m, sk, false, ms) ))>
   | SpecSMI_Term : forall pc r m ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, []), false, ms) ))> -->_[]^^[] <(( S_Term ))>
@@ -174,6 +207,16 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), ms) ))>
+  | ISMI_Div : forall pc r m sk ms e1 e2 x v1 v2,
+      p[[pc]] = Some <{{ x <- div e1, e2 }}> ->
+      to_nat (eval r e1) = Some v1 ->
+      to_nat (eval r e2) = Some v2 ->
+      let res := match v2 with
+                | 0 => UV
+                | _ => N (div v1 v2)
+                end
+      in
+      p |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_[]^^[ODiv v1 v2] <(( S_Running (pc+1, (x !-> res; r), m, sk, ms) ))>
   | ISMI_Branch : forall pc pc' r m sk (ms ms' b b' : bool) e n' l,
       p[[pc]] = Some <{{ branch e to l }}> ->
       (if ms then Some 0 else to_nat (eval r e)) = Some n' ->
@@ -197,20 +240,28 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[OStore n] <(( S_Running ((pc+1, r, upd n m (eval r e'), sk), ms) ))>
   | ISMI_Call : forall pc pc' r m sk e l (ms ms' : bool) blk,
       p[[pc]] = Some <{{ call e }}> ->
-      (if ms then Some 0 else to_fp (eval r e)) = Some l ->
-      ms' = ms || negb (fst pc' =? l) ->
+      (if ms then Some (0,0) else to_fp (eval r e)) = Some l ->
+      ms' = ms || negb ((fst pc' =? fst l) && (snd pc' =? snd l)) ->
       nth_error p (fst pc') = Some blk ->
       snd blk = true ->
       snd pc' = 0 ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), ms') ))>
   | ISMI_Call_F : forall pc pc' r m sk e l (ms : bool),
       p[[pc]] = Some <{{ call e }}> ->
-      (if ms then Some 0 else to_fp (eval r e)) = Some l ->
+      (if ms then Some (0,0) else to_fp (eval r e)) = Some l ->
       (forall blk, nth_error p (fst pc') = Some blk -> snd blk = false \/ snd pc' <> 0) ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l] <(( S_Fault ))>
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), ms) ))> -->i_[]^^[] <(( S_Running ((pc', r, m, sk), ms) ))>
+  | ISMI_Peek : forall pc r m sk ms x,
+      p[[pc]] = Some <{{x <- peek}}> ->
+      let val := match sk with 
+                | [] => UV
+                | pc' :: sk' => FP pc'
+                end
+      in
+      p |- <(( S_Running (pc, r, m, sk, ms) ))> -->i_[]^^[] <(( S_Running (pc+1, (x !-> val; r), m, sk, ms) ))>
   | ISMI_Term : forall pc r m ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, []), ms) ))> -->i_[]^^[] <(( S_Term ))>
@@ -418,18 +469,20 @@ Definition wf_lbl (p: prog) (is_proc: bool) (l: nat) : Prop :=
   | None => False
   end.
 
+(* JB: can we maybe deduplicate these w.r.t. MiniCET, where they are defined for bool? *)
 Fixpoint wf_expr (p: prog) (e: exp) : Prop :=
   match e with
   | ANum _ | AId _ => True
   | ABin _ e1 e2  | <{_ ? e1 : e2}> => wf_expr p e1 /\ wf_expr p e2
-  | <{&l}> => wf_lbl p true l
+  | <{&l}> => snd l = 0 /\ wf_lbl p true (fst l)
   end.
 
 Definition wf_instr (p: prog) (i: inst) : Prop :=
   match i with
-  | <{{skip}}> | <{{ctarget}}> | <{{ret}}> => True
+  | <{{skip}}> | <{{ctarget}}> | <{{ret}}> | <{{_<-peek}}> => True
   | <{{_:=e}}> | ILoad _ e | <{{call e}}> => wf_expr p e
   | <{{store[e]<-e'}}> => wf_expr p e /\ wf_expr p e'
+  | <{{_<-div e1, e2}}> => wf_expr p e1 /\ wf_expr p e2
   | <{{branch e to l}}> => wf_expr p e /\ wf_lbl p false l
   | <{{jump l}}> => wf_lbl p false l
   end.
@@ -444,18 +497,6 @@ Definition wf_prog (p: prog) : Prop :=
   nonempty_program p /\ Forall (wf_block p) p.
 
 From SECF Require Import sflib.
-
-Definition wf_reg (p: prog) (r: reg) : Prop :=
-  forall x l, r ! x = (FP l) -> nth_error p l <> None.
-
-Definition wf_mem (p: prog) (m: mem) : Prop :=
-  forall i l, nth_error m i = Some (FP l) -> nth_error p l <> None.
-
-Definition wf_ic (p: prog) (ic: ideal_cfg) : Prop :=
-  let '(pc, r, m, stk, ms) := ic in
-  wf_reg p r /\ wf_mem p m.
-
-
 
 Lemma wf_ds_app p ds1 ds2
     (WF: wf_ds' p (ds1 ++ ds2)) :
@@ -696,7 +737,7 @@ Variant match_inst_uslh (p: prog) (pc: cptr) : inst -> inst -> Prop :=
   (NXT: (uslh_prog p)[[tpc + 1]] = Some <{{ msf := e' ? 1 : msf }}>) :
   match_inst_uslh p pc (IBranch e l) (IBranch e' l')
 | uslh_call e e' tpc
-  (CALL: e' = <{{ (msf = 1) ? & 0 : e }}>)
+  (CALL: e' = <{{ (msf = 1) ? & (0,0) : e }}>)
   (SYNC: pc_sync p pc = Some tpc)
   (IN: (uslh_prog p)[[ tpc + 1 ]] = Some (ICall e')) :
   match_inst_uslh p pc (ICall e) (IAsgn callee e')
@@ -1226,7 +1267,7 @@ Proof.
   unfold MiniCET.uslh_ret in x4. clarify.
 
   destruct i; ss.
-
+  - admit.
   - unfold uslh_bind in x5. ss. clarify.
     remember (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p) +
                 len_before uslh_inst blk o (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p))) as c'.
@@ -1303,7 +1344,7 @@ Proof.
 
 
   - unfold MiniCET.uslh_ret in x5. clarify.
-    exists <{{ callee := (msf = 1) ? & 0 : fp }}>.
+    exists <{{ callee := (msf = 1) ? & (0,0) : fp }}>.
     split.
     + destruct blk' as [blk' is_proc']. ss.
       exploit concat_nth_error; i.
@@ -1357,7 +1398,8 @@ Proof.
 
   - exists <{{ ctarget }}>. exfalso. eapply (no_ct_prog_src p (l, o)); eauto.
     ss. des_ifs.
-Qed.
+  - admit.
+Admitted.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
@@ -1550,7 +1592,7 @@ Lemma head_call_target p pc
     (INST: (uslh_prog p)[[pc]] = Some <{{ ctarget }}>) :
   exists l blk, pc = (l, 0)
   /\ nth_error (uslh_prog p) l = Some (blk, true)
-  /\ (uslh_prog p)[[pc+1]] = Some <{{ msf := (callee = (& (fst pc))) ? msf : 1 }}>.
+  /\ (uslh_prog p)[[pc+1]] = Some <{{ msf := (callee = (& pc)) ? msf : 1 }}>.
 Proof.
   destruct pc as [l o]. exists l.
   unfold uslh_prog in *. des_ifs_safe.
@@ -1592,7 +1634,7 @@ Proof.
       + eapply bind_inv in x2. des. clarify. econs; eauto.
       + econs; eauto. }
   ss. unfold MiniCET.uslh_ret in x4. clarify.
-  exists (<{{ ctarget }}> :: <{{ msf := (callee = (& l)) ? msf : 1 }}> :: a).
+  exists (<{{ ctarget }}> :: <{{ msf := (callee = (& (l,0))) ? msf : 1 }}> :: a).
   rewrite nth_error_app1.
   2:{ rewrite <- nth_error_Some. ii; clarify. }
   destruct (eq_decidable o 0); subst; auto; cycle 1.
@@ -1667,6 +1709,7 @@ Proof.
         { rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
       * erewrite t_update_neq; eauto.
 
+  - inv x1; try simpl in SIMPL; clarify.
   - inv x1; try simpl in SIMPL; clarify.
     unfold steps_to_sync_point' in n_steps. rewrite ISRC in n_steps.
     des_ifs_safe. inv tgt_steps.
@@ -2018,7 +2061,7 @@ Proof.
     inv H9. inv H2; clarify.
     2:{ inv H7. inv H2. }
 
-    assert (ITGT: (uslh_prog p)[[lo + 1]] = Some <{{ msf := (callee = (& (fst lo))) ? msf : 1 }}>).
+    assert (ITGT: (uslh_prog p)[[lo + 1]] = Some <{{ msf := (callee = (& lo)) ? msf : 1 }}>).
     { exploit head_call_target; try eapply H11; eauto. i. des. subst. eauto. }
 
     inv H7. inv H8. inv H2; clarify.
@@ -2067,7 +2110,7 @@ Proof.
       { simpl. eauto. }
       { eauto. }
       { simpl. auto. }
-    + simpl. rewrite andb_true_r. econs.
+    + simpl. assert (snd l0 = 0) as -> by admit. rewrite andb_true_r. econs.
       * simpl. unfold pc_sync. simpl.
         rewrite CESRC. destruct b_src' as [b_src' is_proc']. ss; clarify.
         rewrite eqb_reflx.
@@ -2088,8 +2131,8 @@ Proof.
           clear - H14. destruct ms; ss; clarify.
           - des_ifs.
           - unfold to_fp in H14. des_ifs_safe. ss. clarify.
-            destruct ((l0 =? l1)%nat) eqn: X; ss.
-            + rewrite Nat.eqb_sym in X. rewrite X. ss.
+            destruct ((fst l0 =? l1)%nat) eqn: X; ss.
+            + rewrite Nat.eqb_sym in X. rewrite X. ss. admit.
             + rewrite Nat.eqb_sym in X. rewrite X. ss. }
       * simpl. rewrite STK.
         exploit block_always_terminator_prog; try eapply ISRC; eauto.
@@ -2101,6 +2144,7 @@ Proof.
 
   - exfalso. eapply no_ct_prog_src; eauto.
 
+  - admit.
   - assert (n = 1) by (ss; des_ifs). subst.
     inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
     clear n_steps.
@@ -2110,7 +2154,7 @@ Proof.
     exists (c, r, m, sk, ms). simpl. split.
     + eapply ISMI_Ret; eauto.
     + econs; eauto; simpl in STK; des_ifs.
-Qed.
+Admitted.
 
 Lemma ultimate_slh_bcc (p: prog) : forall n ic1 sc1 sc2 ds os,
   no_ct_prog p ->
