@@ -207,10 +207,10 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Asgn : forall pc r m sk ms e x,
       p[[pc]] = Some <{{ x := e }}> ->
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[]^^[] <(( S_Running ((pc+1, (x !-> (eval r e); r), m, sk), ms) ))>
-  | ISMI_Div : forall pc r m sk ms e1 e2 x v1 v2,
+  | ISMI_Div : forall pc r m sk (ms: bool) e1 e2 x v1 v2,
       p[[pc]] = Some <{{ x <- div e1, e2 }}> ->
-      to_nat (eval r e1) = Some v1 ->
-      to_nat (eval r e2) = Some v2 ->
+      (if ms then Some 0 else to_nat (eval r e1)) = Some v1 ->
+      (if ms then Some 0 else to_nat (eval r e2)) = Some v2 ->
       let res := match v2 with
                 | 0 => UV
                 | _ => N (div v1 v2)
@@ -672,7 +672,7 @@ Open Scope monad_scope.
 
 Definition simple_inst (i: inst) : Prop :=
   match i with
-  | ISkip | IJump _ | ILoad _ _ | IStore _ _ | IAsgn _ _ | IRet => True
+  | ISkip | IJump _ | ILoad _ _ | IStore _ _ | IAsgn _ _ | IDiv _ _ _ | IRet | IPeek _ => True
   | _ => False
   end.
 
@@ -689,8 +689,14 @@ Variant match_simple_inst_uslh : inst -> inst -> Prop :=
   match_simple_inst_uslh (IStore e e1) (IStore e' e1)
 | uslh_asgn x e:
   match_simple_inst_uslh (IAsgn x e) (IAsgn x e)
+| uslh_div x e1 e2 e1' e2'
+  (IDe1: e1' = <{{ (msf = 1) ? 0 : e1}}>)
+  (IDe2: e2' = <{{ (msf = 1) ? 0 : e2}}>):
+  match_simple_inst_uslh (IDiv x e1 e2) (IDiv x e1' e2')
 | uslh_ret :
   match_simple_inst_uslh IRet IRet
+| uslh_peek x:
+  match_simple_inst_uslh (IPeek x) (IPeek x)
 .
 
 
@@ -1014,7 +1020,11 @@ Proof.
     destruct i0; ss; unfold MiniCET.uslh_ret in *; clarify.
     + exists ISkip; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
     + exists (IAsgn x e); split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+    + esplits; [|econs]; eauto.
+      exploit concat_nth_error; ss; eauto. ss.
     + exists (IJump l0); split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+    + esplits; [|econs]; eauto.
+      exploit concat_nth_error; ss; eauto. ss.
     + esplits; [|econs]; eauto.
       exploit concat_nth_error; ss; eauto. ss.
     + esplits; [|econs]; eauto.
@@ -1023,7 +1033,11 @@ Proof.
   - destruct i0; ss; unfold MiniCET.uslh_ret in *; clarify.
     + exists ISkip; split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
     + exists (IAsgn x e); split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+    + esplits; [|econs]; eauto.
+      exploit concat_nth_error; ss; eauto. ss.
     + exists (IJump l0); split; [|econs]. exploit concat_nth_error; ss; eauto. ss.
+    + esplits; [|econs]; eauto.
+      exploit concat_nth_error; ss; eauto. ss.
     + esplits; [|econs]; eauto.
       exploit concat_nth_error; ss; eauto. ss.
     + esplits; [|econs]; eauto.
@@ -1267,7 +1281,6 @@ Proof.
   unfold MiniCET.uslh_ret in x4. clarify.
 
   destruct i; ss.
-  - admit.
   - unfold uslh_bind in x5. ss. clarify.
     remember (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p) +
                 len_before uslh_inst blk o (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p))) as c'.
@@ -1398,8 +1411,7 @@ Proof.
 
   - exists <{{ ctarget }}>. exfalso. eapply (no_ct_prog_src p (l, o)); eauto.
     ss. des_ifs.
-  - admit.
-Admitted.
+Qed.
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
@@ -1709,7 +1721,32 @@ Proof.
         { rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
       * erewrite t_update_neq; eauto.
 
-  - inv x1; try simpl in SIMPL; clarify.
+  - assert (n = 1) by (ss; des_ifs). subst.
+    inv tgt_steps. inv H7. inv H2; clarify; inv x1; inv MATCH.
+    clear n_steps.
+
+    eexists (l, (add o 1), x2 !-> _; r, m, sk, ms). 
+    eapply unused_prog_lookup in unused_p_msf; eauto.
+    eapply unused_prog_lookup in unused_p_callee; eauto.
+    split; econs; eauto.
+    + destruct ms.
+      * ss. rewrite ms_msf in H11. ss.
+      * ss. rewrite ms_msf in H11. ss. des. inv REG.
+        rewrite <- H11. f_equal. apply eval_regs_eq; auto.
+    + destruct ms.
+      * ss. rewrite ms_msf in H12. ss.
+      * ss. rewrite ms_msf in H12. ss. des. inv REG.
+        rewrite <- H12. f_equal. apply eval_regs_eq; auto.
+    + exploit block_always_terminator_prog; try eapply ISRC; eauto. i. des.
+      unfold pc_sync in *. ss. des_ifs_safe. replace (add o 1) with (S o) by lia.
+      erewrite firstnth_error; eauto. rewrite fold_left_app. cbn.
+      rewrite add_1_r. auto.
+    + ss. des. inv REG. econs.
+      * i. destruct (string_dec x x2); subst.
+        { do 2 rewrite t_update_eq. reflexivity. }
+        { rewrite t_update_neq; auto. rewrite t_update_neq; auto. }
+      * erewrite t_update_neq; eauto.
+
   - inv x1; try simpl in SIMPL; clarify.
     unfold steps_to_sync_point' in n_steps. rewrite ISRC in n_steps.
     des_ifs_safe. inv tgt_steps.
@@ -2215,8 +2252,10 @@ Proof.
         destruct (nth_error p (fst pc'0)) eqn:BSRC.
         2:{ exploit (ISMI_Call_F p pc pc'0 r m); eauto.
             2:{ ii. clarify. }
-            { instantiate (2:=ms).
-              rewrite H4 in H18. rewrite <- H18. ss.
+            { instantiate (2:=ms). instantiate (1:=l0).
+              rewrite H4 in H18.
+              Set Printing All. fold cptr. Unset Printing All.
+              rewrite <- H18. ss.
               rewrite t_update_neq; [|ii;clarify].
               rewrite H4. ss. destruct ms; ss.
               rewrite eval_unused_update; eauto.
@@ -2235,7 +2274,7 @@ Proof.
         { exploit (ISMI_Call_F p pc pc'0 r m); eauto.
           2:{ i. clarify. auto. }
             { instantiate (2:=ms).
-              rewrite H4 in H18. rewrite <- H18. ss.
+              rewrite H4 in H18. fold cptr. rewrite <- H18. ss.
               rewrite t_update_neq; [|ii;clarify].
               rewrite H4. ss. destruct ms; ss.
               rewrite eval_unused_update; eauto.
@@ -2253,7 +2292,7 @@ Proof.
         destruct (eq_decidable (snd pc'0) 0); cycle 1.
         { exploit (ISMI_Call_F p pc pc'0 r m); eauto.
             { instantiate (2:=ms).
-              rewrite H4 in H18. rewrite <- H18. ss.
+              rewrite H4 in H18. fold cptr. rewrite <- H18. ss.
               rewrite t_update_neq; [|ii;clarify].
               rewrite H4. ss. destruct ms; ss.
               rewrite eval_unused_update; eauto.
@@ -2270,7 +2309,7 @@ Proof.
               rewrite <- app_nil_r with (l:=[DCall lo]). econs; eauto. econs. } }
         exploit (ISMI_Call p pc pc'0 r m); eauto.
         { instantiate (2:=ms).
-          rewrite H4 in H18. rewrite <- H18. ss.
+          rewrite H4 in H18. fold cptr. rewrite <- H18. ss.
           rewrite t_update_neq; [|ii;clarify].
           rewrite H4. ss. destruct ms; ss.
           rewrite eval_unused_update; eauto.
@@ -2393,7 +2432,7 @@ Lemma ultimate_slh_bcc_init
   (UNUSED2: unused_prog callee p)
   (SC1: sc1 = ((0,0), sr, m, @nil cptr, true, false))
   (INIT1: Rsync ir sr false)
-  (INIT2: sr ! callee = FP 0)
+  (INIT2: sr ! callee = FP (0,0))
   (TGT: uslh_prog p |- <(( S_Running sc1 ))> -->*_ds^^os^^n <(( sc2 ))>) :
   exists ic2, p |- <(( S_Running ((0,0), ir, m, [], false) ))> -->i*_ ds ^^ os <(( ic2 ))>.
 Proof.
@@ -2540,8 +2579,9 @@ Proof.
     rewrite negb_involutive in H16.
     symmetry in H16. apply eqb_prop in H16 as ->. reflexivity.
   - cbn in H14. apply (f_equal negb) in H14. cbn in H14. rewrite negb_involutive in H14.
-    symmetry in H14. rewrite Nat.eqb_eq in H14.
-    destruct pc'; cbn in *; subst.
+    symmetry in H14. 
+    apply andb_prop in H14. rewrite! Nat.eqb_eq in H14. des.
+    destruct pc', l; cbn in *; subst.
     econstructor; eassumption.
 Qed.
 
@@ -2639,6 +2679,11 @@ Proof.
       repeat eexists. 2: exact H.
       change (@nil direction) with ((@nil direction) ++ []).
       econstructor. 2: eassumption.
+      econstructor 3; eauto.
+    + edestruct IHmulti_ideal_inst as (pc' & r' & m' & stk' & Hsteps & H). 1, 2: reflexivity.
+      repeat eexists. 2: exact H.
+      change (@nil direction) with ((@nil direction) ++ []).
+      econstructor. 2: eassumption.
       now constructor.
     + edestruct IHmulti_ideal_inst as (pc' & r' & m' & stk' & Hsteps & H). 1, 2: reflexivity.
       repeat eexists. 2: exact H.
@@ -2650,6 +2695,11 @@ Proof.
       change (@nil direction) with ((@nil direction) ++ []).
       econstructor. 2: eassumption.
       econstructor; try eassumption. reflexivity.
+    + edestruct IHmulti_ideal_inst as (pc'' & r' & m' & stk' & Hsteps & H). 1, 2: reflexivity.
+      repeat eexists. 2: exact H.
+      change (@nil direction) with ((@nil direction) ++ []).
+      econstructor. 2: eassumption.
+      now constructor.
     + edestruct IHmulti_ideal_inst as (pc'' & r' & m' & stk' & Hsteps & H). 1, 2: reflexivity.
       repeat eexists. 2: exact H.
       change (@nil direction) with ((@nil direction) ++ []).
@@ -2734,6 +2784,17 @@ Proof.
       1: change x10 with ([] ++ x10).
       2: change x11 with ([] ++ x11).
       all: econstructor; eassumption.
+    + eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
+      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?).
+      destruct H3 as [H3 | H3].
+    * repeat destruct H3 as [-> H3].
+      repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
+      all: change ds2 with ([] ++ ds2).
+      1: change (ODiv v1 v2 :: os0) with ([ODiv v1 v2] ++ os0).
+      2: change (ODiv v0 v3 :: os3) with ([ODiv v0 v3] ++ os3).
+      all: econstructor; eassumption.
+    * repeat eexists. 1, 2: econstructor.
+      admit.
     + rewrite H6 in H19. inv H19. inv x.
       assert (not_zero n' = not_zero n'0).
       {
