@@ -1,4 +1,4 @@
-
+(** MiniMIR **)
 
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String String.
@@ -336,6 +336,12 @@ Definition uslh_bind {A B: Type} (m: M A) (f: A -> M B) : M B :=
     bind := @uslh_bind
   }.
 
+(* Definition map2 {A B C} (f: A -> B -> C) (l1: list A) (l2: list B) : list C := *)
+(*   map (fun '(a, b) => f a b) (combine l1 l2). *)
+
+(* Definition mapM {A B C: Type} (f: A -> B -> M C) (l: list A) (pcl: list B) : M (list C) := *)
+(*   sequence (map2 f l pcl). *)
+
 Definition mapM {A B: Type} (f: A -> M B) (l: list A) : M (list B) :=
   sequence (List.map f l).
 
@@ -483,9 +489,7 @@ Proof.
     eapply IHl in X'. rewrite X'. clarify.
 Qed.
 
-
-
-Definition uslh_inst (i: inst) : M (list inst) :=
+Definition uslh_inst (i: inst) (l: nat) (o: nat) : M (list inst) :=
   match i with
   | <{{ctarget}}> => ret [<{{skip}}>]
   | <{{x<-div e1,e2}}> => 
@@ -504,13 +508,34 @@ Definition uslh_inst (i: inst) : M (list inst) :=
       ret <{{ i[branch e' to l'; (msf := (e' ? 1 : msf))] }}>
   | <{{call e}}> =>
       let e' := <{ (msf=1) ? &(0,0) : e }> in
-      ret <{{ i[callee:=e'; call e'] }}>
+      let e'' := <{ (msf=1) ? &((l, o + 2)) : e }> in
+      ret <{{ i[callee:=e'; call e'; (msf := (e'' ? 1 : msf))] }}>
+  | <{{ret}}> =>
+      ret <{{ i[callee <- peek; ret] }}>
   | _ => ret [i]
   end.
 
+Definition uslh_inst_sz (i: inst) : nat :=
+  match i with
+  | <{{branch _ to _}}> => 2
+  | <{{call _}}> => 3
+  | <{{ret}}> => 2
+  | _ => 1
+  end.
+
+Fixpoint _add_index_uslh (bl: list inst) (s: nat) : list (nat * inst) :=
+  match bl with
+  | [] => []
+  | i :: tl => (s, i) :: _add_index_uslh tl (s + uslh_inst_sz i)
+  end.
+
+Definition add_index_uslh (bl: list inst) (is_proc: bool) : list (nat * inst) :=
+  _add_index_uslh bl (if is_proc then 2 else 0).
+
 Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
   let '(l, (bl, is_proc)) := nblk in
-  bl' <- concatM (mapM uslh_inst bl);;
+  let pcs := add_index_uslh bl is_proc in
+  bl' <- concatM (mapM (fun '(o, i) => uslh_inst i l o) pcs);;
   if is_proc then
     ret (<{{ i[ctarget; msf := (callee = &(l,0)) ? msf : 1] }}> ++ bl', true)
   else
