@@ -1,4 +1,4 @@
-
+(** MiniMC **)
 
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Stdlib Require Import Strings.String.
@@ -26,15 +26,6 @@ From SECF Require Import Utils.
 From SECF Require Import MapsFunctor.
 From SECF Require Import MiniCET.
 From SECF Require Import sflib.
-
-
-
-
-
-
-
-
-
 
 Inductive ty : Type := TNum.
 
@@ -102,7 +93,6 @@ Proof.
   - eapply IHll in Heq0. clarify. f_equal. lia.
   - eapply IHll in Heq0. clarify.
 Qed.
-
 
 Definition pc_inj (p: MiniCET.prog) (len: nat) (pc: MiniCET.cptr) : option nat :=
   let fstp := map fst p in
@@ -191,7 +181,7 @@ Definition is_dcall (d:direction) : option nat :=
 
 Definition val_injectb (p: MiniCET.prog) (len: nat) (vsrc vtgt: val) : bool :=
   match vsrc, vtgt with
-  | FP l, N n => match pc_inj p len (l, 0) with
+  | FP l, N n => match pc_inj p len l with
                 | Some n' => Nat.eqb n n'
                 | None => false
                 end
@@ -202,7 +192,7 @@ Definition val_injectb (p: MiniCET.prog) (len: nat) (vsrc vtgt: val) : bool :=
 
 Definition val_inject (p: MiniCET.prog) (len: nat) (vsrc vtgt: val) : Prop :=
   match vsrc, vtgt with
-  | FP l, N n => match pc_inj p len (l, 0) with
+  | FP l, N n => match pc_inj p len l with
                 | Some n' => (n = n')%nat
                 | None => False
                 end
@@ -251,17 +241,15 @@ Fixpoint eval (st : reg) (e: exp) : val :=
       | Some n1 => if not_zero n1 then eval st e1 else eval st e2
       | None => UV
       end
-  | <{&l}> => N l
+  | <{&l}> => N 0 (* unreachable *)
   end.
 
 End MoreLinearCommon.
 
-
-
 Fixpoint machine_exp (p: MiniCET.prog) (len: nat) (e: exp) : option exp :=
   match e with
   | ANum _ | AId _ => Some e
-  | FPtr l => match pc_inj p len (l, 0) with
+  | FPtr l => match pc_inj p len l with
              | Some l' => Some (ANum l')
              | None => None
              end
@@ -297,6 +285,11 @@ Definition machine_inst (p: MiniCET.prog) (len: nat) (i: inst) : option inst :=
     | Some e' => Some (IAsgn x e')
     | _ => None
     end
+  | IDiv x e1 e2 =>
+    match machine_exp p len e1, machine_exp p len e2 with
+    | Some e1', Some e2' => Some (IDiv x e1' e2')
+    | _, _ => None
+    end
   | ILoad x e =>
     match machine_exp p len e with
     | Some e' => Some (ILoad x e')
@@ -307,7 +300,7 @@ Definition machine_inst (p: MiniCET.prog) (len: nat) (i: inst) : option inst :=
     | Some e1', Some e2' => Some (IStore e1' e2')
     | _, _ => None
     end
-  | ISkip | IRet | ICTarget => Some i
+  | IPeek _ | ISkip | IRet | ICTarget => Some i
   end.
 
 Definition transpose {X : Type} (l : list (option X)) : option (list X) :=
@@ -347,17 +340,24 @@ Definition reg_inject (p: MiniCET.prog) (len: nat) (r1: regs) (r2: regt) : Prop 
   forall x, val_inject p len (r1 ! x) (r2 ! x).
 
 Lemma eval_binop_inject p len o v1 v1' v2 v2'
-    (INJ1: val_inject p len v1 v1')
-    (INJ2: val_inject p len v2 v2') :
+  (INJ1: val_inject p len v1 v1')
+  (INJ2: val_inject p len v2 v2') :
   val_inject p len (eval_binop o v1 v2) (eval_binop o v1' v2').
 Proof.
   red in INJ1, INJ2. des_ifs. destruct o; ss.
   f_equal.
-  destruct (Nat.eq_dec l0 l); clarify.
-  { do 2 rewrite Nat.eqb_refl. auto. }
-  hexploit pc_inj_inject; [| eapply Heq0| eapply Heq|].
-  { ii. eapply n. inv H. auto. }
-  ii. rewrite <- Nat.eqb_neq in n, H. rewrite n, H. auto.
+  assert (DEC: pc1 = pc0 \/ pc1 <> pc0).
+  { clear. destruct pc1 as [l1 o1]. destruct pc0 as [l0 o0].
+    destruct (Nat.eq_dec l1 l0); destruct (Nat.eq_dec o1 o0); auto.
+    1-3: right; ii; clarify. }
+  des; subst; clarify.
+  { repeat rewrite Nat.eqb_refl. auto. }
+  hexploit pc_inj_inject; [|eapply Heq0|eapply Heq|]; auto.
+  ii. rewrite <- Nat.eqb_neq in H. rewrite H.
+  rewrite andb_lazy_alt.
+  destruct pc1 as [l1 o1]. destruct pc0 as [l0 o0].
+  ss. des_ifs. rewrite Nat.eqb_neq. rewrite Nat.eqb_eq in Heq1.
+  ii. subst; clarify.
 Qed.
 
 Lemma eval_inject p len r1 r2 e1 e2
@@ -376,8 +376,6 @@ Proof.
     + hexploit IHe1_3; eauto.
   - des_ifs. ss. clarify.
 Qed.
-
-
 
 End SimCommon.
 
