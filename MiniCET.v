@@ -508,7 +508,7 @@ Definition uslh_inst (i: inst) (l: nat) (o: nat) : M (list inst) :=
       ret <{{ i[branch e' to l'; (msf := (e' ? 1 : msf))] }}>
   | <{{call e}}> =>
       let e' := <{ (msf=1) ? &(0,0) : e }> in
-      let e'' := <{ (msf=1) ? &((l, o + 2)) : e }> in
+      let e'' := <{ callee = &((l, o + 2)) }> in
       ret <{{ i[callee:=e'; call e'; (msf := (e'' ? 1 : msf))] }}>
   | <{{ret}}> =>
       ret <{{ i[callee <- peek; ret] }}>
