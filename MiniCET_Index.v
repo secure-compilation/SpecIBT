@@ -22,10 +22,6 @@ Import FunctionalExtensionality.
 Notation t_update_eq := TotalMap.t_update_eq.
 Notation t_update_neq := TotalMap.t_update_neq.
 
-
-
-
-
 Reserved Notation
   "p '|-' '<((' c '))>' '-->^' os '<((' ct '))>'"
   (at level 40, c constr, ct constr).
@@ -72,7 +68,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
   | SSMI_Ret : forall pc r m sk pc',
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, pc'::sk) ))> -->^[] <(( S_Running (pc', r, m, sk) ))>
-  | SSMI_Peek : forall pc r m sk x,
+  | SSMI_Peek : forall pc r m sk x, (* YH: Maybe we can assume source program does not contain peek instruction. *)
       p[[pc]] = Some <{{x <- peek}}> ->
       let val := match sk with 
                 | [] => UV
@@ -87,8 +83,6 @@ Inductive seq_eval_small_step_inst (p:prog) :
   where "p |- <(( c ))> -->^ os <(( ct ))>" :=
       (seq_eval_small_step_inst p c ct os).
 
-
-
 Reserved Notation
   "p '|-' '<((' c '))>' '-->*^' os '<((' ct '))>'"
       (at level 40, c constr, ct constr).
@@ -102,8 +96,6 @@ Inductive multi_seq_inst (p : prog) (c : @state cfg) : @state cfg -> obs -> Prop
 
   where "p |- <(( c ))> -->*^ os <(( ct ))>" :=
       (multi_seq_inst p c ct os).
-
-
 
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->_' ds '^^' os '<((' sct '))>'"
@@ -175,7 +167,6 @@ Inductive spec_eval_small_step (p:prog):
 
   where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
     (spec_eval_small_step p sc sct ds os).
-
 
 
 Reserved Notation
@@ -254,7 +245,7 @@ Inductive ideal_eval_small_step_inst (p:prog) :
   | ISMI_Ret : forall pc r m sk pc' ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), ms) ))> -->i_[]^^[] <(( S_Running ((pc', r, m, sk), ms) ))>
-  | ISMI_Peek : forall pc r m sk ms x,
+  | ISMI_Peek : forall pc r m sk ms x, (* YH: Do we need this for source program? *)
       p[[pc]] = Some <{{x <- peek}}> ->
       let val := match sk with 
                 | [] => UV
@@ -315,31 +306,47 @@ Definition ms_true_sc (sc: spec_cfg) : bool :=
 Definition ms_true_ic (ic: ideal_cfg) : bool :=
   let '(c, ms) := ic in ms.
 
+(* Definition is_br_or_call (i : inst) := *)
+(*   match i with *)
+(*   | <{{branch _ to _}}> | <{{call _}}> => true *)
+(*   | _                                  => false *)
+(*   end. *)
 
+(* Definition pc_sync (p: prog) (pc: cptr) : option cptr := *)
+(*   match nth_error p (fst pc) with *)
+(*   | Some blk => match nth_error (fst blk) (snd pc) with *)
+(*                | Some i => *)
+(*                    let acc1 := if (Bool.eqb (snd blk) true) then 2 else 0 in *)
+(*                    let insts_before_pc := (firstn (snd pc) (fst blk)) in *)
+(*                    let acc2 := fold_left (fun acc (i: inst) => if (is_br_or_call i) *)
+(*                                                             then (add acc 1) *)
+(*                                                             else acc) *)
+(*                                  insts_before_pc acc1 *)
+(*                    in Some ((fst pc), add (snd pc) acc2) *)
+(*                | _ => None *)
+(*                end *)
+(*   | _ => None *)
+(*   end. *)
 
-Definition is_br_or_call (i : inst) :=
-  match i with
-  | <{{branch _ to _}}> | <{{call _}}> => true
-  | _                                  => false
+Fixpoint _offset_uslh (bl: list inst) (s: nat) : list nat :=
+  match bl with
+  | [] => []
+  | i :: tl => s :: _offset_uslh tl (s + uslh_inst_sz i)
   end.
 
+Definition offset_uslh (bl: list inst * bool) : list nat :=
+  _offset_uslh (fst bl) (if snd bl then 2 else 0).
 
 Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
-  match nth_error p (fst pc) with
-  | Some blk => match nth_error (fst blk) (snd pc) with
-               | Some i =>
-                   let acc1 := if (Bool.eqb (snd blk) true) then 2 else 0 in
-                   let insts_before_pc := (firstn (snd pc) (fst blk)) in
-                   let acc2 := fold_left (fun acc (i: inst) => if (is_br_or_call i)
-                                                            then (add acc 1)
-                                                            else acc)
-                                 insts_before_pc acc1
-                   in Some ((fst pc), add (snd pc) acc2)
-               | _ => None
-               end
+  let ip := map offset_uslh p in
+  let '(l, o) := pc in
+  match nth_error ip l with
+  | Some ib => match nth_error ib o with
+              | Some io => Some (l, io)
+              | _ => None
+              end
   | _ => None
   end.
-
 
 Definition r_sync (r: reg) (ms: bool) : reg :=
    msf !-> N (if ms then 1 else 0); r.
@@ -369,7 +376,6 @@ Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
              end
   end.
 
-
 Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
   let '(c, ms) := ic in
   let '(pc, r, m, stk) := c in
@@ -393,7 +399,6 @@ Variant match_cfgs (p: prog) : ideal_cfg -> spec_cfg -> Prop :=
 Definition steps_to_sync_point' (p: prog) (ic: ideal_cfg) (ds: dirs) : option nat :=
   let '(c, ms) := ic in
   let '(pc, r, m, sk) := c in
-
   match p[[pc]] with
   | Some i => match i with
              | IBranch e l => match ds with
@@ -429,19 +434,19 @@ Definition get_pc_ic (ic: ideal_cfg) : cptr :=
   let '(pc, r, m, sk) := c in
   pc.
 
-Definition wf_dir (p: prog) (pc: cptr) (d: direction) : Prop :=
-  match d, p[[pc]] with
-  | DBranch b, Some (IBranch e l) => is_some p[[(l, 0)]] = true
-  | DCall pc', Some (ICall e) => is_some p[[pc']] = true
-  | _, _ => False
-  end.
-
-Definition wf_ds (p: prog) (pc: cptr) (ds: dirs) : Prop :=
-  Forall (wf_dir p pc) ds.
+Definition call_return_targets (p: prog) : list cptr :=
+  let ip := add_index p in
+  List.concat
+    (List.map (fun '(l, (bl, _)) =>
+                 List.flat_map (fun '(o, i) => match i with
+                                            | ICall _ => [(l, add o 1)]
+                                            | _ => []
+                                            end) (add_index bl)) ip).
 
 Definition wf_dir' (p: prog) (d: direction) : Prop :=
   match d with
   | DCall pc' => is_some p[[pc']] = true
+  | DRet pc' => In pc' (call_return_targets p)
   | _ => True
   end.
 
@@ -469,7 +474,7 @@ Definition wf_lbl (p: prog) (is_proc: bool) (l: nat) : Prop :=
   | None => False
   end.
 
-(* JB: can we maybe deduplicate these w.r.t. MiniCET, where they are defined for bool? *)
+(* JB: can we maybe deduplicate these w.r.t. MiniCET, where they are defined for bool? YH: Yes. We can. *)
 Fixpoint wf_expr (p: prog) (e: exp) : Prop :=
   match e with
   | ANum _ | AId _ => True
@@ -522,9 +527,6 @@ Proof.
     { subst. rewrite app_assoc. auto. }
 Qed.
 
-
-
-
 Lemma rev_fetch : forall (p: prog) (pc: cptr) (blk: list inst * bool) (i: inst),
   nth_error p (fst pc) = Some blk ->
   nth_error (fst blk) (snd pc) = Some i ->
@@ -562,9 +564,6 @@ Proof.
   intros. simpl. reflexivity.
 Qed.
 
-
-
-
 Lemma utils_rev_append_and_rev : forall {X : Type} (l1 l2 : list X),
   Utils.rev_append l1 l2 = rev l1 ++ l2.
 Proof.
@@ -582,24 +581,10 @@ Proof.
   rewrite utils_rev_append_and_rev. rewrite IHl. reflexivity.
 Qed.
 
-Lemma p_le_tp : forall (p: prog),
-  Datatypes.length p <= Datatypes.length (uslh_prog p).
-Proof.
-  intros. unfold uslh_prog.
-  destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn: Huslh.
-  enough (Datatypes.length p' = Datatypes.length p).
-  { rewrite length_app. lia. }
-  eapply mapM_perserve_len in Huslh.
-  rewrite <- Huslh. clear.
-  ginduction p; ss.
-  rewrite length_combine.
-  rewrite length_seq, min_id. auto.
-Qed.
-
 Lemma block_always_terminator p b o i
-    (WFB: wf_block p b)
-    (INST: nth_error (fst b) o = Some i)
-    (NT: ~ is_terminator i) :
+  (WFB: wf_block p b)
+  (INST: nth_error (fst b) o = Some i)
+  (NT: ~ is_terminator i) :
   exists i', nth_error (fst b) (add o 1) = Some i'.
 Proof.
   destruct WFB. destruct H0.
@@ -635,8 +620,8 @@ Proof.
       rewrite INST in H5. injection H5; intros. clarify.
     }
 
-    assert (rev (i0 :: l) = rev l ++ [i0]). { simpl. auto. }
-    assert (rev (rev (fst b)) = rev (i0 :: l)). { rewrite Heq. simpl. auto. }
+    assert (rev (i0 :: l) = rev l ++ [i0]) by ss.
+    assert (rev (rev (fst b)) = rev (i0 :: l)) by (rewrite Heq; ss).
     rewrite rev_involutive in H4. simpl in H4. rewrite H4 in INST, l0, n. rewrite H4.
     assert (o <= Datatypes.length (rev l ++ [i0]) - 1
             -> o <> Datatypes.length (rev l ++ [i0]) - 1
@@ -656,9 +641,9 @@ Proof.
 Qed.
 
 Lemma block_always_terminator_prog p pc i
-    (WF: wf_prog p)
-    (INST: p[[pc]] = Some i)
-    (NT: ~ is_terminator i) :
+  (WF: wf_prog p)
+  (INST: p[[pc]] = Some i)
+  (NT: ~ is_terminator i) :
   exists i', p[[pc+1]] = Some i'.
 Proof.
   inv WF. destruct pc as [l o]. ss. des_ifs_safe.
@@ -672,10 +657,11 @@ Open Scope monad_scope.
 
 Definition simple_inst (i: inst) : Prop :=
   match i with
-  | ISkip | IJump _ | ILoad _ _ | IStore _ _ | IAsgn _ _ | IDiv _ _ _ | IRet | IPeek _ => True
+  | ISkip | IJump _ | ILoad _ _ | IStore _ _ | IAsgn _ _ | IDiv _ _ _ | IPeek _ => True
   | _ => False
   end.
 
+(* lock-step instructions *)
 Variant match_simple_inst_uslh : inst -> inst -> Prop :=
 | uslh_skip :
   match_simple_inst_uslh ISkip ISkip
@@ -693,12 +679,9 @@ Variant match_simple_inst_uslh : inst -> inst -> Prop :=
   (IDe1: e1' = <{{ (msf = 1) ? 0 : e1}}>)
   (IDe2: e2' = <{{ (msf = 1) ? 0 : e2}}>):
   match_simple_inst_uslh (IDiv x e1 e2) (IDiv x e1' e2')
-| uslh_ret :
-  match_simple_inst_uslh IRet IRet
 | uslh_peek x:
   match_simple_inst_uslh (IPeek x) (IPeek x)
 .
-
 
 Definition _branch_in_block (blk: list inst) : nat :=
   fold_left (fun acc i => add acc (match i with
@@ -721,7 +704,6 @@ Definition _offset_branch_before (blk: list inst) (ofs: nat) : nat :=
 Definition offset_branch_before (blk: list inst * bool) (ofs: nat) : nat :=
   _offset_branch_before (fst blk) ofs.
 
-
 Definition match_branch_target (p: prog) (pc: nat * nat) : option nat :=
   let '(l, o) := pc in
   match nth_error p l with
@@ -742,26 +724,31 @@ Variant match_inst_uslh (p: prog) (pc: cptr) : inst -> inst -> Prop :=
   (SYNC: pc_sync p pc = Some tpc)
   (NXT: (uslh_prog p)[[tpc + 1]] = Some <{{ msf := e' ? 1 : msf }}>) :
   match_inst_uslh p pc (IBranch e l) (IBranch e' l')
-| uslh_call e e' tpc
+| uslh_call e e' e'' tpc
   (CALL: e' = <{{ (msf = 1) ? & (0,0) : e }}>)
   (SYNC: pc_sync p pc = Some tpc)
-  (IN: (uslh_prog p)[[ tpc + 1 ]] = Some (ICall e')) :
+  (RET: e'' = <{ callee = &(fst tpc, snd tpc + 2) }>)
+  (IN: (uslh_prog p)[[ tpc + 1 ]] = Some (ICall e'))
+  (IN': (uslh_prog p)[[ (fst tpc, snd tpc + 2) ]] = Some <{{ msf := e'' ? 1 : msf }}>) :
   match_inst_uslh p pc (ICall e) (IAsgn callee e')
+| uslh_ret tpc
+  (SYNC: pc_sync p pc = Some tpc)
+  (NXT: (uslh_prog p)[[tpc + 1]] = Some IRet) :
+  match_inst_uslh p pc IRet (IPeek callee)
 .
 
-Lemma uslh_inst_simple i c iss np
-    (SIMP: simple_inst i)
-    (USLH: uslh_inst i c = (iss, np)) :
+Lemma uslh_inst_simple i l o c iss np
+  (SIMP: simple_inst i)
+  (USLH: uslh_inst i l o c = (iss, np)) :
   exists i', iss = [i'] /\ match_simple_inst_uslh i i' /\ np = [].
 Proof.
   ii. unfold uslh_inst in USLH. ss.
-  des_ifs; ss; unfold MiniCET.uslh_ret in *;  clarify; esplits; econs; eauto.
+  des_ifs; ss; unfold MiniCET.uslh_ret in *; clarify; esplits; econs; eauto.
 Qed.
 
-
 Lemma mapM_nth_error {A B} (f: A -> M B) l c l' np o blk
-    (MM: mapM f l c = (l', np))
-    (SRC: nth_error l o = Some blk) :
+  (MM: mapM f l c = (l', np))
+  (SRC: nth_error l o = Some blk) :
   exists blk' c' np', nth_error l' o = Some blk' /\ f blk c' = (blk', np').
 Proof.
   ginduction l; ss; ii.
@@ -783,12 +770,12 @@ Definition len_before {A B} (f: A -> M B) (l: list A) (o c: nat) : nat :=
   Datatypes.length np.
 
 Lemma mapM_nth_error_strong {A B} (f: A -> M B) l c l' np o blk
-    (MM: mapM f l c = (l', np))
-    (SRC: nth_error l o = Some blk) :
+  (MM: mapM f l c = (l', np))
+  (SRC: nth_error l o = Some blk) :
   exists blk' c' np',
     nth_error l' o = Some blk'
- /\ f blk c' = (blk', np')
- /\ c' = c + len_before f l o c.
+  /\ f blk c' = (blk', np')
+  /\ c' = c + len_before f l o c.
 Proof.
   ginduction l; ss; ii.
   { rewrite nth_error_nil in SRC. clarify. }
@@ -813,9 +800,9 @@ Proof.
   do 2 rewrite length_app. ss. lia.
 Qed.
 
-Definition blk_offset (blk: list inst * bool) (o: nat) :=
-  fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o (fst blk))
-    (if Bool.eqb (snd blk) true then 2 else 0).
+(* Definition blk_offset (blk: list inst * bool) (o: nat) := *)
+(*   fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o (fst blk)) *)
+(*     (if Bool.eqb (snd blk) true then 2 else 0). *)
 
 Definition prefix_offset {A} (ll: list (list A)) (i: nat) (base: nat) :=
   fold_left (fun acc l => acc + (Datatypes.length l)) (firstn i ll) base.
@@ -835,8 +822,8 @@ Proof.
 Qed.
 
 Lemma concat_nth_error {A} (ll: list (list A)) l i j ii
-    (LL: nth_error ll i = Some l)
-    (L: nth_error l j = Some ii) :
+  (LL: nth_error ll i = Some l)
+  (L: nth_error l j = Some ii) :
   nth_error (List.concat ll) ((prefix_offset ll i 0) + j)%nat = Some ii.
 Proof.
   ginduction ll; ss; ii.
@@ -856,46 +843,39 @@ Proof.
   auto.
 Qed.
 
-Lemma offset_eq_aux blk c' l0 p1 n o
-    (BLK: mapM uslh_inst blk c' = (l0, p1))
-    (BDD: o <= Datatypes.length blk) :
-  prefix_offset l0 o n =
-  o + fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk) n.
-Proof.
-  ginduction o; ii.
-  { ss. }
-  unfold prefix_offset.
+(* Lemma offset_eq_aux blk c' l0 p1 n o *)
+(*     (BLK: mapM uslh_inst blk c' = (l0, p1)) *)
+(*     (BDD: o <= Datatypes.length blk) : *)
+(*   prefix_offset l0 o n = *)
+(*   o + fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk) n. *)
+(* Proof. *)
+(*   ginduction o; ii. *)
+(*   { ss. } *)
+(*   unfold prefix_offset. *)
 
-  exploit mapM_perserve_len; eauto. intros LEN.
-  destruct blk.
-  { ss. des_ifs. lia. }
-  destruct l0.
-  { ss. }
-  do 2 rewrite firstn_cons.
-  rewrite unfold_mapM in BLK.
-  exploit bind_inv; eauto. i. des. subst. ss.
-  unfold uslh_bind in x1.
-  destruct (mapM uslh_inst blk (c' + Datatypes.length pm)) eqn:X. ss. clarify.
-  exploit IHo.
-  { eauto. }
-  { lia. }
-  i. rewrite <- x1.
+(*   exploit mapM_perserve_len; eauto. intros LEN. *)
+(*   destruct blk. *)
+(*   { ss. des_ifs. lia. } *)
+(*   destruct l0. *)
+(*   { ss. } *)
+(*   do 2 rewrite firstn_cons. *)
+(*   rewrite unfold_mapM in BLK. *)
+(*   exploit bind_inv; eauto. i. des. subst. ss. *)
+(*   unfold uslh_bind in x1. *)
+(*   destruct (mapM uslh_inst blk (c' + Datatypes.length pm)) eqn:X. ss. clarify. *)
+(*   exploit IHo. *)
+(*   { eauto. } *)
+(*   { lia. } *)
+(*   i. rewrite <- x1. *)
 
-  unfold prefix_offset.
-  replace (n + Datatypes.length l) with
-    (add (if is_br_or_call i then add n 1 else n) 1); auto.
-  2:{ destruct i; ss; unfold MiniCET.uslh_ret in *; ss; clarify; ss.
-      - unfold uslh_bind in x0. ss. clarify. ss. lia.
-      - lia. }
-  rewrite fold_left_add_init. lia.
-Qed.
-
-Lemma length_add_index {A} (p: list A) :
-  Datatypes.length (add_index p) = Datatypes.length p.
-Proof.
-  unfold add_index.
-  rewrite length_combine, length_seq, min_id. auto.
-Qed.
+(*   unfold prefix_offset. *)
+(*   replace (n + Datatypes.length l) with *)
+(*     (add (if is_br_or_call i then add n 1 else n) 1); auto. *)
+(*   2:{ destruct i; ss; unfold MiniCET.uslh_ret in *; ss; clarify; ss. *)
+(*       - unfold uslh_bind in x0. ss. clarify. ss. lia. *)
+(*       - lia. } *)
+(*   rewrite fold_left_add_init. lia. *)
+(* Qed. *)
 
 Lemma nth_error_add_index {A} (p: list A) l i
     (NTH: nth_error p l = Some i) :
@@ -912,10 +892,28 @@ Proof.
   ss. f_equal. eapply nth_error_nth. auto.
 Qed.
 
+Lemma fst_add_index_uslh_offset_uslh_aux bl s l1 l2
+  (IDX: split (_add_index_uslh bl s) = (l1, l2)) :
+  l1 = _offset_uslh bl s.
+Proof.
+  unfold add_index_uslh, offset_uslh in *.
+  ginduction bl; ii.
+  { ss. clarify. }
+  unfold _offset_uslh. ss. des_ifs_safe.
+  exploit IHbl; eauto. i. subst. auto.
+Qed.
+
+Lemma fst_add_index_uslh_offset_uslh bl l1 l2
+  (IDX: split (add_index_uslh (fst bl) (snd bl)) = (l1, l2)) :
+  l1 = offset_uslh bl.
+Proof.
+  eapply fst_add_index_uslh_offset_uslh_aux; eauto.
+Qed.
+
 Lemma src_skip_inv p tp pc tpc
-    (TRP: uslh_prog p = tp)
-    (PS: pc_sync p pc = Some tpc)
-    (INST: p[[pc]] = Some <{{ skip }}>) :
+  (TRP: uslh_prog p = tp)
+  (PS: pc_sync p pc = Some tpc)
+  (INST: p[[pc]] = Some <{{ skip }}>) :
   tp[[tpc]] = Some <{{ skip }}>.
 Proof.
   destruct pc as [l o].
@@ -937,10 +935,11 @@ Proof.
   i. des. rewrite x0. destruct blk' as [blk' is_proc'].
   simpl.
   ss. unfold uslh_bind in x1. ss.
-  destruct (concatM (mapM uslh_inst blk) c') eqn:X.
+  des_ifs_safe. rename Heq2 into X.
+  (* destruct (concatM (mapM uslh_inst blk) c') eqn:X. *)
   unfold pc_sync in *. ss. des_ifs_safe.
-  replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk)
-             (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
+  (* replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk) *)
+  (*            (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss. *)
 
   unfold concatM in X. exploit bind_inv; eauto. i. des; subst.
   exploit mapM_nth_error; try eapply x1; eauto. i. des.

@@ -1,5 +1,5 @@
-From Stdlib Require Import List. Import ListNotations.
-
+From Stdlib Require Import List Arith.
+Import ListNotations.
 
 Fixpoint rev_append {A:Type} (l1 l2 : list A) : list A :=
   match l1 with
@@ -47,6 +47,13 @@ Qed.
 
 Definition add_index {a:Type} (xs:list a) : list (nat * a) :=
   combine (seq 0 (length xs)) xs.
+
+Lemma length_add_index {A} (p: list A) :
+  Datatypes.length (add_index p) = Datatypes.length p.
+Proof.
+  unfold add_index.
+  rewrite length_combine, length_seq, Nat.min_id. auto.
+Qed.
 
 Fixpoint split_sum_list {A B : Type} (l : list (A + B)) : (list A * list B) :=
   match l with
