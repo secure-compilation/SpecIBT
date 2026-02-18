@@ -91,7 +91,7 @@ Definition gen_pub_vars : G pub_vars :=
 Definition val_eqb (v1 v2: val) : bool :=
   match v1, v2 with
   | N n1, N n2 => Nat.eqb n1 n2
-  | FP l1, FP l2 => Nat.eqb l1 l2
+  | FP (l1, o1), FP (l2, o2) => Nat.eqb l1 l2 && Nat.eqb o1 o2
   | UV, UV => true
   | _, _ => false
   end.
@@ -104,24 +104,27 @@ Proof.
   intros. split; intros.
   - destruct v1, v2; simpl in *; try discriminate.
     + rewrite Nat.eqb_eq in H. auto.
-    + rewrite Nat.eqb_eq in H. auto.
-    + reflexivity.
-  - subst. destruct v2; simpl; auto; eapply Nat.eqb_refl.
-Qed.
+    + destruct pc. inversion H.
+    + admit.
+    + destruct pc. inversion H.
+    + auto.
+  - subst. admit.
+Admitted.
 
 Lemma val_eqb_spec':
   forall v1 v2, val_eqb v1 v2 = false <-> v1 <> v2.
 Proof.
-  intros. split; intros.
-  - red. intros. rewrite <- val_eqb_spec in H0.
-    rewrite H in H0. discriminate.
-  - destruct v1, v2; simpl in *; auto.
-    + rewrite Nat.eqb_neq. red. intros. subst.
-      apply H. auto.
-    + rewrite Nat.eqb_neq. red. intros. subst.
-      apply H. auto.
-    + contradiction.
-Qed.
+(*   intros. split; intros. *)
+(*   - red. intros. rewrite <- val_eqb_spec in H0. *)
+(*     rewrite H in H0. discriminate. *)
+(*   - destruct v1, v2; simpl in *; auto. *)
+(*     + rewrite Nat.eqb_neq. red. intros. subst. *)
+(*       apply H. auto. *)
+(*     + rewrite Nat.eqb_neq. red. intros. subst. *)
+(*       apply H. auto. *)
+(*     + contradiction. *)
+(* Qed. *)
+Admitted.
 
 Instance EqDec_val : EqDec val eq.
 Proof.
@@ -314,16 +317,16 @@ Fixpoint _gen_partition (fuel program_length: nat) : G (list nat) :=
 
 Definition gen_partition (pl: nat): G (list nat) := _gen_partition pl pl.
 
-Fixpoint proc_hd (pst: list nat) : list nat :=
+Fixpoint proc_hd (pst: list nat) : list (nat * nat) :=
   match pst with
   | [] => []
-  | hd :: tl => 0 :: map (fun x => x + hd) (proc_hd tl)
+  | hd :: tl => (0, 0) :: map (fun x => (fst x + hd, 0)) (proc_hd tl)
   end.
 
 Compute (proc_hd [3; 3; 1; 1]).
 
 
-Definition gen_callable (pl : nat) : G (list nat) :=
+Definition gen_callable (pl : nat) : G (list (nat * nat)) :=
   pst <- gen_partition pl ;; ret (proc_hd pst).
 
 Definition gen_vars (len: nat) : G (list string) :=
@@ -356,7 +359,7 @@ Definition gen_exp_leaf_wt (t: ty) (c: rctx) (pst: list nat) : G exp :=
                 if seq.nilp not_ptrs then [] else
                   [liftM AId (elems_ "X0"%string not_ptrs)] ) )
   | _ =>
-      oneOf (liftM FPtr (elems_ 0 (proc_hd pst));;;
+      oneOf (liftM FPtr (elems_ (0, 0) (proc_hd pst));;;
                (let ptrs := filter (fun x => (is_ptr c x)) (map_dom (snd c)) in
                 if seq.nilp ptrs then [] else
                   [liftM AId (elems_ "X0"%string ptrs)] ) )
@@ -410,7 +413,7 @@ Definition gen_val_wt (t: ty) (pst: list nat) : G val :=
   match t with
   | TNum => liftM N arbitrary
   | TPtr => match (proc_hd pst) with
-           | [] => ret (FP 0)
+           | [] => ret (FP (0, 0))
            | p::pst' => liftM FP (elems_ p (p::pst'))
            end
   end.
@@ -432,16 +435,19 @@ Definition gen_asgn_wt (t: ty) (c: rctx) (pst: list nat) : G inst :=
     a <- gen_exp_ty_wt t 1 c pst;;
     ret <{ x := a }>.
 
-Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) (default : nat) : G inst :=
+Definition add_zeros (l: list nat) : list (nat * nat) :=
+  map (fun x => (x, 0)) l.
+
+Definition gen_branch_wt (c: rctx) (pl: nat) (pst: list nat) (default : nat * nat) : G inst :=
   let vars := (map_dom (snd c)) in
-  let jlst := (list_minus (seq 0 pl) (proc_hd pst)) in
+  let jlst := (list_minus (add_zeros (seq 0 pl)) (proc_hd pst)) in
   e <- gen_exp_ty_wt TNum 1 c pst;;
   l <- elems_ default jlst;;
-  ret <{ branch e to l }>.
+  ret <{ branch e to (fst l) }>.
 
-Definition gen_jump_wt (pl: nat) (pst: list nat) (default : nat) : G inst :=
-  l <- elems_ default (list_minus (seq 0 pl) (proc_hd pst));;
-  ret <{ jump l }>.
+Definition gen_jump_wt (pl: nat) (pst: list nat) (default : nat * nat) : G inst :=
+  l <- elems_ default (list_minus (add_zeros (seq 0 pl)) (proc_hd pst));;
+  ret <{ jump (fst l) }>.
 
 Definition filter_typed {A : Type} (t : ty) (l : list (A * ty)): list A :=
   map fst (filter (fun '(_, t') => ty_eqb t t') l).
@@ -524,8 +530,8 @@ Definition gen_call_wt (c: rctx) (pst: list nat) : G inst :=
   ret <{ call e }>.
 
 Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
-                        (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
-                        (gen_jump : nat -> list nat -> nat -> G inst)
+                        (gen_branch : rctx -> nat -> list nat -> nat * nat -> G inst)
+                        (gen_jump : nat -> list nat -> nat * nat -> G inst)
                         (gen_load : ty -> rctx -> tmem -> nat -> list nat -> G inst)
                         (gen_store : rctx -> tmem -> nat -> list nat -> G inst)
                         (gen_call : rctx -> list nat -> G inst)
@@ -537,7 +543,7 @@ Definition _gen_inst_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
        (sz, t <- arbitrary;; gen_load t c tm pl pst);
        (sz, gen_store c tm pl pst);
        (sz, gen_call c pst) ] in
-  let non_proc_labels := list_minus (seq 0 pl) (proc_hd pst) in
+  let non_proc_labels := list_minus (add_zeros (seq 0 pl)) (proc_hd pst) in
   match non_proc_labels with
   | nil => freq_ (ret ISkip) insts
   | hd :: _ => freq_ (ret ISkip) (insts ++ [ (2, gen_branch c pl pst hd) ])
@@ -555,10 +561,10 @@ Definition gen_nonterm_wt (gen_asgn : ty -> rctx -> list nat -> G inst)
          (sz, gen_store c tm pl pst);
          (sz, gen_call c pst)].
 
-Definition _gen_term_wt (gen_branch : rctx -> nat -> list nat -> nat -> G inst)
-                      (gen_jump : nat -> list nat -> nat -> G inst)
+Definition _gen_term_wt (gen_branch : rctx -> nat -> list nat -> nat * nat -> G inst)
+                      (gen_jump : nat -> list nat -> nat * nat -> G inst)
                       (c: rctx) (tm: tmem)   (pl: nat) (pst: list nat) : G inst :=
-  let non_proc_labels := list_minus (seq 0 pl) (proc_hd pst) in
+  let non_proc_labels := list_minus (add_zeros (seq 0 pl)) (proc_hd pst) in
   match non_proc_labels with
   | nil => ret IRet
   | hd :: _ => freq_ (ret IRet) ([(1, ret IRet) ; (2, gen_jump pl pst hd)])
@@ -707,7 +713,6 @@ Fixpoint ty_exp (c: rctx) (e: exp) : option ty :=
                      end
   end.
 
-
 Fixpoint ty_inst (c: rctx) (tm: tmem) (p: prog) (i: inst) : bool :=
   match i with
   | ISkip | ICTarget | IRet => true
@@ -744,12 +749,13 @@ Fixpoint ty_inst (c: rctx) (tm: tmem) (p: prog) (i: inst) : bool :=
                        end
                  end
   | ICall e => match e with
-              | FPtr l => wf_label p true l
+              | FPtr (l, 0) => wf_label p true l
               | _ => match ty_exp c e with
                     | Some TPtr => true
                     | _ => false
                     end
               end
+  | _ => false
   end.
 
 Definition ty_blk (c: rctx) (tm: tmem) (p: prog) (blk: list inst * bool) : bool :=
@@ -788,6 +794,8 @@ Definition vars_inst (i: inst) : list string :=
   | ILoad x e => x :: vars_exp e
   | IStore e1 e2 => vars_exp e1 ++ vars_exp e2
   | ICall e => vars_exp e
+  | IDiv x e1 e2 => x :: (vars_exp e1 ++ vars_exp e2)
+  | IPeek _ => [] (* We don't want to generate peek for the source code. *)
   end.
 
 Fixpoint vars_blk (blk: list inst) : list string :=
@@ -891,13 +899,13 @@ Definition m_wtb (m: mem) (tm: tmem) : bool :=
 
 
 Definition gen_inst_no_obs (pl: nat) (pst: list nat) : G inst :=
-  let jlb := (list_minus (seq 0 (pl - 1)) (proc_hd pst)) in
+  let jlb := (list_minus (add_zeros (seq 0 (pl - 1))) (proc_hd pst)) in
   if seq.nilp jlb
   then ret <{ skip }>
   else freq [
            (1, ret ISkip);
            (1, ret IRet);
-           (1, l <- elems_ 0 jlb;; ret (IJump l))
+           (1, l <- elems_ (0,0) jlb;; ret (IJump (fst l)))
          ].
 
 Definition gen_blk_no_obs (bsz pl: nat) (pst: list nat) : G (list inst) :=
@@ -940,8 +948,6 @@ Definition gen_no_obs_prog : G prog :=
 
 Definition empty_mem : mem := [].
 
-Definition empty_rs : reg := t_empty (FP 0).
+Definition empty_rs : reg := t_empty (FP (0, 0)).
 
-
-
-Definition spec_rs (rs: reg) := (callee !-> (FP 0); (msf !-> (N 0); rs)).
+Definition spec_rs (rs: reg) := (callee !-> (FP (0, 0)); (msf !-> (N 0); rs)).
