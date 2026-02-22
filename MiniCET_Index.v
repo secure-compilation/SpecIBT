@@ -321,12 +321,6 @@ Definition ms_true_ic (ic: ideal_cfg) : bool :=
 (*   | _ => None *)
 (*   end. *)
 
-Fixpoint _offset_uslh (bl: list inst) (s: nat) : list nat :=
-  match bl with
-  | [] => []
-  | i :: tl => s :: _offset_uslh tl (s + uslh_inst_sz i)
-  end.
-
 Definition offset_uslh (bl: list inst * bool) : list nat :=
   _offset_uslh (fst bl) (if snd bl then 2 else 0).
 
@@ -721,7 +715,7 @@ Variant match_inst_uslh (p: prog) (pc: cptr) : inst -> inst -> Prop :=
   (SYNC: pc_sync p pc = Some tpc)
   (RET: e'' = <{ callee = &(fst tpc, snd tpc + 2) }>)
   (IN: (uslh_prog p)[[ tpc + 1 ]] = Some (ICall e'))
-  (IN': (uslh_prog p)[[ (fst tpc, snd tpc + 2) ]] = Some <{{ msf := e'' ? 1 : msf }}>) :
+  (IN': (uslh_prog p)[[ (fst tpc, snd tpc + 2) ]] = Some <{{ msf := e'' ? msf : 1 }}>) :
   match_inst_uslh p pc (ICall e) (IAsgn callee e')
 | uslh_ret tpc
   (SYNC: pc_sync p pc = Some tpc)
@@ -915,41 +909,42 @@ Proof.
   ss. f_equal. eapply nth_error_nth. auto.
 Qed.
 
-Lemma add_index_uslh_offset_uslh_aux bl s l1 l2
-  (IDX: split (_add_index_uslh bl s) = (l1, l2)) :
-  l1 = _offset_uslh bl s /\ l2 = bl.
-Proof.
-  unfold add_index_uslh, offset_uslh in *.
-  ginduction bl; ii.
-  { ss. clarify. }
-  unfold _offset_uslh. ss. des_ifs_safe.
-  exploit IHbl; eauto. i. des. subst. auto.
-Qed.
+(* Lemma add_index_uslh_offset_uslh_aux bl s l1 l2 *)
+(*   (IDX: split (_add_index_uslh bl s) = (l1, l2)) : *)
+(*   l1 = _offset_uslh bl s /\ l2 = bl. *)
+(* Proof. *)
+(*   unfold add_index_uslh, offset_uslh in *. *)
+(*   ginduction bl; ii. *)
+(*   { ss. clarify. } *)
+(*   unfold _offset_uslh. ss. des_ifs_safe. *)
+(*   exploit IHbl; eauto. i. des. subst. auto. *)
+(* Qed. *)
 
-Lemma uslh_offset_uslh_add_index_aux bl s l1 l2
-  (L1: l1 = _offset_uslh bl s)
-  (L2: l2 = bl) :
-  split (_add_index_uslh bl s) = (l1, l2).
-Proof.
-  ginduction bl; ii; try (sfby ss; clarify).
-  subst. ss. des_ifs_safe.
-  erewrite IHbl in Heq; eauto. clarify.
-Qed.
+(* Lemma uslh_offset_uslh_add_index_aux bl s l1 l2 *)
+(*   (L1: l1 = _offset_uslh bl s) *)
+(*   (L2: l2 = bl) : *)
+(*   split (_add_index_uslh bl s) = (l1, l2). *)
+(* Proof. *)
+(*   ginduction bl; ii; try (sfby ss; clarify). *)
+(*   subst. ss. des_ifs_safe. *)
+(*   erewrite IHbl in Heq; eauto. clarify. *)
+(* Qed. *)
 
-Lemma add_index_uslh_offset_uslh bl is_proc l1 l2
-  (IDX: split (add_index_uslh bl is_proc) = (l1, l2)) :
-  l1 = offset_uslh (bl, is_proc) /\ l2 = bl.
-Proof.
-  eapply add_index_uslh_offset_uslh_aux; eauto.
-Qed.
+(* Lemma add_index_uslh_offset_uslh bl is_proc l1 l2 *)
+(*   (IDX: split (add_index_uslh bl is_proc) = (l1, l2)) : *)
+(*   l1 = offset_uslh (bl, is_proc) /\ l2 = bl. *)
+(* Proof. *)
+(*   unfold add_index_uslh, offset_uslh in *. *)
+(*   eapply split_combine in IDX.  *)
+(*   eapply add_index_uslh_offset_uslh_aux; eauto. *)
+(* Qed. *)
 
 Lemma uslh_offset_uslh_add_index bl is_proc l1 l2
   (L1: l1 = offset_uslh (bl, is_proc))
   (L2: l2 = bl) :
   (add_index_uslh bl is_proc) = combine l1 l2.
 Proof.
-  symmetry. eapply split_combine.
-  eapply uslh_offset_uslh_add_index_aux; eauto.
+  unfold add_index_uslh, offset_uslh in *. subst. auto.
 Qed.
 
 Lemma _offset_uslh_combine blk n o o' i
@@ -1291,7 +1286,6 @@ Proof.
   assert (pf = []).
   { ss; unfold MiniCET.uslh_ret in *; clarify. }
   subst. rewrite app_nil_r. eapply src_inv_branch_blk; eauto.
-  erewrite <- uslh_offset_uslh_add_index; eauto. unfold offset_uslh. eauto.
 Unshelve. all: econs.
 Qed.
 
@@ -1341,84 +1335,11 @@ Proof.
       eapply nth_error_In in INST. eapply Forall_forall in NCT; eauto.
       red in NCT. eapply Forall_forall in NCT; eauto. red in NCT. clarify. }
   (* branch *)
-  - remember (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p) +
-                len_before (fun i => uslh_inst i l (prefix_offset a0 o (if is_proc then 2 else 0))) blk o (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p))) as c'.
-
-    exists <{{ branch (msf = 1) ? 0 : e to c' }}>.
-    split.
-    + (* ss. exploit concat_nth_error; i. *)
-      (* { eapply x2. } *)
-      (* { instantiate (2:= 0). ss. } *)
-      des_ifs.
-      (* is_proc true *)
-      * 
-      { unfold MiniCET.uslh_ret in Heq1. clarify.
-        assert (prefix_offset a o 0 + 2 = o + blk_offset (blk, true) o).
-        { unfold blk_offset. ss. unfold prefix_offset.
-          rewrite <- fold_left_add_init. eapply offset_eq_aux; eauto.
-          exploit mapM_perserve_len; eauto. i. rewrite x1.
-          eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
-        rewrite <- H. rewrite add_comm.
-        replace (2 + prefix_offset a o 0) with (S (S (prefix_offset a o 0))) by lia.
-        rewrite add_0_r in x4. auto. }
-      { unfold MiniCET.uslh_ret in Heq1. clarify.
-        assert (prefix_offset a o 0 + 0 = o + blk_offset (blk, false) o).
-        { rewrite add_0_r.
-          unfold blk_offset. ss. eapply offset_eq_aux; eauto.
-          exploit mapM_perserve_len; eauto. i. rewrite x1.
-          eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
-        rewrite <- H. auto. }
-    + econs 2; ss.
-      2:{ eapply src_inv_branch_prog; eauto; cycle 1.
-          { ss. rewrite Heq. subst. f_equal.
-            erewrite <- uslh_blk_np_length, <- uslh_inst_np_length; eauto. }
-          ss. des_ifs. }
-      * des_ifs_safe. f_equal.
-        do 2 rewrite <- add_assoc. rewrite add_cancel_l.
-
-
-        assert (branch_in_prog_before p l = len_before uslh_blk (add_index p) l (Datatypes.length p)).
-        { eapply uslh_blk_np_length. }
-        i. rewrite <- H.
-
-
-        assert (offset_branch_before (blk, is_proc) o =
-                  len_before uslh_inst blk o (Datatypes.length p + branch_in_prog_before p l)).
-        { eapply uslh_inst_np_length. }
-        lia.
-      * eauto.
-
-      * ss. unfold uslh_prog. rewrite Huslh.
-        rewrite nth_error_app1.
-        2:{ rewrite <- nth_error_Some. ii. clarify. }
-        rewrite x0.
-        replace (fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then add acc 1 else acc) (firstn o blk)
-                   (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss.
-
-        destruct blk' as [blk' is_proc']. ss.
-        exploit concat_nth_error; i.
-        { eapply x2. }
-        { instantiate (2:= 1). ss. }
-        des_ifs.
-        { unfold MiniCET.uslh_ret in Heq1. clarify.
-          assert (prefix_offset a o 0 + 2 = o + blk_offset (blk, true) o).
-          { unfold blk_offset. ss. unfold prefix_offset.
-            rewrite <- fold_left_add_init. eapply offset_eq_aux; eauto.
-            exploit mapM_perserve_len; eauto. i. rewrite x1.
-            eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
-          rewrite <- H. rewrite <- add_assoc. rewrite add_comm.
-          replace ((add 2 1) + prefix_offset a o 0)%nat with (S (S (add (prefix_offset a o 0) 1))) by lia.
-          do 2 rewrite nth_error_cons_succ. auto. }
-        { unfold MiniCET.uslh_ret in Heq1. clarify.
-          assert (prefix_offset a o 0 = o + blk_offset (blk, false) o).
-          { unfold blk_offset. ss. eapply offset_eq_aux; eauto.
-            exploit mapM_perserve_len; eauto. i. rewrite x1.
-            eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. }
-          rewrite <- H. auto. }
-
-    admit. (* branch *)
-  - admit. (* call *)
-  - admit. (* ret *)
+  - admit.
+  (* call *)
+  - admit.
+  (* ret *)
+  - admit.
 Admitted.
   (* { eauto. } *)
   (* unfold uslh_prog in TRP. *)
@@ -1930,17 +1851,18 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   match_cfgs_ext p (S_Running ((pc, r, m, stk), ms))
                    (S_Running ((pc' + 1, r', m, stk'), false, ms))
 | match_cfgs_ext_ret2 (* after return *)
-  l o l' o' r r' m stk stk' ms ms'
+  l o l' o' r r' m stk stk' ms
   (PC: pc_sync p (l, o - 1) = Some (l', o')) (* call - callee asgn match *)
-  (TO: (uslh_prog p) [[(l', o' + 2)]] = Some <{{ msf := (callee = (& (l', o' + 2))) ? 1 : msf }}>)
+  (TO: (uslh_prog p) [[(l', o' + 2)]] = Some <{{ msf := (callee = (& (l', o' + 2))) ? msf : 1 }}>)
   (REG: Rsync1 r r' ms)
   (STK: map_opt (pc_sync p) stk = Some stk')
-  (MS: r' ! callee = match stk' with
+  (MS: eval r' <{{ (callee = (& (l', o' + 2))) ? msf : 1 }}> = N (if ms then 1 else 0))
+  (* (MS: r' ! callee = match stk' with
                      | [] => UV
                      | (l, o)::sttl => FP (l, o)
-                     end) :
+                     end) *) :
   match_cfgs_ext p (S_Running (((l, o), r, m, stk), ms))
-                   (S_Running (((l', o' + 2), r', m, stk'), false, ms'))
+                   (S_Running (((l', o' + 2), r', m, stk'), false, ms))
 | match_cfgs_ext_fault :
   match_cfgs_ext p S_Fault S_Fault
 | match_cfgs_ext_term :

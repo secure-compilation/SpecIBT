@@ -509,7 +509,7 @@ Definition uslh_inst (i: inst) (l: nat) (o: nat) : M (list inst) :=
   | <{{call e}}> =>
       let e' := <{ (msf=1) ? &(0,0) : e }> in
       let e'' := <{ callee = &((l, o + 2)) }> in
-      ret <{{ i[callee:=e'; call e'; (msf := (e'' ? 1 : msf))] }}>
+      ret <{{ i[callee:=e'; call e'; (msf := (e'' ? msf : 1))] }}>
   | <{{ret}}> =>
       ret <{{ i[callee <- peek; ret] }}>
   | _ => ret [i]
@@ -523,14 +523,14 @@ Definition uslh_inst_sz (i: inst) : nat :=
   | _ => 1
   end.
 
-Fixpoint _add_index_uslh (bl: list inst) (s: nat) : list (nat * inst) :=
+Fixpoint _offset_uslh (bl: list inst) (s: nat) : list nat :=
   match bl with
   | [] => []
-  | i :: tl => (s, i) :: _add_index_uslh tl (s + uslh_inst_sz i)
+  | i :: tl => s :: _offset_uslh tl (s + uslh_inst_sz i)
   end.
 
 Definition add_index_uslh (bl: list inst) (is_proc: bool) : list (nat * inst) :=
-  _add_index_uslh bl (if is_proc then 2 else 0).
+  combine (_offset_uslh bl (if is_proc then 2 else 0)) bl.
 
 Definition uslh_blk (nblk: nat * (list inst * bool)) : M (list inst * bool) :=
   let '(l, (bl, is_proc)) := nblk in
