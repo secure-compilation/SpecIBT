@@ -1209,6 +1209,33 @@ Proof.
   eapply uslh_inst_np_length_aux in Heq. rewrite Heq. lia.
 Qed.
 
+Lemma uslh_inst_np_length_same blk ll o lpc opc c (LEN: Datatypes.length ll = Datatypes.length blk) :
+  len_before (fun i => uslh_inst i lpc opc) blk o c =
+  len_before (fun '(opc', i) => uslh_inst i lpc opc') (combine ll blk) o c.
+Proof.
+  ginduction blk; ss; i.
+  { unfold len_before. rewrite combine_nil. do 2 rewrite firstn_nil. unfold mapM in *. ss. }
+  destruct ll; ss. destruct o.
+  { unfold len_before. ss. }
+  unfold len_before. do 2 rewrite firstn_cons. des_ifs_safe.
+  eapply mapM_cons_inv in Heq. des. subst.
+  eapply mapM_cons_inv in Heq0. des. subst.
+  unfold len_before in *.
+  specialize (IHblk ll o lpc opc (c + Datatypes.length np_hd)).
+  rewrite Heq1 in IHblk. ss.
+  eapply uslh_inst_np_length_aux in Heq0, Heq. rewrite <- Heq in Heq0.
+  rewrite Heq0 in Heq2. unfold offset_uslh in IHblk. ss. rewrite Heq2 in IHblk.
+  do 2 rewrite length_app. lia.
+Qed.
+
+Lemma _offset_uslh_length blk n :
+  Datatypes.length (_offset_uslh blk n) = Datatypes.length blk.
+Proof. ginduction blk; ss; i; eauto. Qed.
+
+Lemma offset_uslh_length blk b :
+  Datatypes.length (offset_uslh (blk, b)) = Datatypes.length blk.
+Proof. eapply _offset_uslh_length; eauto. Qed.
+
 Lemma src_inv_branch_blk
   blk o e l lpc n c blk' np
   (INST: nth_error blk o = Some <{{ branch e to l }}>)
@@ -1318,7 +1345,8 @@ Proof.
 
   destruct pc as [l o]. simpl in INST. des_ifs. destruct p0 as [blk is_proc].
   hexploit label_inv; eauto. i. des.
-  simpl in PS. des_ifs_safe. ss. rewrite H. destruct blk' as [blk' is_proc'].
+  simpl in PS. des_ifs_safe. simpl in INST. simpl. rewrite H.
+  destruct blk' as [blk' is_proc']. simpl.
   eapply bind_inv in H0. des. clarify.
   unfold concatM in H0. eapply bind_inv in H0. des.
   ss. unfold MiniCET.uslh_ret in *. clarify.
@@ -1334,171 +1362,78 @@ Proof.
       eapply nth_error_In in Heq. eapply in_split_l in Heq. rewrite Heq0 in *. ss.
       eapply nth_error_In in INST. eapply Forall_forall in NCT; eauto.
       red in NCT. eapply Forall_forall in NCT; eauto. red in NCT. clarify. }
+
   (* branch *)
-  - admit.
+  - dup Heq0. rename Heq2 into TRNTH.
+    rewrite nth_error_map in Heq0. unfold option_map in Heq0.
+    des_ifs_safe. unfold offset_uslh in Heq1.
+
+    exploit mapM_nth_error_strong; eauto.
+    { eapply _offset_uslh_combine; eauto. }
+    i. des.
+
+    assert (exists i', nth_error (List.concat a0) (prefix_offset a0 o 0) = Some i'
+               /\ match_inst_uslh p (l, o) <{{ branch e to l1 }}> i').
+    { replace (prefix_offset a0 o 0) with (prefix_offset a0 o 0 + 0) by lia.
+      simpl in x1. eapply bind_inv in x1. des. subst. unfold MiniCET.uslh_ret in *. clarify.
+      exploit (concat_nth_error a0 _ _ 0); eauto; [ss|]. i.
+      esplits; eauto.
+      assert (match_branch_target p (l, o) = Some a).
+      { ss. rewrite Heq2.
+        unfold add_block_M, add_block in x1. clarify.
+        rewrite uslh_blk_np_length.
+        f_equal. f_equal.
+        erewrite <- uslh_inst_np_length_same.
+        2:{ eapply offset_uslh_length. }
+        erewrite uslh_inst_np_length; eauto. }
+      econs 2; eauto.
+      { eapply src_inv_branch_prog; eauto; cycle 1.
+        { ss. des_ifs. }
+        { simpl. rewrite TRNTH. unfold offset_uslh. ss. rewrite Heq1. eauto. } }
+      { simpl. rewrite TRNTH. unfold offset_uslh. ss. rewrite Heq1. eauto. }
+      simpl. rewrite H. ss. des_ifs.
+      - replace (prefix_offset a0 o 2) with (S (S (prefix_offset a0 o 0))); simpl.
+        2:{ unfold prefix_offset at 2. rewrite fold_left_init_0 at 1. unfold prefix_offset. lia. }
+        eapply concat_nth_error; eauto.
+      - eapply concat_nth_error; eauto. }
+    des_ifs; eauto.
+    replace (prefix_offset a0 o 2) with (S (S (prefix_offset a0 o 0))); simpl; eauto.
+    unfold prefix_offset at 2. rewrite fold_left_init_0 at 1. unfold prefix_offset. lia.
   (* call *)
-  - admit.
+  - dup Heq0. rename Heq2 into TRNTH.
+    rewrite nth_error_map in Heq0. unfold option_map in Heq0.
+    des_ifs_safe. unfold offset_uslh in Heq1.
+
+    exploit mapM_nth_error_strong; eauto.
+    { eapply _offset_uslh_combine; eauto. }
+    i. des.
+
+    assert (exists i', nth_error (List.concat a0) (prefix_offset a0 o 0) = Some i'
+              /\  match_inst_uslh p (l, o) <{{ call fp }}> i').
+    { replace (prefix_offset a0 o 0) with (prefix_offset a0 o 0 + 0) by lia.
+      ss. unfold MiniCET.uslh_ret in *. clarify.
+
+      exploit (concat_nth_error a0 _ _ 0); eauto; [ss|]. i.
+      esplits; eauto.
+      econs 3; eauto.
+      { ss. rewrite TRNTH. unfold offset_uslh. ss. rewrite Heq1. eauto. }
+      { simpl. rewrite H. simpl. des_ifs.
+        - replace (prefix_offset a0 o 2) with (S (S (prefix_offset a0 o 0))); simpl.
+          2:{ unfold prefix_offset at 2. rewrite fold_left_init_0 at 1. unfold prefix_offset. lia. }
+          eapply concat_nth_error; eauto.
+        - eapply concat_nth_error; eauto. }
+      { simpl. rewrite H. simpl. des_ifs.
+        - replace (prefix_offset a0 o 2) with (S (S (prefix_offset a0 o 0))); simpl.
+          2:{ unfold prefix_offset at 2. rewrite fold_left_init_0 at 1. unfold prefix_offset. lia. }
+          eapply concat_nth_error; eauto.
+          simpl. repeat f_equal. unfold prefix_offset. rewrite fold_left_init_0. lia.
+        - eapply concat_nth_error; eauto. } }
+    des_ifs; eauto.
+    replace (prefix_offset a0 o 2) with (S (S (prefix_offset a0 o 0))); simpl; eauto.
+    unfold prefix_offset at 2. rewrite fold_left_init_0 at 1. unfold prefix_offset. lia.
   (* ret *)
   - admit.
 Admitted.
-  (* { eauto. } *)
-  (* unfold uslh_prog in TRP. *)
-(*   destruct (mapM uslh_blk (add_index p) (Datatypes.length p)) as [p' newp] eqn:Huslh. *)
-(*   exploit mapM_perserve_len; eauto. intros LEN. *)
-
-
-(*   destruct pc as [l o]. dup PS. *)
-(*   unfold pc_sync in PS. ss. des_ifs_safe. *)
-(*   destruct p0 as [blk is_proc]. ss. *)
-(*   replace (fold_left (fun (acc : nat) (i0 : inst) => if is_br_or_call i0 then add acc 1 else acc) (firstn o blk) *)
-(*              (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss. *)
-
-
-(*   exploit mapM_nth_error_strong; eauto. *)
-(*   { instantiate (2:= l). instantiate (1:= (l, (blk, is_proc))). *)
-(*     eapply nth_error_add_index. auto. } *)
-(*   i. des. *)
-
-(*   rewrite nth_error_app1. *)
-(*   2:{ rewrite <- nth_error_Some. ii. clarify. } *)
-(*   rewrite x0. ss. unfold uslh_bind in x1. ss. *)
-(*   destruct (concatM (mapM uslh_inst blk) c') eqn: CONCAT. *)
-(*   unfold concatM in CONCAT. ss. exploit bind_inv; eauto. i. des; subst. *)
-(*   exploit mapM_nth_error_strong; try eapply x3; eauto. i. des. *)
-(*   unfold MiniCET.uslh_ret in x4. clarify. *)
-
-(*   destruct i; ss. *)
-(*   - unfold uslh_bind in x5. ss. clarify. *)
-(*     remember (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p) + *)
-(*                 len_before uslh_inst blk o (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p))) as c'. *)
-(*     exists <{{ branch (msf = 1) ? 0 : e to c' }}>. *)
-(*     split. *)
-(*     + destruct blk' as [blk' is_proc']. ss. *)
-(*       exploit concat_nth_error; i. *)
-(*       { eapply x2. } *)
-(*       { instantiate (2:= 0). ss. } *)
-(*       des_ifs. *)
-(*       { unfold MiniCET.uslh_ret in Heq1. clarify. *)
-(*         assert (prefix_offset a o 0 + 2 = o + blk_offset (blk, true) o). *)
-(*         { unfold blk_offset. ss. unfold prefix_offset. *)
-(*           rewrite <- fold_left_add_init. eapply offset_eq_aux; eauto. *)
-(*           exploit mapM_perserve_len; eauto. i. rewrite x1. *)
-(*           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. } *)
-(*         rewrite <- H. rewrite add_comm. *)
-(*         replace (2 + prefix_offset a o 0) with (S (S (prefix_offset a o 0))) by lia. *)
-(*         rewrite add_0_r in x4. auto. } *)
-(*       { unfold MiniCET.uslh_ret in Heq1. clarify. *)
-(*         assert (prefix_offset a o 0 + 0 = o + blk_offset (blk, false) o). *)
-(*         { rewrite add_0_r. *)
-(*           unfold blk_offset. ss. eapply offset_eq_aux; eauto. *)
-(*           exploit mapM_perserve_len; eauto. i. rewrite x1. *)
-(*           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. } *)
-(*         rewrite <- H. auto. } *)
-(*     + econs 2; ss. *)
-(*       2:{ eapply src_inv_branch_prog; eauto; cycle 1. *)
-(*           { ss. rewrite Heq. subst. f_equal. *)
-(*             erewrite <- uslh_blk_np_length, <- uslh_inst_np_length; eauto. } *)
-(*           ss. des_ifs. } *)
-(*       * des_ifs_safe. f_equal. *)
-(*         do 2 rewrite <- add_assoc. rewrite add_cancel_l. *)
-
-
-(*         assert (branch_in_prog_before p l = len_before uslh_blk (add_index p) l (Datatypes.length p)). *)
-(*         { eapply uslh_blk_np_length. } *)
-(*         i. rewrite <- H. *)
-
-
-(*         assert (offset_branch_before (blk, is_proc) o = *)
-(*                   len_before uslh_inst blk o (Datatypes.length p + branch_in_prog_before p l)). *)
-(*         { eapply uslh_inst_np_length. } *)
-(*         lia. *)
-(*       * eauto. *)
-
-(*       * ss. unfold uslh_prog. rewrite Huslh. *)
-(*         rewrite nth_error_app1. *)
-(*         2:{ rewrite <- nth_error_Some. ii. clarify. } *)
-(*         rewrite x0. *)
-(*         replace (fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then add acc 1 else acc) (firstn o blk) *)
-(*                    (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss. *)
-
-(*         destruct blk' as [blk' is_proc']. ss. *)
-(*         exploit concat_nth_error; i. *)
-(*         { eapply x2. } *)
-(*         { instantiate (2:= 1). ss. } *)
-(*         des_ifs. *)
-(*         { unfold MiniCET.uslh_ret in Heq1. clarify. *)
-(*           assert (prefix_offset a o 0 + 2 = o + blk_offset (blk, true) o). *)
-(*           { unfold blk_offset. ss. unfold prefix_offset. *)
-(*             rewrite <- fold_left_add_init. eapply offset_eq_aux; eauto. *)
-(*             exploit mapM_perserve_len; eauto. i. rewrite x1. *)
-(*             eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. } *)
-(*           rewrite <- H. rewrite <- add_assoc. rewrite add_comm. *)
-(*           replace ((add 2 1) + prefix_offset a o 0)%nat with (S (S (add (prefix_offset a o 0) 1))) by lia. *)
-(*           do 2 rewrite nth_error_cons_succ. auto. } *)
-(*         { unfold MiniCET.uslh_ret in Heq1. clarify. *)
-(*           assert (prefix_offset a o 0 = o + blk_offset (blk, false) o). *)
-(*           { unfold blk_offset. ss. eapply offset_eq_aux; eauto. *)
-(*             exploit mapM_perserve_len; eauto. i. rewrite x1. *)
-(*             eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. } *)
-(*           rewrite <- H. auto. } *)
-
-
-(*   - unfold MiniCET.uslh_ret in x5. clarify. *)
-(*     exists <{{ callee := (msf = 1) ? & (0,0) : fp }}>. *)
-(*     split. *)
-(*     + destruct blk' as [blk' is_proc']. ss. *)
-(*       exploit concat_nth_error; i. *)
-(*       { eapply x2. } *)
-(*       { instantiate (2:= 0). ss. } *)
-(*       des_ifs. *)
-(*       { unfold MiniCET.uslh_ret in Heq1. clarify. *)
-(*         assert (prefix_offset a o 0 + 2 = o + blk_offset (blk, true) o). *)
-(*         { unfold blk_offset. ss. unfold prefix_offset. *)
-(*           rewrite <- fold_left_add_init. eapply offset_eq_aux; eauto. *)
-(*           exploit mapM_perserve_len; eauto. i. rewrite x1. *)
-(*           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. } *)
-(*         rewrite <- H. rewrite add_comm. *)
-(*         replace (2 + prefix_offset a o 0) with (S (S (prefix_offset a o 0))) by lia. *)
-(*         rewrite add_0_r in x4. auto. } *)
-(*       { unfold MiniCET.uslh_ret in Heq1. clarify. *)
-(*         assert (prefix_offset a o 0 + 0 = o + blk_offset (blk, false) o). *)
-(*         { rewrite add_0_r. *)
-(*           unfold blk_offset. ss. eapply offset_eq_aux; eauto. *)
-(*           exploit mapM_perserve_len; eauto. i. rewrite x1. *)
-(*           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. } *)
-(*         rewrite <- H. auto. } *)
-
-(*     + econs 3; eauto. ss. unfold uslh_prog. rewrite Huslh. *)
-(*       rewrite nth_error_app1. *)
-(*       2:{ rewrite <- nth_error_Some. ii. clarify. } *)
-(*       rewrite x0. *)
-(*       replace (fold_left (fun (acc : nat) (i : inst) => if is_br_or_call i then add acc 1 else acc) (firstn o blk) *)
-(*              (if Bool.eqb is_proc true then 2 else 0)) with (blk_offset (blk, is_proc) o) by ss. *)
-
-(*       destruct blk' as [blk' is_proc']. ss. *)
-(*       exploit concat_nth_error; i. *)
-(*       { eapply x2. } *)
-(*       { instantiate (2:= 1). ss. } *)
-(*       des_ifs. *)
-(*       { unfold MiniCET.uslh_ret in Heq1. clarify. *)
-(*         assert (prefix_offset a o 0 + 2 = o + blk_offset (blk, true) o). *)
-(*         { unfold blk_offset. ss. unfold prefix_offset. *)
-(*           rewrite <- fold_left_add_init. eapply offset_eq_aux; eauto. *)
-(*           exploit mapM_perserve_len; eauto. i. rewrite x1. *)
-(*           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. } *)
-(*         rewrite <- H. rewrite <- add_assoc. rewrite add_comm. *)
-(*         replace ((add 2 1) + prefix_offset a o 0)%nat with (S (S (add (prefix_offset a o 0) 1))) by lia. *)
-(*         do 2 rewrite nth_error_cons_succ. auto. } *)
-(*       { unfold MiniCET.uslh_ret in Heq1. clarify. *)
-(*         assert (prefix_offset a o 0 = o + blk_offset (blk, false) o). *)
-(*         { unfold blk_offset. ss. eapply offset_eq_aux; eauto. *)
-(*           exploit mapM_perserve_len; eauto. i. rewrite x1. *)
-(*           eapply lt_le_incl. rewrite <- nth_error_Some. ii. clarify. } *)
-(*         rewrite <- H. auto. } *)
-
-(*   - exists <{{ ctarget }}>. exfalso. eapply (no_ct_prog_src p (l, o)); eauto. *)
-(*     ss. des_ifs. *)
-(* Qed. *)
 
 Lemma firstnth_error : forall (l: list inst) (n: nat) (i: inst),
   nth_error l n = Some i ->
@@ -1605,17 +1540,21 @@ Proof.
   eapply bind_inv in USLH. des. subst. unfold concatM in USLH.
   eapply bind_inv in USLH. des. subst. ss. unfold MiniCET.uslh_ret in *. clarify.
   assert (no_ct_prog pm0).
-  { clear -USLH. ginduction l; ss; ii.
-    - unfold mapM in *. ss. unfold MiniCET.uslh_ret in *. clarify.
-    - eapply mapM_cons_inv in USLH. des. subst.
-Admitted.
-(*       exploit IHl; eauto. i. destruct a; ss; unfold MiniCET.uslh_ret in *; clarify. ss. *)
-(*       eapply bind_inv in USLH. des. ss. subst. clarify. *)
-(*       unfold add_block_M, add_block in USLH. *)
-(*       rewrite app_nil_r. rewrite no_ct_prog_app. split; auto. clarify. *)
-(*       red. des_ifs. ss. clarify. econs; eauto. repeat econs. } *)
-(*   rewrite app_nil_r. rewrite no_ct_prog_app. split; auto. des_ifs; ss. *)
-(* Qed. *)
+  { clear -USLH. unfold add_index_uslh in *.
+    assert (Datatypes.length (_offset_uslh l (if b then 2 else 0)) = Datatypes.length l).
+    { eapply _offset_uslh_length. }
+    remember (_offset_uslh l (if b then 2 else 0)) as ll. clear Heqll.
+    ginduction l; (try sfby ss); ii.
+    - destruct ll; ss. unfold mapM in *. ss. unfold MiniCET.uslh_ret in *. clarify.
+    - destruct ll; ss. unfold add_index_uslh in *. simpl in USLH.
+      eapply mapM_cons_inv in USLH. des. subst.
+      exploit IHl; try eapply USLH0; eauto. i. destruct a; ss; unfold MiniCET.uslh_ret in *; clarify. ss.
+      eapply bind_inv in USLH. des. ss. subst. clarify.
+      unfold add_block_M, add_block in USLH.
+      rewrite app_nil_r. rewrite no_ct_prog_app. split; auto. clarify.
+      red. des_ifs. ss. clarify. econs; eauto. repeat econs. }
+  rewrite app_nil_r. rewrite no_ct_prog_app. split; auto. des_ifs; ss.
+Qed.
 
 Lemma new_prog_no_ct p c p' np
   (USLH: mapM uslh_blk (add_index p) c = (p', np)):
@@ -1657,15 +1596,19 @@ Proof.
   ss. unfold MiniCET.uslh_ret in USLH0. clarify. simpl. split; auto.
   unfold concatM in USLH. eapply bind_inv in USLH. des. ss.
   unfold MiniCET.uslh_ret in *. clarify.
-  red. rewrite Forall_concat. ginduction blk; ii.
-  - unfold mapM in USLH. ss. unfold MiniCET.uslh_ret in USLH. clarify.
-  - exploit mapM_cons_inv; eauto. i. des; subst.
-    inv NCT. eapply IHblk in H2; try eapply x1; eauto.
-(*     econs; eauto. clear - x0 H1. *)
-(*     destruct a; ss; unfold MiniCET.uslh_ret in *; clarify; repeat econs. *)
-(*     eapply bind_inv in x0. des. clarify. repeat econs. *)
-    (* Qed. *)
-Admitted.
+  red. rewrite Forall_concat.
+  unfold add_index_uslh in *.
+  assert (Datatypes.length (_offset_uslh blk 0) = Datatypes.length blk).
+  { eapply _offset_uslh_length. }
+  remember (_offset_uslh blk 0) as ll. clear Heqll.
+  ginduction blk; ii.
+  - destruct ll; ss. unfold mapM in USLH. ss. unfold MiniCET.uslh_ret in USLH. clarify.
+  - destruct ll; ss. exploit mapM_cons_inv; eauto. i. des; subst.
+    inv NCT. eapply IHblk in H3; try eapply x1; eauto.
+    econs; eauto. clear - x0 H2.
+    destruct a; ss; unfold MiniCET.uslh_ret in *; clarify; repeat econs.
+    eapply bind_inv in x0. des. clarify. repeat econs.
+Qed.
 
 Lemma no_ctarget_exists p l blk
   (NCT : no_ct_prog p)
@@ -1725,26 +1668,31 @@ Proof.
     ss. unfold MiniCET.uslh_ret in x0. clarify.
     remember (Datatypes.length p + len_before uslh_blk (add_index p) l (Datatypes.length p)).
     clear Heqn. clear -x2 NCTS.
+    unfold add_index_uslh in *.
+    assert (Datatypes.length (_offset_uslh blk 2) = Datatypes.length blk).
+    { eapply _offset_uslh_length. }
+    remember (_offset_uslh blk 2) as ll. clear Heqll.
+
     ginduction blk; ss; ii.
-    - unfold mapM in x2. ss. unfold MiniCET.uslh_ret in x2. clarify.
-    - inv NCTS. eapply mapM_cons_inv in x2. des; subst.
-Admitted.
-  (*     exploit IHblk; try eapply x0; eauto. i. *)
-  (*     unfold no_ct_blk in *. rewrite Forall_concat in *. econs; eauto. *)
-  (*     clear - H1 x2. *)
-  (*     destruct a; ss; unfold MiniCET.uslh_ret in *; clarify; try econs; ss. *)
-  (*     + eapply bind_inv in x2. des. clarify. econs; eauto. *)
-  (*     + econs; eauto. } *)
-  (* ss. unfold MiniCET.uslh_ret in x4. clarify. *)
-  (* exists (<{{ ctarget }}> :: <{{ msf := (callee = (& (l,0))) ? msf : 1 }}> :: a). *)
-  (* rewrite nth_error_app1. *)
-  (* 2:{ rewrite <- nth_error_Some. ii; clarify. } *)
-  (* destruct (eq_decidable o 0); subst; auto; cycle 1. *)
-  (* { des_ifs_safe. ss. *)
-  (*   clear - H0 H INST'. destruct o; ss. destruct o; ss. *)
-  (*   eapply nth_error_In in INST'. eapply Forall_forall in H0; eauto. ss. } *)
-  (* des_ifs. *)
-(* Qed. *)
+    - destruct ll; ss. unfold mapM in x2. ss. unfold MiniCET.uslh_ret in x2. clarify.
+    - destruct ll; ss. inv NCTS. eapply mapM_cons_inv in x2. des; subst.
+      exploit IHblk; try eapply x0; eauto. i.
+      unfold no_ct_blk in *. rewrite Forall_concat in *. econs; eauto.
+      clear - H2 x2.
+      destruct a; ss; unfold MiniCET.uslh_ret in *; clarify; try econs; ss.
+      + eapply bind_inv in x2. des. clarify. econs; eauto.
+      + econs; eauto.
+      + repeat econs. }
+  ss. unfold MiniCET.uslh_ret in x4. clarify.
+  exists (<{{ ctarget }}> :: <{{ msf := (callee = (& (l,0))) ? msf : 1 }}> :: a).
+  rewrite nth_error_app1.
+  2:{ rewrite <- nth_error_Some. ii; clarify. }
+  destruct (eq_decidable o 0); subst; auto; cycle 1.
+  { des_ifs_safe. ss.
+    clear - H0 H INST'. destruct o; ss. destruct o; ss.
+    eapply nth_error_In in INST'. eapply Forall_forall in H0; eauto. ss. }
+  des_ifs.
+Qed.
 
 Lemma ctarget_exists p l blk
   (LTH: nth_error p l = Some (blk, true)) :
@@ -1874,7 +1822,18 @@ Lemma src_lookup p pc pc'
   exists i, p[[pc]] = Some i.
 Proof.
   unfold pc_sync in SYNC. des_ifs.
-Admitted.
+  ss. des_ifs; cycle 1.
+  { exfalso. rewrite nth_error_None in Heq1.
+    erewrite <- length_map with (f:=offset_uslh) in Heq1.
+    rewrite <- nth_error_None in Heq1. clarify. }
+  destruct p0.
+  rewrite nth_error_map in Heq. unfold option_map in Heq.
+  rewrite Heq1 in Heq. clarify. ss.
+  destruct (nth_error l0 n0) eqn:X; eauto.
+  exfalso. rewrite nth_error_None in X.
+  rewrite <- (offset_uslh_length _ b) in X.
+  rewrite <- nth_error_None in X. clarify.
+Qed.
 
 Lemma tgt_inv
   p pc pc' i'
