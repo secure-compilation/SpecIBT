@@ -97,6 +97,15 @@ Inductive multi_seq_inst (p : prog) (c : @state cfg) : @state cfg -> obs -> Prop
   where "p |- <(( c ))> -->*^ os <(( ct ))>" :=
       (multi_seq_inst p c ct os).
 
+Definition call_return_targets (p: prog) : list cptr :=
+  let ip := add_index p in
+  List.concat
+    (List.map (fun '(l, (bl, _)) =>
+                 List.flat_map (fun '(o, i) => match i with
+                                            | ICall _ => [(l, add o 1)]
+                                            | _ => []
+                                            end) (add_index bl)) ip).
+
 Reserved Notation
   "p '|-' '<((' sc '))>' '-->_' ds '^^' os '<((' sct '))>'"
   (at level 40, sc constr, sct constr).
@@ -148,6 +157,7 @@ Inductive spec_eval_small_step (p:prog):
       p |- <(( S_Running ((pc, r, m, sk), ct, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
   | SpecSMI_Ret : forall pc r m sk pc' pc'' ms,
       p[[pc]] = Some <{{ ret }}> ->
+      In pc'' (call_return_targets p) -> (* YH: Initially, I considered handling it in wf_dir', but I think it would be better to enforce it in the semantics. *)
       p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[DRet pc'']^^[] <(( S_Running ((pc'', r, m, sk), false, ms) ))>
   | SpecSMI_Peek : forall pc r m sk ms x,
       p[[pc]] = Some <{{x <- peek}}> ->
@@ -242,6 +252,7 @@ Inductive ideal_eval_small_step_inst (p:prog) :
       p |- <(( S_Running ((pc, r, m, sk), ms) ))> -->i_[DCall pc']^^[OCall l] <(( S_Fault ))>
   | ISMI_Ret : forall pc r m sk pc' pc'' ms ms',
       p[[pc]] = Some <{{ ret }}> ->
+      In pc'' (call_return_targets p) -> (* YH: Initially, I considered handling it in wf_dir', but I think it would be better to enforce it in the semantics. *)
       ms' = ms || negb ((fst pc' =? fst pc'') && (snd pc' =? snd pc'')) ->
       p |- <(( S_Running ((pc, r, m, pc'::sk), ms) ))> -->i_[DRet pc'']^^[] <(( S_Running ((pc'', r, m, sk), ms') ))>
   | ISMI_Peek : forall pc r m sk ms x, (* YH: Do we need this for source program? *)
@@ -420,15 +431,6 @@ Definition get_pc_ic (ic: ideal_cfg) : cptr :=
   let '(c, ms) := ic in
   let '(pc, r, m, sk) := c in
   pc.
-
-Definition call_return_targets (p: prog) : list cptr :=
-  let ip := add_index p in
-  List.concat
-    (List.map (fun '(l, (bl, _)) =>
-                 List.flat_map (fun '(o, i) => match i with
-                                            | ICall _ => [(l, add o 1)]
-                                            | _ => []
-                                            end) (add_index bl)) ip).
 
 Definition wf_dir' (p: prog) (d: direction) : Prop :=
   match d with
