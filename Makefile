@@ -1,5 +1,6 @@
 COQMFFLAGS := -Q . SECF
 
+# For tests: EXCLUDE := MiniCET_Index.v MoreLinearProof.v Safe.v
 EXCLUDE :=
 ALLVFILES := $(filter-out $(EXCLUDE), $(wildcard *.v))
 QC := quickChick # ../QuickChick/quickChickTool/quickChickTool.exe

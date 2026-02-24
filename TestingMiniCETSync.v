@@ -176,7 +176,7 @@ Definition get_directive_for_seq_behaviour (p: prog) (pst: list nat) (ic: ideal_
       | <{{call e}}> =>
         match (to_fp (eval r e)) with
         | None => []
-        | Some l => [DCall (l, 0)]
+        | Some l => [DCall l]
         end
       | _ => []
       end
@@ -203,7 +203,7 @@ Definition gen_directive_triggering_misspec (p: prog) (pst: list nat) (ic: ideal
             match targets with
             | [] => ret []
             | e::tl => t <- elems_ e (e::tl);;
-                       ret [DCall (t, 0)]
+                       ret [DCall t]
             end
         end
       | _ => ret []
@@ -211,8 +211,18 @@ Definition gen_directive_triggering_misspec (p: prog) (pst: list nat) (ic: ideal
   | None => untrace "lookup error" (ret [])
   end.
 
+Theorem val_beq : forall (n m : val), {n = m} + {n <> m}.
+Proof.
+  dec_eq.
+Defined.
+
+Theorem observation_beq : forall (n m : observation), {n = m} + {n <> m}.
+Proof.
+  dec_eq.
+Defined.
+(* 
 Scheme Equality for val.
-Scheme Equality for observation.
+Scheme Equality for observation. *)
 
 Check (@equiv_decb cptr Logic.eq _ _).
 
@@ -222,12 +232,13 @@ Check (@equiv_decb cptr Logic.eq _ _).
 Instance direction_EqDec : EqDec direction Logic.eq.
 Proof.
   intros x y.
-  destruct x, y.
+  destruct x, y; try (right; discriminate).
   - destruct (b' == b'0).
     + left. now rewrite e.
     + right. now intros [= H].
-  - right. discriminate.
-  - right. discriminate.
+  - destruct (lo == lo0).
+    + left. now rewrite e.
+    + right. now intros [= H].
   - destruct (lo == lo0).
     + left. now rewrite e.
     + right. now intros [= H].
@@ -257,6 +268,7 @@ Definition single_step_cc := (
   forAll (gen_call_stack_from_prog_sized 3 p) (fun stk =>
   forAll (@arbitrary bool _) (fun ms =>
   let icfg := (pc, rs1, m1, stk, ms) in
+  printTestCase (show (uslh_prog p)) (
   match (spec_cfg_sync p icfg) with
   | None => collect "hello"%string (checker tt)
   | Some tcfg =>
@@ -296,12 +308,9 @@ Definition single_step_cc := (
       end
       )
   end
-  ))))))).
+  )))))))).
 
-(*! QuickChick single_step_cc. *)
-
-
-
+QuickChick single_step_cc.
 
 Definition single_step_sf := (
   forAll (gen_prog_wt_with_basic_blk 3 8) (fun '(c, tm, pst, p) =>

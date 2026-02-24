@@ -28,12 +28,13 @@ Definition gen_dbr : G dir :=
   b <- arbitrary;; ret (DBranch b).
 
 Definition gen_dcall (pst: list nat) : G dir :=
-  l <- (elems_ 0 (proc_hd pst));; ret (DCall (l, 0)).
+  l <- (elems_ (0, 0) (proc_hd pst));; ret (DCall l).
 
 Instance ShowDirection : Show dir := {
   show dir := match dir with
     | DBranch b => ("DBranch " ++ show b)%string
     | DCall cptr => ("DCall " ++ show cptr)%string
+    | DRet cptr => ("DRet" ++ show cptr)%string
   end
 }.
 

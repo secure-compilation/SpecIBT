@@ -71,7 +71,7 @@ Fixpoint eval (st : reg) (e: exp) : val :=
   | <{&l}> => FP l
   end.
 
-Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
+  Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
     match sc with
     | S_Running c =>
         let '(pc, r, m, sk) := c in
@@ -82,6 +82,22 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
               (S_Running (pc+1, r, m, sk), [])
             | <{{x:=e}}> =>
               (S_Running (pc+1, (x !-> eval r e; r), m, sk), [])
+            | <{{x <- div e1, e2}}> =>
+              match
+                v1 <- to_nat (eval r e1);;
+                v2 <- to_nat (eval r e2);;
+                let res: val := match v2 with
+                  | 0 => UV
+                  | _ => N (div v1 v2)
+                  end
+                in
+                Some ((pc + 1, (x !-> res; r), m, sk), [ODiv v1 v2])
+              with
+              | Some (c, o) =>
+                (S_Running c, o)
+              | None =>
+                (S_Undef, [])
+              end
             | <{{branch e to l}}> =>
               match
                 n <- to_nat (eval r e);;
@@ -113,11 +129,19 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
             | <{{call e}}> =>
               match
                 l <- to_fp (eval r e);;
-                ret (((l,0), r, m, (pc+1)::sk), [OCall l])
+                ret ((l, r, m, (pc+1)::sk), [OCall l])
               with
               | Some (c, o) => (S_Running c, o)
               | None => (S_Undef, [])
               end
+            | <{{x <- peek}}> =>
+              let val := 
+                match sk with
+                | [] => UV
+                | pc' :: _ => FP pc'
+                end
+              in
+              (S_Running (pc + 1, (x !-> val; r), m, sk), [])
             | <{{ret}}> =>
               match sk with
               | [] => (S_Term, [])
@@ -164,7 +188,7 @@ Definition step (p:prog) (sc:state cfg) : (state cfg * obs) :=
                   d <- hd_error ds;;
                   pc' <- is_dcall d;;
                   l <- to_fp (eval r e);;
-                  let ms' := ms || negb ((fst pc' =? l) && (0 =? (snd pc')%nat)) in
+                  let ms' := ms || negb ((fst pc' =? fst l) && (snd l =? (snd pc')%nat)) in
                   (*! *)
                   ret ((S_Running ((pc', r, m, (pc+1)::sk), true, ms'), tl ds), [OCall l])
                   (*!! spec-call-no-set-ct *)
@@ -271,13 +295,13 @@ Definition ideal_step (p: prog) (sic: state ideal_cfg) (ds: dirs) : (state ideal
                 match
                   d <- hd_error ds;;
                   pc' <- is_dcall d;;
-                  l <- (if ms then Some 0 else to_fp (eval r e));;
+                  l <- (if ms then Some (0, 0) else to_fp (eval r e));;
                   blk <- nth_error p (fst pc');;
                   (*! *)
                   if (snd blk && (snd pc' ==b 0)) then
                   (*!! ideal_call_no_check_target *)
                   (*! if true then *)
-                    let ms' := ms || negb ((fst pc' =? l) && (snd pc' =? 0)) in
+                    let ms' := ms || negb ((fst pc' =? fst l) && (snd pc' =? snd l)) in
                     ret ((S_Running ((pc', r, m, (pc+1)::sk), ms'), tl ds), [OCall l])
                   else Some (S_Fault, ds, [OCall l])
                 with

@@ -97,7 +97,6 @@ Variant taint_ctx :=
   | CMem (n: nat)
   | CDefault.
 
-
 Definition taint_step (i: inst) (c: ST.cfg) (tc: tcfg) (tobs: taint) (tctx: taint_ctx) : option (tcfg * taint) :=
   let '(pc, rs, m, s) := c in
   let '(tpc, trs, tm, ts) := tc in
@@ -114,6 +113,18 @@ Definition taint_step (i: inst) (c: ST.cfg) (tc: tcfg) (tobs: taint) (tctx: tain
           let tx := join_taints te tpc in
           let tc' := (tpc, (x !-> tx; trs), tm, ts) in
           Some (tc', tobs)
+      | _ => None
+      end
+  (* YF: TBD with Yonghyun *)
+  | <{ x <- div e1, e2 }> =>
+      match tctx with
+      | CDefault =>
+        let te1 := _calc_taint_exp e1 trs in
+        let te2 := _calc_taint_exp e2 trs in
+        let tx := join_taints (join_taints te1 te2) tpc in
+        let tc' := (tpc, (x !-> tx; trs), tm, ts) in
+        let tobs' := join_taints tobs (join_taints te1 te2) in (* YF: We add the taints of v1 and v2, since the actual observation would be [ODiv v1 v2], right? *)
+        Some (tc', tobs')
       | _ => None
       end
   | <{ branch e to l }> =>
@@ -157,6 +168,15 @@ Definition taint_step (i: inst) (c: ST.cfg) (tc: tcfg) (tobs: taint) (tctx: tain
           let tc' := (tpc', trs, tm, ts') in
           let tobs' := join_taints tobs tpc' in
           Some (tc', tobs')
+      | _ => None
+      end
+  (* YF: TBD with Yonghyun *)
+  | <{ x <- peek }> =>
+      match tctx with
+      | CDefault =>
+          let tx' := hd [] ts in
+          let tc' := (tpc, (x !-> tx'; trs), tm, ts) in
+          Some (tc', tobs)
       | _ => None
       end
   | <{ ret }> =>

@@ -51,12 +51,14 @@ Derive Show for observation.
          match i with
          | ISkip => "skip"
          | IAsgn x e => x ++ " := " ++ show e
+         | IDiv x e1 e2 => x ++ " <- div " ++ show e1 ++ ", " ++ show e2
          | IBranch e l => "branch " ++ show e ++ " to " ++ show l
          | IJump l => "jump " ++ show l
          | ILoad x a => x ++ " <- load[" ++ show a ++ "]"
          | IStore a e => "store[" ++ show a ++ "] <- " ++ show e
          | ICall fp => "call " ++ show fp
          | ICTarget => "ctarget"
+         | IPeek x => x ++ " <- peek"
          | IRet => "ret"
          end)%string
   }.

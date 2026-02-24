@@ -22,9 +22,7 @@ From SECF Require Import
   ListMaps
   MapsFunctor
   MiniCET
-  MiniCET_Index
   Utils
-  Safe
   TaintTracking
   TestingSemantics.
 From SECF Require Export Generation Printing Shrinking.
