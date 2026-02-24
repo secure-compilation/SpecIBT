@@ -77,7 +77,7 @@ Inductive seq_eval_small_step_inst (p:prog) :
       in
       p |- <(( S_Running (pc, r, m, sk) ))> -->^[] <(( S_Running (pc+1, (x !-> val; r), m, sk) ))>
   | SSMI_Term : forall pc r m,
-      p[[pc]] = Some <{{ ret}}> ->
+      p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running (pc, r, m, []) ))> -->^[] <(( S_Term ))>
 
   where "p |- <(( c ))> -->^ os <(( ct ))>" :=
@@ -170,9 +170,8 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_Term : forall pc r m ms,
       p[[pc]] = Some <{{ ret }}> ->
       p |- <(( S_Running ((pc, r, m, []), false, ms) ))> -->_[]^^[] <(( S_Term ))>
-  | SpecSMI_Fault : forall pc r m sk ms i,
-      i <> <{{ ctarget }}> ->
-      p[[pc]] = Some i ->
+  | SpecSMI_Fault : forall pc r m sk ms,
+      p[[pc]] <> Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), true, ms) ))> -->_[]^^[] <(( S_Fault ))>
 
   where "p |- <(( sc ))> -->_ ds ^^ os  <(( sct ))>" :=
@@ -1848,6 +1847,13 @@ Proof.
   exploit src_inv; eauto. i. des; clarify. eauto.
 Qed.
 
+Lemma pc_sync_next p pc tpc i
+  (CUR: pc_sync p pc = Some tpc)
+  (NXT: p[[pc + 1]] = Some i):
+  pc_sync p (pc + 1) = Some (fst tpc, snd tpc + uslh_inst_sz i).
+Proof.
+Admitted.
+
 Lemma ultimate_slh_bcc_single (p: prog) ic1 sc1 sc2 ds os
   (NCT: no_ct_prog p)
   (WFP: wf_prog p)
@@ -1860,9 +1866,8 @@ Lemma ultimate_slh_bcc_single (p: prog) ic1 sc1 sc2 ds os
       /\ match_cfgs_ext p ic2 sc2.
 Proof.
   inv MATCH; try sfby inv TGT.
-
+  (* pc_sync match *)
   - inv TGT; inv MATCH0; clarify.
-
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
       replace (@nil direction) with ((@nil direction) ++ []) by ss.
       replace (@nil observation) with ((@nil observation) ++ []) by ss.
@@ -2023,13 +2028,13 @@ Proof.
     (*   esplits. *)
     (*   * econs 2; [|econs]. eapply ISMI_Term; eauto. *)
     (*   * econs. *)
-
+  (* procedure entry - ctarget *)
   - inv TGT; clarify. esplits.
     + econs.
     + eapply match_cfgs_ext_ct2; eauto.
       exploit head_call_target; eauto. i. des; clarify; eauto.
 
-  (* after call *)
+  (* procedure entry - msf update *)
   - inv TGT; clarify.
     esplits; econs.
     admit.
@@ -2042,6 +2047,7 @@ Proof.
     (*   * i. des. rewrite t_update_neq; eauto. *)
     (*   * rewrite t_update_eq. eauto. *)
 
+  (* call - call *)
   - inv TGT; clarify.
     destruct pc'0 as [l' o'].
     destruct ((uslh_prog p)[[(l', o')]]) eqn:NXT.
