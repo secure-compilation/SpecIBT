@@ -1847,12 +1847,35 @@ Proof.
   exploit src_inv; eauto. i. des; clarify. eauto.
 Qed.
 
-Lemma pc_sync_next p pc tpc i
+Lemma _offset_uslh_next blk n o io i j
+  (OFS: nth_error (_offset_uslh blk n) o = Some io)
+  (INST: nth_error blk o = Some i)
+  (NEXT: nth_error blk (S o) = Some j) :
+  nth_error (_offset_uslh blk n) (S o) = Some (io + uslh_inst_sz i).
+Proof.
+  ginduction blk; ss; i.
+  destruct o; ss; clarify.
+  - destruct blk; ss; clarify.
+  - eapply IHblk; eauto.
+Qed.
+
+Lemma pc_sync_next p pc tpc i j
   (CUR: pc_sync p pc = Some tpc)
-  (NXT: p[[pc + 1]] = Some i):
+  (INST: p[[pc]] = Some i)
+  (NXT: p[[pc + 1]] = Some j):
   pc_sync p (pc + 1) = Some (fst tpc, snd tpc + uslh_inst_sz i).
 Proof.
-Admitted.
+  destruct pc as [l o]. destruct tpc as [l' io]. ss.
+  unfold fetch in INST, NXT.
+  des_ifs_safe.
+  apply map_nth_error with (f := offset_uslh) in Heq0.
+  rewrite Heq in Heq0. clarify.
+  unfold offset_uslh in *.
+  rewrite Nat.add_1_r in NXT.
+  eapply _offset_uslh_next in Heq1; [| exact INST | exact NXT].
+  rewrite Nat.add_1_r.
+  rewrite Heq1. reflexivity.
+Qed.
 
 Lemma ultimate_slh_bcc_single (p: prog) ic1 sc1 sc2 ds os
   (NCT: no_ct_prog p)
@@ -1875,11 +1898,8 @@ Proof.
       { econs 2; econs. eauto. }
       econs. econs; eauto.
       exploit block_always_terminator_prog; try eapply x0; eauto. i. des.
-      destruct pc0. unfold pc_sync in *. ss. des_ifs_safe.
-      replace (add n0 1) with (S n0) by lia.
-      (* erewrite firstnth_error; eauto. rewrite fold_left_app. cbn. *)
-      (* rewrite add_1_r. auto. *)
-      admit.
+      destruct pc0.
+      exploit pc_sync_next; [exact PC | exact x0 | exact x1 | i; rewrite x2; destruct pc; ss].
     + exploit tgt_inv; eauto. i. des. inv x0.
 
       * inv MATCH.
@@ -1889,11 +1909,8 @@ Proof.
         { econs 2; [econs 2|econs]. eauto. }
         econs. econs; eauto.
         { exploit block_always_terminator_prog; try eapply x1; eauto. i. des.
-          destruct pc0. unfold pc_sync in *. ss. des_ifs_safe.
-          replace (add n0 1) with (S n0) by lia.
-          admit.
-          (* erewrite firstnth_error; eauto. rewrite fold_left_app. cbn. *)
-          (* rewrite add_1_r. auto. *)
+          destruct pc0.
+          exploit pc_sync_next; [exact PC | exact x1 | exact x2 | i; rewrite x3; destruct pc; ss].
         }
         { eapply unused_prog_lookup in UNUSED1; eauto.
           eapply unused_prog_lookup in UNUSED2; eauto. ss; des.
