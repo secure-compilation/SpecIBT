@@ -151,7 +151,7 @@ Inductive spec_eval_small_step (p:prog):
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       ms' = ms || negb ((fst pc' =? fst l) && (snd pc' =? snd l)) ->
-      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc+1)::sk), true, ms') ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (fst pc, snd pc + 2)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ct ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), ct, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
@@ -334,6 +334,7 @@ Definition ms_true_ic (ic: ideal_cfg) : bool :=
 Definition offset_uslh (bl: list inst * bool) : list nat :=
   _offset_uslh (fst bl) (if snd bl then 2 else 0).
 
+(* pc - the first element of uslh_inst result *)
 Definition pc_sync (p: prog) (pc: cptr) : option cptr :=
   let ip := map offset_uslh p in
   let '(l, o) := pc in
@@ -393,23 +394,23 @@ Variant match_cfgs (p: prog) : ideal_cfg -> spec_cfg -> Prop :=
   match_cfgs p ((pc, r, m, stk), ms) ((pc', r', m, stk'), false, ms)
 .
 
-Definition steps_to_sync_point' (p: prog) (ic: ideal_cfg) (ds: dirs) : option nat :=
-  let '(c, ms) := ic in
-  let '(pc, r, m, sk) := c in
-  match p[[pc]] with
-  | Some i => match i with
-             | IBranch e l => match ds with
-                             | DBranch b :: ds' => Some (if b then 3 else 2)
-                             | _ => None
-                             end
-             | ICall e => match ds with
-                         | DCall pc' :: ds' => Some 4
-                         | _ => None
-                         end
-             | _ => Some 1
-             end
-  | _ => None
-  end.
+(* Definition steps_to_sync_point' (p: prog) (ic: ideal_cfg) (ds: dirs) : option nat := *)
+(*   let '(c, ms) := ic in *)
+(*   let '(pc, r, m, sk) := c in *)
+(*   match p[[pc]] with *)
+(*   | Some i => match i with *)
+(*              | IBranch e l => match ds with *)
+(*                              | DBranch b :: ds' => Some (if b then 3 else 2) *)
+(*                              | _ => None *)
+(*                              end *)
+(*              | ICall e => match ds with *)
+(*                          | DCall pc' :: ds' => Some 4 *)
+(*                          | _ => None *)
+(*                          end *)
+(*              | _ => Some 1 *)
+(*              end *)
+(*   | _ => None *)
+(*   end. *)
 
 Definition get_reg_sc (sc: spec_cfg) : reg :=
   let '(c, ct, ms) := sc in
@@ -1571,6 +1572,88 @@ Proof.
     rewrite no_ct_prog_app. auto.
 Qed.
 
+Lemma uslh_blk_np_nonempty blk n c res np
+  (USLH: uslh_blk (n, blk) c = (res, np)):
+  Forall (fun b : list inst * bool => 0 < Datatypes.length (fst b)) np.
+Proof.
+  unfold uslh_blk in USLH. des_ifs_safe.
+  eapply bind_inv in USLH. des. subst. unfold concatM in USLH.
+  eapply bind_inv in USLH. des. subst. ss. unfold MiniCET.uslh_ret in *. clarify.
+  assert (Forall (fun b : list inst * bool => 0 < Datatypes.length (fst b)) pm0).
+  { clear -USLH. unfold add_index_uslh in *.
+    assert (Datatypes.length (_offset_uslh l (if b then 2 else 0)) = Datatypes.length l).
+    { eapply _offset_uslh_length. }
+    remember (_offset_uslh l (if b then 2 else 0)) as ll. clear Heqll.
+    ginduction l; (try sfby ss); ii.
+    - destruct ll; ss. unfold mapM in *. ss. unfold MiniCET.uslh_ret in *. clarify.
+    - destruct ll; ss. unfold add_index_uslh in *. simpl in USLH.
+      eapply mapM_cons_inv in USLH. des. subst.
+      exploit IHl; try eapply USLH0; eauto. i. destruct a; ss; unfold MiniCET.uslh_ret in *; clarify. ss.
+      eapply bind_inv in USLH. des. ss. subst. clarify.
+      unfold add_block_M, add_block in USLH.
+      rewrite app_nil_r. rewrite Forall_app. split; auto. clarify.
+      econs; [|econs]. ss. lia. }
+  rewrite app_nil_r. rewrite Forall_app. split; auto. des_ifs; ss.
+Qed.
+
+Lemma new_prog_nonempty p c p' np
+  (USLH: mapM uslh_blk (add_index p) c = (p', np)):
+  Forall (fun b : list inst * bool => 0 < Datatypes.length (fst b)) np.
+Proof.
+  unfold add_index in USLH. remember 0 in USLH. clear Heqn.
+  ginduction p; ss; ii.
+  - unfold mapM in *. ss. unfold MiniCET.uslh_ret in USLH. clarify.
+  - exploit mapM_cons_inv; eauto. i. des. subst.
+    exploit IHp; eauto. i.
+    assert (Forall (fun b : list inst * bool => 0 < Datatypes.length (fst b)) np_hd).
+    { eapply uslh_blk_np_nonempty; eauto. }
+    rewrite Forall_app. split; eauto.
+Qed.
+
+Lemma uslh_blk_nonempty_res blk n c res np
+  (NE: 0 < Datatypes.length (fst blk))
+  (USLH: uslh_blk (n, blk) c = (res, np)):
+  0 < Datatypes.length (fst res).
+Proof.
+  destruct blk as [insts is_proc].
+  unfold uslh_blk in USLH. des_ifs_safe.
+  eapply bind_inv in USLH. des. subst. unfold concatM in USLH.
+  eapply bind_inv in USLH. des. subst. ss. unfold MiniCET.uslh_ret in *. clarify.
+  destruct is_proc.
+  - clarify. ss. lia.
+  - ss. clarify. ss. destruct insts; try (ss; lia).
+    erewrite uslh_offset_uslh_add_index in USLH; eauto. ss.
+    exploit mapM_cons_inv; try eapply USLH. i. des. clarify.
+    destruct i; ss; unfold MiniCET.uslh_ret in *; clarify; ss; try lia.
+    eapply bind_inv in x0. des. clarify. ss. lia.
+Qed.
+
+Lemma uslh_prog_nonempty_block p l blk
+  (WFP: wf_prog p)
+  (NTH: nth_error (uslh_prog p) l = Some blk) :
+  0 < Datatypes.length (fst blk).
+Proof.
+  unfold uslh_prog in NTH. des_ifs_safe.
+  exploit mapM_perserve_len; eauto. intros LEN. rewrite length_add_index in LEN.
+  assert (l < Datatypes.length l0 \/ Datatypes.length l0 <= l) as [LT|GE] by lia.
+  - rewrite nth_error_app1 in NTH; auto.
+    assert (exists src, nth_error p l = Some src) as [src SRC].
+    { destruct (nth_error p l) eqn:E; [eauto|].
+      exfalso. rewrite nth_error_None in E. lia. }
+    exploit nth_error_add_index; eauto. intros AI.
+    exploit mapM_nth_error; try eapply Heq; try eapply AI.
+    intros (blk' & c' & np' & NTH' & USLH').
+    rewrite NTH' in NTH. clarify.
+    eapply uslh_blk_nonempty_res; eauto.
+    inv WFP. rewrite Forall_forall in H0.
+    eapply nth_error_In in SRC. eapply H0 in SRC.
+    red in SRC. des. auto.
+  - rewrite nth_error_app2 in NTH; auto.
+    exploit new_prog_nonempty; eauto. intros NE.
+    rewrite Forall_forall in NE. eapply nth_error_In in NTH.
+    eapply NE in NTH. auto.
+Qed.
+
 Lemma new_prog_ct_cut p c p' np l o
     (USLH: mapM uslh_blk (add_index p) c = (p', np))
     (INST: (p' ++ np) [[(l, o)]] = Some <{{ ctarget }}>)
@@ -1987,9 +2070,7 @@ Proof.
         rewrite H3. ss. destruct ms; ss. erewrite eval_regs_eq; eauto.
       * econs; eauto.
         { exploit block_always_terminator_prog; try eapply x1; eauto. i. des.
-          unfold pc_sync in *. ss. des_ifs_safe.
-          replace (add o0 1) with (S o0) by lia.
-          admit.
+          exploit pc_sync_next; eauto.
           (* erewrite firstnth_error; eauto. rewrite fold_left_app. cbn. *)
           (* rewrite add_1_r. auto. *) }
         { red. splits; i.
@@ -2017,10 +2098,7 @@ Proof.
         erewrite <- eval_regs_eq with (r := r0) (r' := r); eauto.
         econs; eauto.
         exploit block_always_terminator_prog; try eapply x0; eauto. i. des.
-        unfold pc_sync in *. ss. des_ifs_safe. replace (add o0 1) with (S o0) by lia.
-        (* erewrite firstnth_error; eauto. rewrite fold_left_app. cbn. *)
-        (* rewrite add_1_r. auto. *)
-        admit.
+        exploit pc_sync_next; eauto.
 
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
 
@@ -2034,21 +2112,7 @@ Proof.
 
     (* ret - termination *)
     + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH.
-      (* destruct stk; try sfby ss. *)
-      (* replace (@nil direction) with ((@nil direction) ++ []) by ss. *)
-      (* replace (@nil observation) with ((@nil observation) ++ []) by ss. *)
-      (* esplits. *)
-      (* * econs 2; [|econs]. eapply ISMI_Ret; eauto. *)
-      (* * econs. simpl in STK. des_ifs. *)
 
-    (* + exploit tgt_inv; eauto. i. des. inv x1. inv MATCH. *)
-    (*   destruct stk. *)
-    (*   2:{ ss. des_ifs. } *)
-    (*   replace (@nil direction) with ((@nil direction) ++ []) by ss. *)
-    (*   replace (@nil observation) with ((@nil observation) ++ []) by ss. *)
-    (*   esplits. *)
-    (*   * econs 2; [|econs]. eapply ISMI_Term; eauto. *)
-    (*   * econs. *)
   (* procedure entry - ctarget *)
   - inv TGT; clarify. esplits.
     + econs.
@@ -2058,15 +2122,16 @@ Proof.
   (* procedure entry - msf update *)
   - inv TGT; clarify.
     esplits; econs.
-    admit.
-    (* econs; eauto. *)
-    (* + unfold pc_sync. simpl. rewrite CT. destruct blk. *)
-    (*   { inv WFP. rewrite Forall_forall in H0. eapply nth_error_In in CT. *)
-    (*     eapply H0 in CT. red in CT. des; ss. } *)
-    (*   simpl. eauto. *)
-    (* + red in REG. econs. *)
-    (*   * i. des. rewrite t_update_neq; eauto. *)
-    (*   * rewrite t_update_eq. eauto. *)
+    econs; eauto.
+    + unfold pc_sync.
+      simpl. rewrite nth_error_map.
+      rewrite CT. destruct blk.
+      { inv WFP. rewrite Forall_forall in H0. eapply nth_error_In in CT.
+        eapply H0 in CT. red in CT. des; ss. }
+      simpl. eauto.
+    + red in REG. econs.
+      * i. des. rewrite t_update_neq; eauto.
+      * rewrite t_update_eq. eauto.
 
   (* call - call *)
   - inv TGT; clarify.
@@ -2078,13 +2143,14 @@ Proof.
         exploit unused_prog_lookup; try eapply UNUSED2; eauto. i.
         esplits.
         { econs; [|econs].
-          eapply ISMI_Call_F; eauto; admit.
-          (* - rewrite <- H8. inv REG. ss. rewrite H0. destruct ms; ss. *)
-          (*   erewrite eval_regs_eq; eauto. *)
-          (* - i. simpl in H, NXT. des_ifs. *)
-          (*   2:{ clear - H Heq. admit. (* contradictiob *) } *)
-          (*   simpl. right. ii. subst. clear -Heq NXT WFP. *)
-          (*   admit. (* non empty block   NXT : nth_error (fst p0) o' = None*) *) }
+          eapply ISMI_Call_F; eauto.
+          - unfold cptr in *. rewrite <- H8. inv REG. ss. rewrite H0. destruct ms; ss.
+            erewrite eval_regs_eq; eauto.
+          - i. simpl in H, NXT. des_ifs.
+            2:{ clear - H Heq. exploit label_inv; eauto. i. des; clarify. }
+            simpl. right. ii. subst. clear -Heq NXT WFP.
+            exploit uslh_prog_nonempty_block; eauto. i.
+            rewrite nth_error_None in NXT. lia. }
         econs. ii. clarify. }
     assert (i = ICTarget \/ i <> ICTarget).
     { destruct i; try (sfby (right; ii; clarify)). auto. }
@@ -2114,22 +2180,26 @@ Proof.
         inv REG. unfold cptr in *.
         rewrite <- H8. simpl. rewrite H0. destruct ms; ss.
         erewrite eval_regs_eq; eauto.
-      * (* simpl. rewrite andb_true_r. eapply match_cfgs_ext_ct1; eauto. *)
-        (* { red. inv REG. eauto. } *)
-        (* { inv REG. simpl. rewrite STK. *)
-        (*   exploit block_always_terminator_prog; try eapply CALL; eauto. i. des. *)
-        (*   destruct pc as [b o]. unfold pc_sync in *. ss. des_ifs_safe. *)
-        (*   replace (add o 1) with (S o) by lia. *)
-        (*   erewrite firstnth_error; eauto. rewrite fold_left_app. cbn. *)
-        (*   rewrite <- add_1_r. rewrite add_assoc. auto. } *)
-        (* inv REG. simpl. rewrite MS. ss. rewrite H0. *)
-        (* destruct ms; ss. *)
-        (* { des_ifs. } *)
-        (* { rewrite H0 in H8. ss. unfold to_fp in H8. des_ifs_safe. *)
-        (*   simpl in Heq2. clarify. destruct (l =? l0)%nat eqn:JMP; ss. *)
-        (*   + rewrite Nat.eqb_sym. rewrite JMP. auto. *)
-        (*   + rewrite Nat.eqb_sym. rewrite JMP. auto. } *)
-        admit.
+      * simpl.
+        destruct (dec_eq_nat (snd l) 0).
+        2:{ admit. (* fix later *)  }
+        rewrite H. clear H. rewrite andb_true_r.
+        eapply match_cfgs_ext_ct1; eauto.
+        { red. inv REG. eauto. }
+        { inv REG. simpl. rewrite STK.
+          exploit block_always_terminator_prog; try eapply CALL; eauto. i. des.
+          destruct pc as [b o].
+          hexploit pc_sync_next; eauto. i. rewrite H1.
+          destruct pc'. simpl. do 3 f_equal. lia. }
+        inv REG. simpl. rewrite MS. ss. rewrite H0.
+        destruct ms; ss.
+        { des_ifs. }
+        { rewrite H0 in H8. ss. unfold to_fp in H8. des_ifs_safe.
+          simpl in Heq2. clarify.
+          (* destruct (fst l =? l0)%nat eqn:JMP; ss. *)
+          (* + rewrite Nat.eqb_sym. rewrite JMP. auto. *)
+          (* + rewrite Nat.eqb_sym. rewrite JMP. auto. *)
+          admit. (* fix later *) }
     + replace [DCall(l', o')] with ([DCall (l', o')] ++ []) by ss.
       replace [OCall l] with ([OCall l] ++ []) by ss.
 
@@ -2190,12 +2260,13 @@ Proof.
         rewrite Forall_forall in Heq1. eapply nth_error_In in BR.
         eapply Heq1 in BR. simpl in BR. des.
         red in BR0. des_ifs. eauto. }
-      des. unfold pc_sync. simpl. (* rewrite H. *) admit.
-      (* destruct blk as [|i blk]. *)
-      (* { inv WFP. rewrite Forall_forall in H1. *)
-      (*   eapply nth_error_In in H. eapply H1 in H. inv H. *)
-      (*   red in H2. ss; lia. } *)
-      (* simpl. auto. *)
+      des. unfold pc_sync.
+      rewrite nth_error_map. rewrite H. simpl.
+      destruct blk as [|i blk].
+      { inv WFP. rewrite Forall_forall in H1.
+        eapply nth_error_In in H. eapply H1 in H. inv H.
+        red in H2. ss; lia. }
+      simpl. auto.
   - inv TGT; clarify. esplits.
     + econs.
     + econs. econs; eauto.
@@ -2203,10 +2274,8 @@ Proof.
         inv x1; [inv MATCH|]. clarify.
         destruct pc as [b o]. destruct pc' as [b' o'].
         exploit block_always_terminator_prog; try eapply x0; eauto. i. des.
-        simpl. unfold pc_sync in *. ss. des_ifs_safe.
-        rewrite add_1_r. admit.
-        (* erewrite firstnth_error; eauto. rewrite fold_left_app. cbn. *)
-        (* rewrite <- add_1_r. rewrite add_assoc. auto. *)
+        exploit pc_sync_next; eauto. simpl. i. rewrite x2.
+        replace (add (add o' 1) 1)%nat with (o' + 2) by lia. auto.
       * split; ii.
         { des. rewrite t_update_neq; eauto. }
         { rewrite t_update_eq. eauto. }
@@ -3145,4 +3214,4 @@ Proof.
   11:{ eapply H1. }
   all: eauto.
 Qed.
-
+ 
