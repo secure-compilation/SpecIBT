@@ -2181,9 +2181,23 @@ Proof.
         rewrite <- H8. simpl. rewrite H0. destruct ms; ss.
         erewrite eval_regs_eq; eauto.
       * simpl.
-        destruct (dec_eq_nat (snd l) 0).
-        2:{ admit. (* fix later *)  }
-        rewrite H. clear H. rewrite andb_true_r.
+        destruct (dec_eq_nat (snd l) 0) as [SND|SND].
+        (* mispeculation *)
+        2:{ des_ifs_safe.
+            rewrite andb_false_r. simpl. rewrite orb_true_r.
+            eapply match_cfgs_ext_ct1; eauto.
+            { red. inv REG. eauto. }
+            { inv REG. simpl. rewrite STK.
+              exploit block_always_terminator_prog; try eapply CALL; eauto. i. des.
+              destruct pc as [b o].
+              hexploit pc_sync_next; eauto. i. rewrite H1.
+              destruct pc'. simpl. do 3 f_equal. lia. }
+            inv REG. simpl. rewrite MS. ss. rewrite H0.
+            destruct ms; ss.
+            { des_ifs. }
+            { rewrite H0 in H8. ss. unfold to_fp in H8. des_ifs_safe.
+              destruct l. ss. clarify. rewrite andb_false_r in Heq4. ss. } }
+        rewrite SND. rewrite andb_true_r.
         eapply match_cfgs_ext_ct1; eauto.
         { red. inv REG. eauto. }
         { inv REG. simpl. rewrite STK.
@@ -2195,11 +2209,10 @@ Proof.
         destruct ms; ss.
         { des_ifs. }
         { rewrite H0 in H8. ss. unfold to_fp in H8. des_ifs_safe.
-          simpl in Heq2. clarify.
-          (* destruct (fst l =? l0)%nat eqn:JMP; ss. *)
-          (* + rewrite Nat.eqb_sym. rewrite JMP. auto. *)
-          (* + rewrite Nat.eqb_sym. rewrite JMP. auto. *)
-          admit. (* fix later *) }
+          simpl in Heq2. clarify. rewrite SND.
+          destruct (fst l =? l0)%nat eqn:JMP; ss.
+          + rewrite Nat.eqb_sym. rewrite JMP. auto.
+          + rewrite Nat.eqb_sym. rewrite JMP. auto. }
     + replace [DCall(l', o')] with ([DCall (l', o')] ++ []) by ss.
       replace [OCall l] with ([OCall l] ++ []) by ss.
 
