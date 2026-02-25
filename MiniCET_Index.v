@@ -1965,11 +1965,15 @@ Proof.
       * eapply ISMI_Jump; eauto.
       * econs; eauto.
         exploit wf_prog_lookup; try eapply x0; eauto. i.
-        ss. unfold pc_sync, wf_lbl in *. ss. des_ifs_safe. ss.
-        subst. inv WFP. rewrite Forall_forall in H1.
+        ss. unfold wf_lbl in x1. des_ifs_safe.
+        inv WFP. rewrite Forall_forall in H1.
+        pose proof Heq as BLK.
         eapply nth_error_In in Heq. eapply H1 in Heq.
-        red in Heq. des. ss. admit.
-
+        red in Heq. des.
+        unfold nonempty_block in Heq. ss.
+        destruct l0; [ss; lia|].
+        unfold pc_sync. ss.
+        rewrite nth_error_map. rewrite BLK. ss.
     + exploit tgt_inv; eauto. i. des. inv x0. inv MATCH.
       exists (S_Running ((pc0 + 1), x !-> v'; r0, m, stk, ms)).
 
