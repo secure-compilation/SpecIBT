@@ -32,6 +32,15 @@ Inductive ty : Type := TNum.
 Derive (Arbitrary, Shrink) for ty.
 Derive Show for ty.
 
+Inductive observation : Type :=
+| ODiv (n1 : nat) (n2 : nat)
+| OBranch (b:bool)
+| OLoad (n:nat)
+| OStore (n:nat)
+| OCall (l: nat).
+
+Definition obs := list observation.
+
 Definition ty_eqb (x y: ty) := match x, y with
                                | TNum, TNum => true
                                end.
@@ -163,7 +172,8 @@ Definition fetch (p: prog) (len: nat) (pc: nat) : option inst :=
 
 Inductive direction : Type :=
 | DBranch (b':bool)
-| DCall (l:nat).
+| DCall (l:nat)
+| DRet (l:nat).
 
 Definition dirs := list direction.
 
