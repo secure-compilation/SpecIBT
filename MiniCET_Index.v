@@ -151,7 +151,7 @@ Inductive spec_eval_small_step (p:prog):
       p[[pc]] = Some <{{ call e }}> ->
       to_fp (eval r e) = Some l ->
       ms' = ms || negb ((fst pc' =? fst l) && (snd pc' =? snd l)) ->
-      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (fst pc, snd pc + 2)::sk), true, ms') ))>
+      p |- <(( S_Running ((pc, r, m, sk), false, ms) ))> -->_[DCall pc']^^[OCall l] <(( S_Running ((pc', r, m, (pc + 1)::sk), true, ms') ))>
   | SpecSMI_CTarget : forall pc r m sk ct ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), ct, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
@@ -375,23 +375,21 @@ Fixpoint map_opt {S T} (f: S -> option T) l : option (list T):=
              end
   end.
 
-Definition spec_cfg_sync (p: prog) (ic: ideal_cfg): option spec_cfg :=
-  let '(c, ms) := ic in
-  let '(pc, r, m, stk) := c in
-  match pc_sync p pc, map_opt (pc_sync p) stk with
-  | Some pc', Some stk' => Some (pc', r_sync r ms, m, stk', false, ms)
-  | _, _ => None
-  end.
-
 Definition Rsync (sr tr: reg) (ms: bool) : Prop :=
    (forall x, x <> msf /\ x <> callee -> sr ! x = tr ! x) /\
    (tr ! msf = N (if ms then 1 else 0)).
+
+Definition ret_sync (p: prog) (pc: cptr) : option cptr :=
+  match pc_sync p pc with
+  | Some (l, o) => Some (l, o - 1)
+  | _ => None
+  end.
 
 Variant match_cfgs (p: prog) : ideal_cfg -> spec_cfg -> Prop :=
 | match_cfgs_intro pc r m stk ms pc' r' stk'
   (PC: pc_sync p pc = Some pc')
   (REG: Rsync r r' ms)
-  (STK: map_opt (pc_sync p) stk = Some stk') :
+  (STK: map_opt (ret_sync p) stk = Some stk') :
   match_cfgs p ((pc, r, m, stk), ms) ((pc', r', m, stk'), false, ms)
 .
 
@@ -1808,7 +1806,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   (CT: nth_error p l = Some (blk, true))
   (CT1: (uslh_prog p)[[(l, 0)]] = Some <{{ ctarget }}>)
   (REG: Rsync1 r r' ms)
-  (STK: map_opt (pc_sync p) stk = Some stk')
+  (STK: map_opt (ret_sync p) stk = Some stk')
   (MS: eval r' <{{ (callee = (&(l, 0))) ? msf : 1 }}> = N (if ms then 1 else 0)) :
   match_cfgs_ext p (S_Running (((l, 0), r, m, stk), ms))
                    (S_Running (((l, 0), r', m, stk'), true, ms))
@@ -1818,7 +1816,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   (CT1: (uslh_prog p)[[(l, 0)]] = Some <{{ ctarget }}>)
   (CT2: (uslh_prog p)[[(l, 1)]] = Some <{{ msf := (callee = (& (l, 0))) ? msf : 1 }}>)
   (REG: Rsync1 r r' ms)
-  (STK: map_opt (pc_sync p) stk = Some stk')
+  (STK: map_opt (ret_sync p) stk = Some stk')
   (MS: eval r' <{{ (callee = (& (l, 0))) ? msf : 1 }}> = N (if ms then 1 else 0)) :
   match_cfgs_ext p (S_Running (((l, 0), r, m, stk), ms))
                    (S_Running (((l, 1), r', m, stk'), false, ms))
@@ -1828,7 +1826,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   (TCALL: (uslh_prog p)[[pc' + 1]] = Some <{{ call ((msf = 1) ? &(0, 0) : fp) }}>)
   (PC: pc_sync p pc = Some pc')
   (REG: Rsync r r' ms)
-  (STK: map_opt (pc_sync p) stk = Some stk')
+  (STK: map_opt (ret_sync p) stk = Some stk')
   (MS: r' ! callee = (eval r' <{{ (msf = 1) ? &(0, 0) : fp }}>)) :
   match_cfgs_ext p (S_Running ((pc, r, m, stk), ms))
                    (S_Running ((pc' + 1, r', m, stk'), false, ms))
@@ -1848,7 +1846,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
 
   (BT2: (uslh_prog p)[[(l', 1)]] = Some <{{ jump l }}>)
   (REG: Rsync1 r r' ms)
-  (STK: map_opt (pc_sync p) stk = Some stk') :
+  (STK: map_opt (ret_sync p) stk = Some stk') :
   match_cfgs_ext p (S_Running (((l, 0), r, m, stk), ms))
                    (S_Running (((l', 0), r', m, stk'), false, ms))
 | match_cfgs_ext_br_true2
@@ -1857,7 +1855,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   (BR: p[[pc]] = Some <{{ branch e to l }}>)
   (BT2: (uslh_prog p)[[(l', 1)]] = Some <{{ jump l }}>)
   (REG: Rsync r r' ms)
-  (STK: map_opt (pc_sync p) stk = Some stk') :
+  (STK: map_opt (ret_sync p) stk = Some stk') :
   match_cfgs_ext p (S_Running (((l, 0), r, m, stk), ms))
                    (S_Running (((l', 1), r', m, stk'), false, ms))
 | match_cfgs_ext_br_false
@@ -1867,7 +1865,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   (MS: eval r' <{{ ((msf = 1) ? 0 : e) ? 1 : msf }}> = N (if ms then 1 else 0))
   (PC: pc_sync p pc = Some pc')
   (REG: Rsync1 r r' ms)
-  (STK: map_opt (pc_sync p) stk = Some stk') :
+  (STK: map_opt (ret_sync p) stk = Some stk') :
   match_cfgs_ext p (S_Running ((pc + 1, r, m, stk), ms))
                    (S_Running ((pc' + 1, r', m, stk'), false, ms))
 | match_cfgs_ext_ret1 (* ret - ret match *)
@@ -1876,7 +1874,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   (FROM: (uslh_prog p) [[pc']] = Some <{{ callee <- peek }}>)
   (TO: (uslh_prog p) [[pc'+1]] = Some <{{ ret }}>)
   (REG: Rsync r r' ms)
-  (STK: map_opt (pc_sync p) stk = Some stk')
+  (STK: map_opt (ret_sync p) stk = Some stk')
   (MS: r' ! callee = match stk' with
                      | [] => UV
                      | (l, o)::sttl => FP (l, o)
@@ -1888,7 +1886,7 @@ Variant match_cfgs_ext (p: prog) : state ideal_cfg -> state spec_cfg -> Prop :=
   (PC: pc_sync p (l, o - 1) = Some (l', o')) (* call - callee asgn match *)
   (TO: (uslh_prog p) [[(l', o' + 2)]] = Some <{{ msf := (callee = (& (l', o' + 2))) ? msf : 1 }}>)
   (REG: Rsync1 r r' ms)
-  (STK: map_opt (pc_sync p) stk = Some stk')
+  (STK: map_opt (ret_sync p) stk = Some stk')
   (MS: eval r' <{{ (callee = (& (l', o' + 2))) ? msf : 1 }}> = N (if ms then 1 else 0))
   (* (MS: r' ! callee = match stk' with
                      | [] => UV
@@ -2191,7 +2189,8 @@ Proof.
             { inv REG. simpl. rewrite STK.
               exploit block_always_terminator_prog; try eapply CALL; eauto. i. des.
               destruct pc as [b o].
-              hexploit pc_sync_next; eauto. i. rewrite H1.
+              hexploit pc_sync_next; eauto. i. unfold ret_sync.
+              rewrite H1. simpl.
               destruct pc'. simpl. do 3 f_equal. lia. }
             inv REG. simpl. rewrite MS. ss. rewrite H0.
             destruct ms; ss.
@@ -2204,7 +2203,7 @@ Proof.
         { inv REG. simpl. rewrite STK.
           exploit block_always_terminator_prog; try eapply CALL; eauto. i. des.
           destruct pc as [b o].
-          hexploit pc_sync_next; eauto. i. rewrite H1.
+          hexploit pc_sync_next; eauto. i. unfold ret_sync. rewrite H1.
           destruct pc'. simpl. do 3 f_equal. lia. }
         inv REG. simpl. rewrite MS. ss. rewrite H0.
         destruct ms; ss.
