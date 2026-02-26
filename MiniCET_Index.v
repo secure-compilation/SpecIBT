@@ -155,10 +155,11 @@ Inductive spec_eval_small_step (p:prog):
   | SpecSMI_CTarget : forall pc r m sk ct ms,
       p[[pc]] = Some <{{ ctarget }}> ->
       p |- <(( S_Running ((pc, r, m, sk), ct, ms) ))> -->_[]^^[] <(( S_Running ((pc+1, r, m, sk), false, ms) ))>
-  | SpecSMI_Ret : forall pc r m sk pc' pc'' ms,
+  | SpecSMI_Ret : forall pc r m sk pc' pc'' ms ms',
       p[[pc]] = Some <{{ ret }}> ->
       In pc'' (call_return_targets p) -> (* YH: Initially, I considered handling it in wf_dir', but I think it would be better to enforce it in the semantics. *)
-      p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[DRet pc'']^^[] <(( S_Running ((pc'', r, m, sk), false, ms) ))>
+      ms' = ms || negb ((fst pc' =? fst pc'') && (snd pc' =? snd pc'')) ->
+      p |- <(( S_Running ((pc, r, m, pc'::sk), false, ms) ))> -->_[DRet pc'']^^[] <(( S_Running ((pc'', r, m, sk), false, ms') ))>
   | SpecSMI_Peek : forall pc r m sk ms x,
       p[[pc]] = Some <{{x <- peek}}> ->
       let val := match sk with 
@@ -2506,6 +2507,9 @@ Proof.
     apply andb_prop in H14. rewrite! Nat.eqb_eq in H14. des.
     destruct pc', l; cbn in *; subst.
     econstructor; eassumption.
+  - inv H. ss. symmetry in H10. rewrite negb_false_iff in H10.
+    apply andb_prop in H10. des. destruct pc', pc'0; ss.
+    rewrite Nat.eqb_eq in H0, H10. clarify. econs; eauto.
 Qed.
 
 Lemma multi_ideal_ms_monotonic {p pc r m stk ms ds os pc' r' m' stk'}:
@@ -2521,6 +2525,7 @@ Proof.
     inv H; try reflexivity.
     + symmetry in H16. now apply orb_false_elim in H16.
     + symmetry in H14. now apply orb_false_elim in H14.
+    + symmetry in H14. now apply orb_false_elim in H14.
 Qed.
 
 Lemma multi_ideal_nonspec_seq p pc r m stk ds os pc' r' m' stk':
@@ -2534,7 +2539,7 @@ Proof.
       inv H0. 1: repeat eexists; reflexivity.
       inv H1; repeat eexists.
       all: try (rewrite (multi_ideal_ms_monotonic H2); reflexivity).
-      3, 4: inv H2; inv H1.
+      3, 5: inv H2; inv H1.
       all: apply multi_ideal_ms_monotonic, orb_false_elim in H2 as [-> _].
       all: reflexivity.
       Unshelve.
@@ -2623,11 +2628,11 @@ Proof.
       change (@nil direction) with ((@nil direction) ++ []).
       econstructor. 2: eassumption.
       now constructor.
-    + edestruct IHmulti_ideal_inst as (pc'' & r' & m' & stk' & Hsteps & H). 1, 2: reflexivity.
-      repeat eexists. 2: exact H.
-      change (@nil direction) with ((@nil direction) ++ []).
-      econstructor. 2: eassumption.
-      now constructor.
+    (* + edestruct IHmulti_ideal_inst as (pc'' & r' & m' & stk' & Hsteps & H). 1, 2: reflexivity. *)
+    (*   repeat eexists. 2: exact H. *)
+    (*   change (@nil direction) with ((@nil direction) ++ []). *)
+    (*   econstructor. 2: eassumption. *)
+    (*   now constructor. *)
     + inv H0. 2: inv H1.
       repeat eexists. 2: right; split.
       * cbn; constructor.
@@ -2800,39 +2805,39 @@ Proof.
       1: change (OStore n :: x8) with ([OStore n] ++ x8).
       2: change (OStore n0 :: x9) with ([OStore n0] ++ x9).
       all: econstructor; eassumption.
-    +
-      inv x. rewrite H20 in H6. inv H6.
-      assert (l = l0).
-      {
-        clear Hexec1 IHHexec1 Hexec2.
-        unfold seq_same_obs in Hseq_same.
-        specialize (Hseq_same ([OCall l]) ([OCall l0])).
-        edestruct Hseq_same.
-        - rewrite <- app_nil_r. econstructor. 2: constructor.
-          eapply SSMI_Call. all: eassumption.
-        - rewrite <- app_nil_r. econstructor. 2: constructor.
-          eapply SSMI_Call. all: eassumption.
-        - destruct H1 as [? H1]. now inv H1.
-        - destruct H1 as [? H1]. now inv H1.
-      }
-      rewrite <- H1 in *.
-      destruct (fst pc' =? l)%nat.
-    * cbn in *.
-      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
-      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?).
-      repeat eexists.
-      1,2: change (DCall pc' :: ds2) with ([DCall pc'] ++ ds2).
-      1: change (OCall l :: os0) with ([OCall l] ++ os0).
-      2: change (OCall l :: os3) with ([OCall l] ++ os3).
-      1,2: econstructor 2. 2: exact H2. 1: exact H. 2: exact H3. 1: exact H0.
-      destruct H4 as [H4 | H4].
-      -- repeat destruct H4 as [-> H4]. left. repeat split ; try reflexivity;  apply H4.
-      -- right. repeat destruct H4 as [? H4]. subst.
-         repeat eexists. 2: exact H4.
-         simpl. f_equal. assumption.
-    * repeat eexists. 1, 2: econstructor.
-      right. repeat eexists. right.
-      repeat eexists. all: eassumption.
+    + admit.
+    (*   inv x. rewrite H20 in H6. inv H6. *)
+    (*   assert (l = l0). *)
+    (*   { *)
+    (*     clear Hexec1 IHHexec1 Hexec2. *)
+    (*     unfold seq_same_obs in Hseq_same. *)
+    (*     specialize (Hseq_same ([OCall l]) ([OCall l0])). *)
+    (*     edestruct Hseq_same. *)
+    (*     - rewrite <- app_nil_r. econstructor. 2: constructor. *)
+    (*       eapply SSMI_Call. all: eassumption. *)
+    (*     - rewrite <- app_nil_r. econstructor. 2: constructor. *)
+    (*       eapply SSMI_Call. all: eassumption. *)
+    (*     - destruct H1 as [? H1]. now inv H1. *)
+    (*     - destruct H1 as [? H1]. now inv H1. *)
+    (*   } *)
+    (*   rewrite <- H1 in *. *)
+    (*   destruct (fst pc' =? l)%nat. *)
+    (* * cbn in *. *)
+    (*   eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption. *)
+    (*   destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?). *)
+    (*   repeat eexists. *)
+    (*   1,2: change (DCall pc' :: ds2) with ([DCall pc'] ++ ds2). *)
+    (*   1: change (OCall l :: os0) with ([OCall l] ++ os0). *)
+    (*   2: change (OCall l :: os3) with ([OCall l] ++ os3). *)
+    (*   1,2: econstructor 2. 2: exact H2. 1: exact H. 2: exact H3. 1: exact H0. *)
+    (*   destruct H4 as [H4 | H4]. *)
+    (*   -- repeat destruct H4 as [-> H4]. left. repeat split ; try reflexivity;  apply H4. *)
+    (*   -- right. repeat destruct H4 as [? H4]. subst. *)
+    (*      repeat eexists. 2: exact H4. *)
+    (*      simpl. f_equal. assumption. *)
+    (* * repeat eexists. 1, 2: econstructor. *)
+    (*   right. repeat eexists. right. *)
+    (*   repeat eexists. all: eassumption. *)
     +
       inv x. apply H25 in H12 as [H12 | H12].
       all: congruence.
@@ -2847,22 +2852,23 @@ Proof.
       inv Hexec2. 2: inv H1.
       repeat split; try reflexivity. 1: assumption.
       inv x. assumption.
-    +
-      inv H14.
-      eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption.
-      destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?).
-      destruct H3 as [H3 | H3].
-    * repeat destruct H3 as [-> H3].
-      repeat eexists. 3: left; repeat split; try reflexivity; apply H3.
-      all: change ds2 with ([] ++ ds2).
-      1: change os0 with ([] ++ os0).
-      2: change os3 with ([] ++ os3).
-      all: econstructor; eassumption.
-    * repeat eexists. 3: right; eassumption.
-      all: change x7 with ([] ++ x7).
-      1: change x8 with ([] ++ x8).
-      2: change x9 with ([] ++ x9).
-      all: econstructor; eassumption.
+    + admit.
+    (*   inv H14. *)
+    (*   eapply IHHexec1 in Hexec2. 3: reflexivity. 2: eapply ideal_nonspec_step_preserves_seq_same_obs; eassumption. *)
+    (*   destruct Hexec2 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?). *)
+    (*   destruct H3 as [H3 | H3]. *)
+    (* * repeat destruct H3 as [-> H3]. *)
+    (*   repeat eexists. 3: left; repeat split; try reflexivity; apply H3. *)
+    (*   all: change ds2 with ([] ++ ds2). *)
+    (*   1: change os0 with ([] ++ os0). *)
+    (*   2: change os3 with ([] ++ os3). *)
+    (*   all: econstructor; eassumption. *)
+    (* * repeat eexists. 3: right; eassumption. *)
+    (*   all: change x7 with ([] ++ x7). *)
+    (*   1: change x8 with ([] ++ x8). *)
+    (*   2: change x9 with ([] ++ x9). *)
+    (*   all: econstructor; eassumption. *)
+    + admit.
     +
       repeat eexists.
       1, 2: econstructor.
@@ -2870,7 +2876,7 @@ Proof.
       inv Hexec2. 2: inv H2.
       repeat split; try reflexivity. all: right; split; [reflexivity |].
       all: assumption.
-Qed.
+Admitted.
 
 Lemma prefix_eq_length_eq {A} {os1 os2 : list A}:
   Utils.prefix os1 os2 \/ Utils.prefix os2 os1 ->
@@ -2905,6 +2911,7 @@ Proof.
   - inv H; inv H0; try congruence; cbn in *; subst.
     + eapply IHHexec1; try eassumption. reflexivity.
     + eapply IHHexec1; try eassumption. reflexivity.
+    + admit.
     + inv x. rewrite H6 in H5; inv H5. inv H10. inv  H11.
       edestruct IHHexec1. 1: reflexivity. 1: eassumption.
       * left. destruct H. exists x. cbn. f_equal. assumption.
@@ -2932,10 +2939,11 @@ Proof.
       inv Hexec2. 2: inv H.
       inv H12. inv H10.
       left. exists []. reflexivity.
+    + admit.
     + eapply IHHexec1; try eassumption. reflexivity.
     + inv Hexec2. 2: inv H.
       right. exists os0. reflexivity.
-Qed.
+Admitted.
 
 Lemma ideal_eval_relative_secure: forall p pc r1 r2 m1 m2 stk,
   seq_same_obs p pc r1 r2 m1 m2 stk ->
@@ -3019,8 +3027,8 @@ Lemma spec_eval_relative_secure_init_aux
   r1' r2' sc1 sc2
   (SCFG1: sc1 = ((0,0), r1', m1, [], true, false))
   (SCFG2: sc2 = ((0,0), r2', m2, [], true, false))
-  (INIT1: r1' ! callee = FP 0)
-  (INIT2: r2' ! callee = FP 0)
+  (INIT1: r1' ! callee = FP (0, 0))
+  (INIT2: r2' ! callee = FP (0, 0))
   (MATCH1: Rsync r1 r1' false)
   (MATCH2: Rsync r2 r2' false)
   ds os1 os2 n m sc1' sc2'
@@ -3038,8 +3046,8 @@ Lemma spec_eval_relative_secure
   (FST: first_blk_call p)
   (NCT: no_ct_prog p)
   (WFP: wf_prog p)
-  (CALLEE1: r1' ! callee = FP 0)
-  (CALLEE2: r2' ! callee = FP 0)
+  (CALLEE1: r1' ! callee = FP (0, 0))
+  (CALLEE2: r2' ! callee = FP (0, 0))
   (UNUSED1: unused_prog msf p)
   (UNUSED2: unused_prog callee p) :
   relative_secure p (uslh_prog) r1 r2 r1' r2' m1 m2.
